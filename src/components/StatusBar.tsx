@@ -1,99 +1,73 @@
-import { Sun, Moon, Eye, Save, Clock } from 'lucide-react';
+import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode } from 'lucide-react';
+import type { ThemeName } from '../types';
 
 interface StatusBarProps {
-  darkMode: boolean;
-  onToggleDarkMode: () => void;
+  theme: ThemeName;
+  onCycleTheme: () => void;
   isDirty: boolean;
   lastSaved: Date | null;
+  stats: { words: number; characters: number; lines: number; readingTime: number };
+  editorMode: 'wysiwyg' | 'source';
+  focusMode: boolean;
+  typewriterMode: boolean;
+  onToggleEditorMode: () => void;
+  onToggleFocusMode: () => void;
+  onToggleTypewriterMode: () => void;
 }
 
-export const StatusBar = ({ darkMode, onToggleDarkMode, isDirty, lastSaved }: StatusBarProps) => {
+export const StatusBar = ({
+  theme,
+  onCycleTheme,
+  isDirty,
+  lastSaved,
+  stats,
+  editorMode,
+  focusMode,
+  typewriterMode,
+  onToggleEditorMode,
+  onToggleFocusMode,
+  onToggleTypewriterMode,
+}: StatusBarProps) => {
   return (
-    <div style={styles.statusBar}>
-      <div style={styles.leftSection}>
-        {isDirty && (
-          <span style={styles.dirtyIndicator}>
-            <Save size={14} />
-            Unsaved
+    <div className="status-bar">
+      <div className="status-bar-section">
+        {isDirty ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--warning-color)' }}>
+            <Save size={13} /> Unsaved
           </span>
-        )}
-        {!isDirty && lastSaved && (
-          <span style={styles.savedIndicator}>
-            <Clock size={14} />
-            Saved {lastSaved.toLocaleTimeString()}
+        ) : lastSaved ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--success-color)' }}>
+            <Clock size={13} /> Saved
           </span>
-        )}
+        ) : null}
       </div>
 
-      <div style={styles.rightSection}>
-        <button onClick={onToggleDarkMode} style={styles.modeButton}>
-          {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-          <span>{darkMode ? 'Light' : 'Dark'}</span>
+      <div className="status-bar-section">
+        <button className={`status-bar-btn ${focusMode ? 'active' : ''}`} onClick={onToggleFocusMode} title="Focus Mode">
+          <Eye size={14} /> Focus
         </button>
-        
-        <div style={styles.separator} />
-        
-        <div style={styles.info}>
-          <Eye size={14} />
-          <span>ZenNote v1.0.0</span>
-        </div>
+        <button className={`status-bar-btn ${typewriterMode ? 'active' : ''}`} onClick={onToggleTypewriterMode} title="Typewriter Mode">
+          <AlignCenter size={14} /> Typewriter
+        </button>
+        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="Toggle Source Mode">
+          <FileCode size={14} /> {editorMode === 'wysiwyg' ? 'WYSIWYG' : 'Source'}
+        </button>
+
+        <div className="status-bar-divider" />
+
+        <span style={{ fontSize: 12 }}>
+          {stats.words} words · {stats.characters} chars · {stats.lines} lines · {stats.readingTime} min read
+        </span>
+
+        <div className="status-bar-divider" />
+
+        <button className="status-bar-btn" onClick={onCycleTheme} title={`Theme: ${theme}`}>
+          {theme === 'light' || theme === 'sepia' || theme === 'solarized' ? <Sun size={14} /> : <Moon size={14} />}
+          <span style={{ textTransform: 'capitalize' }}>{theme}</span>
+        </button>
+
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>ZenNote v2.0</span>
       </div>
     </div>
   );
-};
-
-const styles: { [key: string]: React.CSSProperties } = {
-  statusBar: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '4px 16px',
-    backgroundColor: 'var(--bg-secondary)',
-    borderTop: '1px solid var(--border-color)',
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-  },
-  leftSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  rightSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  dirtyIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    color: 'var(--warning-color)',
-  },
-  savedIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    color: 'var(--success-color)',
-  },
-  modeButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    borderRadius: '4px',
-  },
-  separator: {
-    width: '1px',
-    height: '16px',
-    backgroundColor: 'var(--border-color)',
-  },
-  info: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-  },
 };

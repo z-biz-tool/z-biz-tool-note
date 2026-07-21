@@ -1,29 +1,45 @@
-import { ipcRenderer } from 'electron';
-import type { FileItem, Note } from '../types';
+import { electronAPI } from '../lib/electronAPI';
+import type { Note } from '../types';
 
 export const useFileOperations = () => {
-  const readFile = async (filePath: string): Promise<{ success: boolean; content?: string; filePath?: string; error?: string }> => {
-    return ipcRenderer.invoke('read-file', filePath);
+  const readFile = async (filePath: string) => {
+    return electronAPI.invoke('read-file', filePath);
   };
 
-  const writeFile = async (filePath: string, content: string): Promise<{ success: boolean; error?: string }> => {
-    return ipcRenderer.invoke('write-file', filePath, content);
+  const writeFile = async (filePath: string, content: string) => {
+    return electronAPI.invoke('write-file', filePath, content);
   };
 
-  const showSaveDialog = async (defaultPath: string): Promise<{ canceled: boolean; filePath?: string }> => {
-    return ipcRenderer.invoke('show-save-dialog', defaultPath);
+  const showSaveDialog = async (defaultPath: string) => {
+    return electronAPI.invoke('show-save-dialog', defaultPath);
   };
 
-  const showOpenDialog = async (): Promise<{ canceled: boolean; filePath?: string }> => {
-    return ipcRenderer.invoke('show-open-dialog');
+  const showOpenDialog = async () => {
+    return electronAPI.invoke('show-open-dialog');
   };
 
-  const listFiles = async (dirPath: string): Promise<{ success: boolean; files?: FileItem[]; error?: string }> => {
-    return ipcRenderer.invoke('list-files', dirPath);
+  const listFiles = async (dirPath: string) => {
+    return electronAPI.invoke('list-files', dirPath);
   };
 
-  const exportHtml = async (content: string, filePath: string): Promise<{ success: boolean; filePath?: string; error?: string }> => {
-    return ipcRenderer.invoke('export-html', content, filePath);
+  const listFilesRecursive = async (dirPath: string) => {
+    return electronAPI.invoke('list-files-recursive', dirPath);
+  };
+
+  const exportHtml = async (content: string, filePath: string) => {
+    return electronAPI.invoke('export-html', content, filePath);
+  };
+
+  const exportPdf = async (content: string, filePath: string) => {
+    return electronAPI.invoke('export-pdf', content, filePath);
+  };
+
+  const searchInFiles = async (dirPath: string, query: string) => {
+    return electronAPI.invoke('search-in-files', dirPath, query);
+  };
+
+  const saveImage = async (imageData: string) => {
+    return electronAPI.invoke('save-image', imageData);
   };
 
   const createNewNote = (): Note => ({
@@ -41,7 +57,11 @@ export const useFileOperations = () => {
     showSaveDialog,
     showOpenDialog,
     listFiles,
+    listFilesRecursive,
     exportHtml,
+    exportPdf,
+    searchInFiles,
+    saveImage,
     createNewNote,
   };
 };
