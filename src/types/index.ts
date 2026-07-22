@@ -64,3 +64,28 @@ export interface SearchResult {
   snippet: string;
   line: number;
 }
+
+export interface WikiLinkItem {
+  sourcePath: string;
+  targetPath: string;
+  text: string;
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  path: string;
+  group?: string;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+}
+
+export interface FolderContextMenu {
+  x: number;
+  y: number;
+  item: FileItem | null;
+  type: 'file' | 'folder' | 'empty';
+}

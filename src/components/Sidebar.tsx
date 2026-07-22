@@ -6,6 +6,9 @@ import {
 import type { FileItem, Note, RecentFile } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
+import { FolderContextMenu } from './FolderContextMenu';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -13,11 +16,12 @@ interface SidebarProps {
   onSelectNote: (note: Note) => void;
   onNewNote: () => void;
   onOpenFolder: (dirPath: string) => void;
+  onRefresh?: () => void;
 }
 
 type TabType = 'files' | 'recent' | 'search';
 
-export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder }: SidebarProps) => {
+export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh }: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
@@ -27,6 +31,7 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
   const [searchResults, setSearchResults] = useState<Array<{ filePath: string; fileName: string; snippet: string; line: number }>>([]);
   const [loading, setLoading] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'file' | 'folder' | 'empty'; item?: FileItem } | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('recentFiles');
@@ -80,7 +85,7 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
       if (!isExpanded && !file.children) {
         const result = await listFiles(file.path);
         if (result.success && result.files) {
-          file.children = result.files.filter((f: FileItem) => !f.name.startsWith('.'));
+          (file as any).children = result.files.filter((f: FileItem) => !f.name.startsWith('.'));
           setFileTree([...fileTree]);
         }
       }
@@ -98,6 +103,86 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
         });
       }
     }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, file?: FileItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const type: 'file' | 'folder' | 'empty' = file?.isDirectory ? 'folder' : file?.isFile ? 'file' : 'empty';
+    setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, type, item: file || undefined });
+  };
+
+  const handleNewFile = async () => {
+    const ctx = contextMenu;
+    if (!ctx) return;
+    const item = ctx.item;
+    let parentDir = currentDir;
+    if (item?.path) {
+      parentDir = item.isDirectory ? item.path : path.dirname(item.path);
+    }
+    if (!parentDir) return;
+    let fileName = 'Untitled.md';
+    let counter = 1;
+    while (fs.existsSync(path.join(parentDir, fileName))) {
+      fileName = `Untitled ${counter++}.md`;
+    }
+    const filePath = path.join(parentDir, fileName);
+    fs.writeFileSync(filePath, '# Untitled\n\nStart writing...');
+    loadFileTree(currentDir);
+    onRefresh?.();
+    setContextMenu(null);
+  };
+
+  const handleNewFolder = async () => {
+    const ctx = contextMenu;
+    if (!ctx) return;
+    const item = ctx.item;
+    let parentDir = currentDir;
+    if (item?.path) {
+      parentDir = item.isDirectory ? item.path : path.dirname(item.path);
+    }
+    if (!parentDir) return;
+    let folderName = 'New Folder';
+    let counter = 1;
+    while (fs.existsSync(path.join(parentDir, folderName))) {
+      folderName = `New Folder ${counter++}`;
+    }
+    const folderPath = path.join(parentDir, folderName);
+    fs.mkdirSync(folderPath, { recursive: true });
+    loadFileTree(currentDir);
+    onRefresh?.();
+    setContextMenu(null);
+  };
+
+  const handleRename = async () => {
+    if (!contextMenu?.item) return;
+    const oldPath = contextMenu.item.path;
+    const dir = path.dirname(oldPath);
+    const oldName = path.basename(oldPath);
+    const extension = path.extname(oldName);
+    const baseName = oldName.replace(extension, '');
+    let newName = `${baseName} (renamed)${extension}`;
+    let counter = 1;
+    while (fs.existsSync(path.join(dir, newName))) {
+      newName = `${baseName} (renamed ${counter++})${extension}`;
+    }
+    fs.renameSync(oldPath, path.join(dir, newName));
+    loadFileTree(currentDir);
+    onRefresh?.();
+    setContextMenu(null);
+  };
+
+  const handleDelete = async () => {
+    if (!contextMenu?.item) return;
+    if (contextMenu.item.isDirectory) {
+      fs.rmSync(contextMenu.item.path, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(contextMenu.item.path);
+    }
+    loadFileTree(currentDir);
+    onRefresh?.();
+    setContextMenu(null);
   };
 
   const handleRecentClick = async (file: RecentFile) => {
@@ -141,18 +226,20 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
               className="sidebar-folder-item"
               style={{ paddingLeft: `${12 + depth * 16}px` }}
               onClick={() => handleFileClick(file)}
+              onContextMenu={(e) => handleContextMenu(e, file)}
             >
               {expandedFolders.has(file.path) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               <Folder size={15} />
               <span>{file.name}</span>
             </button>
-            {expandedFolders.has(file.path) && file.children && renderFileTree(file.children, depth + 1)}
+            {expandedFolders.has(file.path) && (file as any).children && renderFileTree((file as any).children, depth + 1)}
           </>
         ) : (
           <button
             className={`sidebar-file-item ${currentNote?.filePath === file.path ? 'active' : ''}`}
             style={{ paddingLeft: `${12 + depth * 16 + 20}px` }}
             onClick={() => handleFileClick(file)}
+            onContextMenu={(e) => handleContextMenu(e, file)}
           >
             <FileText size={14} />
             <span>{file.name.replace(/\.md$|\.markdown$/, '')}</span>
@@ -209,7 +296,7 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
               {currentDir ? currentDir.split('/').pop() : 'No folder'}
             </span>
           </div>
-          <div className="sidebar-file-list">
+          <div className="sidebar-file-list" onContextMenu={(e) => handleContextMenu(e)}>
             {loading ? (
               <div className="sidebar-empty">Loading...</div>
             ) : fileTree.length === 0 ? (
@@ -297,6 +384,19 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
             )}
           </div>
         </>
+      )}
+
+      {contextMenu && (
+        <FolderContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          type={contextMenu.type}
+          onClose={() => setContextMenu(null)}
+          onNewFile={handleNewFile}
+          onNewFolder={handleNewFolder}
+          onRename={handleRename}
+          onDelete={handleDelete}
+        />
       )}
     </div>
   );

@@ -23,6 +23,8 @@ import Color from '@tiptap/extension-color';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import Mathematics from '@tiptap/extension-mathematics';
+import { Mermaid } from '../lib/MermaidExtension';
+import { WikiLink } from '../lib/WikiLinkExtension';
 import { createLowlight } from 'lowlight';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
@@ -40,9 +42,15 @@ import { Toolbar } from './Toolbar';
 import { FindReplace } from './FindReplace';
 import { EmojiPicker } from './EmojiPicker';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { EditorMode, HeadingItem } from '../types';
+import type { EditorMode, HeadingItem, WikiLinkItem } from '../types';
+import mermaid from 'mermaid';
 
 import 'katex/dist/katex.min.css';
+
+mermaid.initialize({
+  theme: 'default',
+  startOnLoad: false,
+});
 
 const lowlight = createLowlight({
   html,
@@ -71,6 +79,8 @@ interface EditorProps {
   onToggleFindReplace: () => void;
   onStatsChange: (stats: { words: number; characters: number; lines: number; readingTime: number }) => void;
   onHeadingsChange: (headings: HeadingItem[]) => void;
+  onWikiLinksChange: (links: WikiLinkItem[]) => void;
+  currentFilePath: string;
   editorRef: React.MutableRefObject<any>;
 }
 
@@ -86,6 +96,8 @@ export const Editor = ({
   onToggleFindReplace,
   onStatsChange,
   onHeadingsChange,
+  onWikiLinksChange,
+  currentFilePath,
   editorRef,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -122,6 +134,8 @@ export const Editor = ({
       Subscript,
       Superscript,
       Mathematics,
+      Mermaid,
+      WikiLink,
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -129,6 +143,8 @@ export const Editor = ({
       onChange(markdown);
       updateStats();
       updateHeadings();
+      updateWikiLinks();
+      setTimeout(renderMermaid, 100);
     },
     onSelectionUpdate: () => {
       updateHeadings();
@@ -236,6 +252,40 @@ export const Editor = ({
     });
     onHeadingsChange(headings);
   }, [editor, onHeadingsChange]);
+
+  const updateWikiLinks = useCallback(() => {
+    if (!editor) return;
+    const links: WikiLinkItem[] = [];
+    const wikiLinkRegex = /\[\[([^\]]+)\]\]/g;
+    const markdown = editor.getMarkdown();
+    let match;
+    while ((match = wikiLinkRegex.exec(markdown)) !== null) {
+      const text = match[1];
+      links.push({
+        sourcePath: currentFilePath,
+        targetPath: text + '.md',
+        text,
+      });
+    }
+    onWikiLinksChange(links);
+  }, [editor, onWikiLinksChange, currentFilePath]);
+
+  // Render Mermaid diagrams
+  const renderMermaid = useCallback(() => {
+    if (!editor) return;
+    const mermaidContainers = editor.view.dom.querySelectorAll('.mermaid-container');
+    mermaidContainers.forEach((container) => {
+      const codeElement = container.querySelector('code');
+      if (codeElement && codeElement.textContent) {
+        const code = codeElement.textContent;
+        mermaid.render('mermaid-' + Date.now(), code).then((result) => {
+          container.innerHTML = result.svg;
+        }).catch(() => {
+          container.innerHTML = '<pre style="color: red;">Invalid Mermaid syntax</pre>';
+        });
+      }
+    });
+  }, [editor]);
 
   // Image paste handler
   useEffect(() => {

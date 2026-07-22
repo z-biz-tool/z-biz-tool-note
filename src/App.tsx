@@ -7,7 +7,8 @@ import { StatusBar } from './components/StatusBar';
 import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
-import type { Note, ThemeName, EditorMode, HeadingItem, Command } from './types';
+import { KnowledgeGraph } from './components/KnowledgeGraph';
+import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink } from './types';
 import { useFileOperations } from './hooks/useFileOperations';
 import './index.css';
 
@@ -116,6 +117,9 @@ const App = () => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [allFiles, setAllFiles] = useState<Array<{ path: string; name: string; lastModified: number }>>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
+  const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
 
   const editorRef = useRef<any>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -335,6 +339,35 @@ const App = () => {
     setCurrentNote(prev => prev ? { ...prev, title, isDirty: true } : null);
   }, []);
 
+  const handleWikiLinksChange = useCallback((links: WikiLinkItem[]) => {
+    const nodes: GraphNode[] = [];
+    const linkSet = new Set<string>();
+
+    if (currentNote) {
+      nodes.push({
+        id: currentNote.filePath || currentNote.id,
+        name: currentNote.title,
+        path: currentNote.filePath || '',
+      });
+    }
+
+    links.forEach(link => {
+      nodes.push({
+        id: link.targetPath,
+        name: link.text,
+        path: link.targetPath,
+      });
+      const sourceId = currentNote?.filePath || currentNote?.id || '';
+      const linkKey = `${sourceId}->${link.targetPath}`;
+      if (!linkSet.has(linkKey)) {
+        linkSet.add(linkKey);
+        setGraphLinks((prev: GraphLink[]) => [...prev, { source: sourceId, target: link.targetPath }]);
+      }
+    });
+
+    setGraphNodes(nodes);
+  }, [currentNote]);
+
   const handleSelectNote = useCallback((note: Note) => {
     setCurrentNote(note);
     setLastSaved(new Date());
@@ -369,6 +402,7 @@ const App = () => {
     { id: 'toggle-find', title: 'Find & Replace', shortcut: 'Cmd+F', category: 'Edit', action: () => setShowFindReplace(true) },
     { id: 'cycle-theme', title: 'Cycle Theme', category: 'View', action: cycleTheme },
     { id: 'quick-switch', title: 'Quick Switch File', shortcut: 'Cmd+P', category: 'Go', action: () => setShowQuickSwitcher(true) },
+    { id: 'toggle-graph', title: 'Toggle Knowledge Graph', category: 'View', action: () => setShowKnowledgeGraph(prev => !prev) },
   ];
 
   return (
@@ -396,6 +430,8 @@ const App = () => {
               onToggleFindReplace={() => setShowFindReplace(false)}
               onStatsChange={setStats}
               onHeadingsChange={setHeadings}
+              onWikiLinksChange={handleWikiLinksChange}
+              currentFilePath={currentNote.filePath}
               editorRef={editorRef}
             />
             <StatusBar
@@ -407,9 +443,9 @@ const App = () => {
               editorMode={editorMode}
               focusMode={focusMode}
               typewriterMode={typewriterMode}
-              onToggleEditorMode={() => setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
-              onToggleFocusMode={() => setFocusMode(prev => !prev)}
-              onToggleTypewriterMode={() => setTypewriterMode(prev => !prev)}
+              onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
+              onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
+              onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
             />
           </>
         ) : (
@@ -445,6 +481,28 @@ const App = () => {
           commands={commands}
           onClose={() => setShowCommandPalette(false)}
         />
+      )}
+
+      {showKnowledgeGraph && currentNote && (
+        <div className="knowledge-graph-panel">
+          <div className="outline-header">
+            <span>Knowledge Graph</span>
+            <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>
+              ×
+            </button>
+          </div>
+          <KnowledgeGraph
+            nodes={graphNodes}
+            links={graphLinks}
+            currentFilePath={currentNote.filePath}
+            onNodeClick={(node) => {
+              if (node.path && node.path.endsWith('.md')) {
+                handleOpenFile(node.path);
+              }
+              setShowKnowledgeGraph(false);
+            }}
+          />
+        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}

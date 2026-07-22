@@ -374,3 +374,142 @@ body {
   color: var(--accent-color); font-size: 18px; font-weight: 600;
   z-index: 1000; pointer-events: none;
 }
+
+/* ===== Mermaid Diagrams ===== */
+.mermaid-container {
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  margin: 1em 0;
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+}
+.mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ===== Wiki Links ===== */
+.wiki-link {
+  color: var(--accent-color);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-color);
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+.wiki-link:hover {
+  border-bottom-style: solid;
+}
+
+/* ===== Knowledge Graph Panel ===== */
+.knowledge-graph-panel {
+  width: 320px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex-shrink: 0;
+}
+.knowledge-graph {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.knowledge-graph-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.knowledge-graph-empty .hint {
+  font-size: 11px;
+  margin-top: 8px;
+}
+.graph-tooltip {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  box-shadow: var(--shadow-md);
+}
+.graph-tooltip-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.graph-tooltip-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  word-break: break-all;
+}
+.graph-legend {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+.legend-dot.current {
+  background: #4f46e5;
+}
+
+/* ===== Context Menu ===== */
+.context-menu {
+  position: absolute;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 160px;
+  z-index: 1000;
+}
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+.context-menu-item:hover {
+  background: var(--bg-tertiary);
+}
+.context-menu-item.danger {
+  color: var(--danger-color);
+}
+.context-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+.context-menu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 8px;
+}
