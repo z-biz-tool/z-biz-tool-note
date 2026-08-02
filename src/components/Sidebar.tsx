@@ -8,8 +8,7 @@ import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
 import { FolderContextMenu } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
-import * as fs from 'fs';
-import * as path from 'path';
+import { invoke } from '@tauri-apps/api/core';
 
 interface SidebarProps {
   isOpen: boolean;
