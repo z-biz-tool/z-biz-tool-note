@@ -21,6 +21,8 @@ pub fn run() {
             commands::restore_note,
             commands::permanent_delete_note,
             commands::list_tags,
+            commands::save_image,
+            commands::read_image,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

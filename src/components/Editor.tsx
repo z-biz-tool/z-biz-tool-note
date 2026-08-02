@@ -28,6 +28,8 @@ import { WikiLink } from '../lib/WikiLinkExtension';
 import { Tag } from '../lib/TagExtension';
 import { BlockReference } from '../lib/BlockReferenceExtension';
 import { MultiCursor } from '../lib/MultiCursorExtension';
+import { SlashCommand } from '../lib/SlashCommandExtension';
+import { Callout } from '../lib/CalloutExtension';
 import { createLowlight } from 'lowlight';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
@@ -146,6 +148,8 @@ export const Editor = ({
       Tag,
       BlockReference,
       MultiCursor,
+      SlashCommand,
+      Callout,
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -309,7 +313,7 @@ export const Editor = ({
     });
   }, [editor]);
 
-  // Image paste handler
+  // Image paste handler - save to local storage
   useEffect(() => {
     if (!editor) return;
     const handlePaste = async (event: ClipboardEvent) => {
@@ -321,9 +325,16 @@ export const Editor = ({
           if (file) {
             event.preventDefault();
             const reader = new FileReader();
-            reader.onload = () => {
+            reader.onload = async () => {
               const base64 = reader.result as string;
-              editor.chain().focus().setImage({ src: base64 }).run();
+              try {
+                const { invoke } = await import('@tauri-apps/api/core');
+                const relativePath = await invoke('save_image', { noteId: currentFilePath.split('/').pop()?.replace('.md', '') || 'untitled', data: base64 });
+                editor.chain().focus().setImage({ src: relativePath as string }).run();
+              } catch {
+                // fallback to base64
+                editor.chain().focus().setImage({ src: base64 }).run();
+              }
             };
             reader.readAsDataURL(file);
           }
@@ -333,7 +344,7 @@ export const Editor = ({
     const element = editor.view.dom;
     element.addEventListener('paste', handlePaste);
     return () => element.removeEventListener('paste', handlePaste);
-  }, [editor]);
+  }, [editor, currentFilePath]);
 
   // Drag and drop image
   useEffect(() => {

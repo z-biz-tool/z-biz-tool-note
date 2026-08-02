@@ -340,3 +340,96 @@ pub fn list_tags() -> Vec<String> {
     result.sort();
     result
 }
+
+/// 保存图片到本地，返回相对路径
+#[tauri::command]
+pub fn save_image(note_id: String, data: String) -> Result<String, String> {
+    let images_dir = notes_dir().join("images");
+    if !images_dir.exists() {
+        fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {}", e))?;
+    }
+    // data格式: data:image/png;base64,xxxxx
+    let (mime, b64) = if data.starts_with("data:") {
+        let parts: Vec<&str> = data[5..].splitn(2, ',').collect();
+        if parts.len() != 2 {
+            return Err("无效的base64数据".to_string());
+        }
+        (parts[0].to_string(), parts[1].to_string())
+    } else {
+        return Err("只支持data URI格式".to_string());
+    };
+    let ext = if mime.contains("png") {
+        "png"
+    } else if mime.contains("jpeg") || mime.contains("jpg") {
+        "jpg"
+    } else if mime.contains("gif") {
+        "gif"
+    } else if mime.contains("webp") {
+        "webp"
+    } else if mime.contains("svg") {
+        "svg"
+    } else {
+        "png"
+    };
+    let filename = format!("{}-{}.{}", note_id, Uuid::new_v4().to_string()[..8].to_string(), ext);
+    let path = images_dir.join(&filename);
+    let bytes = base64_decode(&b64)?;
+    fs::write(&path, bytes).map_err(|e| format!("写入图片失败: {}", e))?;
+    Ok(format!("images/{}", filename))
+}
+
+/// 读取图片文件，返回base64 data URI
+#[tauri::command]
+pub fn read_image(path: String) -> Result<String, String> {
+    let full_path = notes_dir().join(&path);
+    if !full_path.exists() {
+        return Err(format!("图片不存在: {}", path));
+    }
+    let bytes = fs::read(&full_path).map_err(|e| format!("读取图片失败: {}", e))?;
+    let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    let mime = match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    };
+    let b64 = base64_encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    use std::fmt::Write;
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let input = input.trim_end_matches('=');
+    let mut result = Vec::with_capacity(input.len() * 3 / 4);
+    let buf: Vec<u8> = input.bytes().filter_map(|b| CHARS.iter().position(|&c| c == b).map(|i| i as u8)).collect();
+    for chunk in buf.chunks(4) {
+        let b0 = chunk.get(0).copied().unwrap_or(0);
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        let b3 = chunk.get(3).copied().unwrap_or(0);
+        let triple = ((b0 as u32) << 18) | ((b1 as u32) << 12) | ((b2 as u32) << 6) | (b3 as u32);
+        result.push(((triple >> 16) & 0xFF) as u8);
+        if chunk.len() > 2 { result.push(((triple >> 8) & 0xFF) as u8); }
+        if chunk.len() > 3 { result.push((triple & 0xFF) as u8); }
+    }
+    Ok(result)
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity(input.len() * 4 / 3 + 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        result.push(if chunk.len() > 1 { CHARS[((triple >> 6) & 0x3F) as usize] as char } else { '=' });
+        result.push(if chunk.len() > 2 { CHARS[(triple & 0x3F) as usize] as char } else { '=' });
+    }
+    result
+}
