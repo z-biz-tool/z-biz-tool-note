@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { electronAPI } from './lib/electronAPI';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
@@ -17,8 +18,6 @@ import { TabsBar } from './components/TabsBar';
 import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink } from './types';
 import { useFileOperations } from './hooks/useFileOperations';
 import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
-import * as fs from 'fs';
-import * as path from 'path';
 import './index.css';
 
 const DEMO_CONTENT = `# Welcome to ZenNote v2.0
@@ -409,16 +408,16 @@ const App = () => {
       return;
     }
     const filePath = dailyNotePath(currentDir);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    try {
+      await invoke('ensure_dir', { path: dir });
+    } catch {}
     const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily/i.test(t.name));
     const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## Plan\n- [ ]\n`, todayTitle());
 
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, content, 'utf-8');
-    }
+    try {
+      await invoke('write_text_file', { path: filePath, content });
+    } catch {}
     const result = await readFile(filePath);
     if (result.success && result.content !== undefined) {
       openNote({
@@ -953,11 +952,9 @@ const App = () => {
             showToast('Open a folder first');
             return;
           }
-          const dir = path.dirname(filePath);
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          if (!fs.existsSync(filePath)) {
-            fs.writeFileSync(filePath, content, 'utf-8');
-          }
+          const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+          try { await invoke('ensure_dir', { path: dir }); } catch {}
+          try { await invoke('write_text_file', { path: filePath, content }); } catch {}
           const res = await readFile(filePath);
           if (res.success && res.content !== undefined) {
             openNote({

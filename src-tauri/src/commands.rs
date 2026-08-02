@@ -433,3 +433,15 @@ fn base64_encode(input: &[u8]) -> String {
     }
     result
 }
+
+/// 确保目录存在
+#[tauri::command]
+pub fn ensure_dir(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("创建目录失败: {}", e))
+}
+
+/// 写入文本文件
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
+}

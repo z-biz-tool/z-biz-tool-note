@@ -23,6 +23,8 @@ pub fn run() {
             commands::list_tags,
             commands::save_image,
             commands::read_image,
+            commands::ensure_dir,
+            commands::write_text_file,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
