@@ -30,6 +30,8 @@ import { BlockReference } from '../lib/BlockReferenceExtension';
 import { MultiCursor } from '../lib/MultiCursorExtension';
 import { SlashCommand } from '../lib/SlashCommandExtension';
 import { Callout } from '../lib/CalloutExtension';
+import { DragHandle } from '../lib/DragHandleExtension';
+import { Fold } from '../lib/FoldExtension';
 import { createLowlight } from 'lowlight';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
@@ -150,6 +152,8 @@ export const Editor = ({
       MultiCursor,
       SlashCommand,
       Callout,
+      DragHandle,
+      Fold,
     ],
     content,
     onUpdate: ({ editor }) => {
