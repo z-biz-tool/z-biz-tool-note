@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Folder, FileText, Search, Plus, ChevronRight, ChevronDown,
-  Home, Clock, Files
+  Home, Clock, Files, Hash, Settings, Sparkles, Calendar
 } from 'lucide-react';
-import type { FileItem, Note, RecentFile } from '../types';
+import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
 import { FolderContextMenu } from './FolderContextMenu';
+import { TagsPanel } from './TagsPanel';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -17,11 +18,20 @@ interface SidebarProps {
   onNewNote: () => void;
   onOpenFolder: (dirPath: string) => void;
   onRefresh?: () => void;
+  tags?: Tag[];
+  onTagClick?: (tag: string) => void;
+  activeTag?: string | null;
+  onOpenSettings?: () => void;
+  onOpenAI?: () => void;
+  onCreateDaily?: () => void;
 }
 
-type TabType = 'files' | 'recent' | 'search';
+type TabType = 'files' | 'recent' | 'search' | 'tags';
 
-export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh }: SidebarProps) => {
+export const Sidebar = ({
+  isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh,
+  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily,
+}: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
@@ -272,17 +282,17 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
       </div>
 
       <div className="sidebar-tabs">
-        <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')}>
+        <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="Files">
           <Files size={14} />
-          <span style={{ marginLeft: 4 }}>Files</span>
         </button>
-        <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} onClick={() => setActiveTab('recent')}>
+        <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} onClick={() => setActiveTab('recent')} title="Recent">
           <Clock size={14} />
-          <span style={{ marginLeft: 4 }}>Recent</span>
         </button>
-        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')}>
+        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')} title="Search">
           <Search size={14} />
-          <span style={{ marginLeft: 4 }}>Search</span>
+        </button>
+        <button className={`sidebar-tab ${activeTab === 'tags' ? 'active' : ''}`} onClick={() => setActiveTab('tags')} title="Tags">
+          <Hash size={14} />
         </button>
       </div>
 
@@ -386,6 +396,16 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
         </>
       )}
 
+      {activeTab === 'tags' && (
+        <div className="sidebar-file-list">
+          <TagsPanel
+            tags={tags}
+            onTagClick={(t) => onTagClick?.(t)}
+            activeTag={activeTag}
+          />
+        </div>
+      )}
+
       {contextMenu && (
         <FolderContextMenu
           x={contextMenu.x}
@@ -398,6 +418,24 @@ export const Sidebar = ({ isOpen, currentNote, onSelectNote, onNewNote, onOpenFo
           onDelete={handleDelete}
         />
       )}
+
+      <div className="sidebar-footer">
+        {onCreateDaily && (
+          <button className="toolbar-btn" onClick={onCreateDaily} title="Today's Daily Note">
+            <Calendar size={16} />
+          </button>
+        )}
+        {onOpenAI && (
+          <button className="toolbar-btn" onClick={onOpenAI} title="AI Assistant">
+            <Sparkles size={16} />
+          </button>
+        )}
+        {onOpenSettings && (
+          <button className="toolbar-btn" onClick={onOpenSettings} title="Settings">
+            <Settings size={16} />
+          </button>
+        )}
+      </div>
     </div>
   );
 };

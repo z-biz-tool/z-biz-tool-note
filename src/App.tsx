@@ -8,8 +8,17 @@ import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
 import { KnowledgeGraph } from './components/KnowledgeGraph';
-import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink } from './types';
+import { BacklinksPanel } from './components/BacklinksPanel';
+import { AIPanel, type AIAction } from './components/AIPanel';
+import { SettingsDialog } from './components/SettingsDialog';
+import { QuickInsert } from './components/QuickInsert';
+import { Breadcrumb } from './components/Breadcrumb';
+import { TabsBar } from './components/TabsBar';
+import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink } from './types';
 import { useFileOperations } from './hooks/useFileOperations';
+import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
+import * as fs from 'fs';
+import * as path from 'path';
 import './index.css';
 
 const DEMO_CONTENT = `# Welcome to ZenNote v2.0
@@ -101,7 +110,14 @@ function createNote(title: string): Note {
 const App = () => {
   const { writeFile, showSaveDialog, exportHtml, exportPdf, createNewNote, readFile } = useFileOperations();
 
-  const [currentNote, setCurrentNote] = useState<Note | null>(null);
+  // 多标签 + 分屏：openTabs 为所有打开的笔记，activeTabId 为左窗格当前笔记，
+  // splitNote 为右窗格笔记（null 表示无分屏）。currentNote 由 activeTabId 派生，
+  // 保留为派生值以兼容既有 save/AI/graph 逻辑。
+  const [openTabs, setOpenTabs] = useState<Note[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [splitNote, setSplitNote] = useState<Note | null>(null);
+  const currentNote = openTabs.find(t => t.id === activeTabId) || null;
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeName>('light');
@@ -121,8 +137,97 @@ const App = () => {
   const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
 
+  // Knowledge management state
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  const [showBacklinks, setShowBacklinks] = useState(false);
+  const [currentDir, setCurrentDir] = useState<string>('');
+
+  // AI state
+  const [aiConfig, setAIConfig] = useState<AIConfig>({
+    baseURL: 'https://api.openai.com/v1',
+    apiKey: '',
+    model: 'gpt-4o-mini',
+    enabled: false,
+  });
+  const [showAIPanel, setShowAIPanel] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Templates state
+  const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
+  const [showQuickInsert, setShowQuickInsert] = useState(false);
+
   const editorRef = useRef<any>(null);
+  const editorRefSplit = useRef<any>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---------- 多标签 / 分屏 辅助函数 ----------
+  // 打开（或聚焦）一篇笔记到左窗格
+  const openNote = useCallback((note: Note) => {
+    setOpenTabs(prev => {
+      const idx = prev.findIndex(t => t.id === note.id);
+      if (idx >= 0) {
+        // 已打开：仅聚焦，不覆盖（避免丢失未保存编辑）
+        return prev;
+      }
+      return [...prev, note];
+    });
+    setActiveTabId(note.id);
+  }, []);
+
+  // 更新当前激活标签的局部字段
+  const updateActiveTab = useCallback((patch: Partial<Note>) => {
+    setOpenTabs(prev => prev.map(t => (t.id === activeTabId ? { ...t, ...patch } : t)));
+  }, [activeTabId]);
+
+  // 更新指定笔记（用于分屏右窗格）
+  const updateNote = useCallback((id: string, patch: Partial<Note>) => {
+    setOpenTabs(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)));
+    setSplitNote(prev => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+  }, []);
+
+  // 关闭标签
+  const closeTab = useCallback((id: string) => {
+    setOpenTabs(prev => {
+      const idx = prev.findIndex(t => t.id === id);
+      if (idx < 0) return prev;
+      const next = prev.filter(t => t.id !== id);
+      // 若关闭的是当前激活标签，则切换到相邻标签
+      if (activeTabId === id) {
+        const newActive = next[Math.min(idx, next.length - 1)];
+        setActiveTabId(newActive ? newActive.id : null);
+      }
+      return next;
+    });
+    // 若关闭的是分屏笔记，清空分屏
+    setSplitNote(prev => (prev && prev.id === id ? null : prev));
+  }, [activeTabId]);
+
+  // 切换标签（方向 -1 = 上一个，1 = 下一个）
+  const switchTab = useCallback((direction: 1 | -1) => {
+    setOpenTabs(prev => {
+      if (prev.length === 0) return prev;
+      const idx = prev.findIndex(t => t.id === activeTabId);
+      const newIdx = (idx + direction + prev.length) % prev.length;
+      setActiveTabId(prev[newIdx].id);
+      return prev;
+    });
+  }, [activeTabId]);
+
+  // 切换分屏：开 → 关；关 → 开（右窗格初始展示当前笔记）
+  const toggleSplit = useCallback(() => {
+    setSplitNote(prev => {
+      if (prev) return null;
+      return currentNote;
+    });
+  }, [currentNote]);
+
+  // 在分屏中打开指定标签
+  const openInSplit = useCallback((id: string) => {
+    const note = openTabs.find(t => t.id === id);
+    if (note) setSplitNote(note);
+  }, [openTabs]);
 
   // Initialize
   useEffect(() => {
@@ -130,7 +235,27 @@ const App = () => {
     setTheme(savedTheme);
     applyTheme(savedTheme);
 
-    setCurrentNote({
+    // Load AI config
+    const savedAI = localStorage.getItem('aiConfig');
+    if (savedAI) {
+      try { setAIConfig(JSON.parse(savedAI)); } catch { /* ignore */ }
+    }
+
+    // Load templates
+    const savedTpls = localStorage.getItem('templates');
+    if (savedTpls) {
+      try { setTemplates(JSON.parse(savedTpls)); } catch { /* ignore */ }
+    }
+
+    // Load current dir
+    const savedDir = localStorage.getItem('currentDir');
+    if (savedDir) {
+      setCurrentDir(savedDir);
+      refreshFileList(savedDir);
+      refreshKnowledgeIndex(savedDir);
+    }
+
+    openNote({
       id: 'demo-welcome',
       title: 'Welcome to ZenNote',
       content: DEMO_CONTENT,
@@ -161,11 +286,155 @@ const App = () => {
     }
   }, []);
 
+  // Build global knowledge index: tags + graph nodes/links (from all notes in dir)
+  const refreshKnowledgeIndex = useCallback(async (dirPath: string) => {
+    if (!dirPath) return;
+    const result = await electronAPI.invoke('read-all-notes', dirPath);
+    if (!result.success || !result.notes) return;
+
+    const notes: any[] = result.notes;
+
+    // Tags aggregation
+    const tagMap = new Map<string, string[]>();
+    notes.forEach(n => {
+      (n.tags || []).forEach((t: string) => {
+        if (!tagMap.has(t)) tagMap.set(t, []);
+        tagMap.get(t)!.push(n.filePath);
+      });
+    });
+    const tagList: Tag[] = Array.from(tagMap.entries())
+      .map(([name, paths]) => ({ name, count: paths.length, notes: paths }))
+      .sort((a, b) => b.count - a.count);
+    setTags(tagList);
+
+    // Graph: nodes = all notes, links = wiki links (resolved by title)
+    const titleToPath = new Map<string, string>();
+    notes.forEach(n => titleToPath.set(n.title.toLowerCase(), n.filePath));
+    const nodes: GraphNode[] = notes.map(n => ({
+      id: n.filePath,
+      name: n.title,
+      path: n.filePath,
+      group: (n.tags?.[0] as string) || undefined,
+    }));
+    const links: GraphLink[] = [];
+    const linkSet = new Set<string>();
+    notes.forEach(n => {
+      (n.links || []).forEach((targetTitle: string) => {
+        const targetPath = titleToPath.get(targetTitle.toLowerCase());
+        if (targetPath && targetPath !== n.filePath) {
+          const key = `${n.filePath}->${targetPath}`;
+          if (!linkSet.has(key)) {
+            linkSet.add(key);
+            links.push({ source: n.filePath, target: targetPath });
+          }
+        }
+      });
+    });
+    setGraphNodes(nodes);
+    setGraphLinks(links);
+  }, []);
+
+  // Find backlinks for the current note
+  const refreshBacklinks = useCallback(async () => {
+    if (!currentNote || !currentDir) {
+      setBacklinks([]);
+      return;
+    }
+    const result = await electronAPI.invoke('find-backlinks', currentDir, currentNote.title, currentNote.filePath || '');
+    if (result.success && result.backlinks) {
+      setBacklinks(result.backlinks);
+    } else {
+      setBacklinks([]);
+    }
+  }, [currentNote, currentDir]);
+
+  useEffect(() => {
+    refreshBacklinks();
+  }, [refreshBacklinks]);
+
+  // Run an AI action against the current note
+  const runAIAction = useCallback(async (action: AIAction, context?: string): Promise<string> => {
+    if (!aiConfig.enabled) {
+      throw new Error('AI is not enabled. Open Settings → AI Provider to configure.');
+    }
+
+    const noteContent = currentNote?.content || '';
+    const noteTitle = currentNote?.title || '';
+    const truncated = noteContent.length > 8000 ? noteContent.slice(0, 8000) + '\n...[truncated]' : noteContent;
+
+    const systemPrompts: Record<AIAction, string> = {
+      summarize: 'You are a notes assistant. Summarize the user\'s note into 5 concise bullet points capturing the key ideas. Respond in markdown.',
+      tags: 'You are a notes assistant. Suggest 5-10 short #tags (single-word or hyphenated, lowercase) that fit this note. Respond with only a comma-separated list of tags, no preamble.',
+      outline: 'You are a notes assistant. Generate a structured markdown outline (## headings + sub-points) that organizes the topics in this note. Respond in markdown.',
+      'suggest-links': `You are a notes assistant. Given the note and a list of available note titles, suggest 3-5 wiki links ([[Note Title]]) that the author could add to connect related ideas. Respond as a markdown list. Available titles:\n${allFiles.map(f => f.name).slice(0, 100).join('\n')}`,
+      chat: 'You are ZenNote\'s AI assistant. Answer the user\'s questions about their notes concisely. Use markdown when helpful.',
+    };
+
+    const userPrompts: Record<AIAction, string> = {
+      summarize: `Summarize this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
+      tags: `Suggest tags for this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
+      outline: `Generate an outline for this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
+      'suggest-links': `Suggest wiki links for this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
+      chat: context || `Note: ${noteTitle}\n\n${truncated}`,
+    };
+
+    const messages: AIMessage[] = [
+      { role: 'system', content: systemPrompts[action] },
+      { role: 'user', content: userPrompts[action] },
+    ];
+
+    const result = await electronAPI.invoke('ai-chat', aiConfig, messages);
+    if (!result.success) {
+      throw new Error(result.error || 'AI request failed');
+    }
+    return result.content || '(empty response)';
+  }, [aiConfig, currentNote, allFiles]);
+
+  const handleInsertText = useCallback((text: string) => {
+    if (!editorRef.current) return;
+    editorRef.current.chain().focus().insertContent('\n\n' + text + '\n').run();
+    setShowAIPanel(false);
+  }, []);
+
   // Toast helper
   const showToast = useCallback((message: string) => {
     setToast(message);
     setTimeout(() => setToast(null), 2500);
   }, []);
+
+  // Create today's daily note
+  const handleCreateDaily = useCallback(async () => {
+    if (!currentDir) {
+      showToast('Open a folder first');
+      return;
+    }
+    const filePath = dailyNotePath(currentDir);
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily/i.test(t.name));
+    const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## Plan\n- [ ]\n`, todayTitle());
+
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, content, 'utf-8');
+    }
+    const result = await readFile(filePath);
+    if (result.success && result.content !== undefined) {
+      openNote({
+        id: filePath,
+        title: todayTitle(),
+        content: result.content,
+        filePath,
+        lastModified: new Date(),
+        isDirty: false,
+      });
+      setLastSaved(new Date());
+      showToast('Daily note opened');
+    }
+    refreshFileList(currentDir);
+    refreshKnowledgeIndex(currentDir);
+  }, [currentDir, templates, readFile, refreshFileList, refreshKnowledgeIndex, showToast, openNote]);
 
   // Electron IPC listeners
   useEffect(() => {
@@ -201,6 +470,18 @@ const App = () => {
       'insert-math': () => editorRef.current?.chain().focus().toggleMath().run(),
       'insert-horizontal-rule': () => editorRef.current?.chain().focus().setHorizontalRule().run(),
       'insert-emoji': () => { /* handled by Editor component */ },
+      'insert-math-formula': () => editorRef.current?.chain().focus().toggleMath().run(),
+      // Knowledge management
+      'toggle-graph': () => setShowKnowledgeGraph(prev => !prev),
+      'toggle-backlinks': () => setShowBacklinks(prev => !prev),
+      'create-daily-note': () => handleCreateDaily(),
+      'insert-template': () => setShowQuickInsert(true),
+      // AI
+      'toggle-ai-panel': () => setShowAIPanel(prev => !prev),
+      'open-settings': () => setShowSettings(true),
+      'ai-summarize': () => { setShowAIPanel(true); /* user clicks Summarize */ },
+      'ai-tags': () => { setShowAIPanel(true); },
+      'ai-outline': () => { setShowAIPanel(true); },
     };
 
     Object.entries(handlers).forEach(([event, handler]) => {
@@ -231,15 +512,44 @@ const App = () => {
       } else if (cmd && e.shiftKey && e.key === 'O') {
         e.preventDefault();
         handleOpenFolderDialog();
+      } else if (cmd && e.key === 'j') {
+        e.preventDefault();
+        setShowAIPanel(prev => !prev);
+      } else if (cmd && e.shiftKey && e.key === 'D') {
+        // 每日笔记移至 Cmd+Shift+D（Cmd+D 让给多光标）
+        e.preventDefault();
+        handleCreateDaily();
+      } else if (cmd && e.shiftKey && e.key === 'G') {
+        e.preventDefault();
+        setShowKnowledgeGraph(prev => !prev);
+      } else if (cmd && e.key === 'w' && !e.shiftKey) {
+        // Cmd+W：关闭当前标签
+        e.preventDefault();
+        if (activeTabId) closeTab(activeTabId);
+      } else if (cmd && e.shiftKey && e.code === 'BracketLeft') {
+        // Cmd+Shift+[：上一个标签
+        e.preventDefault();
+        switchTab(-1);
+      } else if (cmd && e.shiftKey && e.code === 'BracketRight') {
+        // Cmd+Shift+]：下一个标签
+        e.preventDefault();
+        switchTab(1);
+      } else if (cmd && e.code === 'Backslash') {
+        // Cmd+\：切换分屏
+        e.preventDefault();
+        toggleSplit();
       } else if (e.key === 'Escape') {
         setShowQuickSwitcher(false);
         setShowCommandPalette(false);
         setShowFindReplace(false);
+        setShowQuickInsert(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    // handleCreateDaily / handleOpenFolderDialog 声明在 effect 之后，但均为稳定 useCallback，捕获首帧即可
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, closeTab, switchTab, toggleSplit]);
 
   const cycleTheme = useCallback(() => {
     setTheme(prev => {
@@ -251,14 +561,20 @@ const App = () => {
   }, []);
 
   const handleNewNote = useCallback(() => {
-    setCurrentNote(createNewNote());
+    openNote(createNewNote());
     setLastSaved(null);
-  }, []);
+  }, [openNote]);
 
   const handleOpenFile = useCallback(async (filePath: string) => {
+    // 若标签已打开，仅聚焦，避免覆盖未保存编辑
+    if (openTabs.some(t => t.id === filePath)) {
+      setActiveTabId(filePath);
+      setLastSaved(new Date());
+      return;
+    }
     const result = await readFile(filePath);
     if (result.success && result.content !== undefined) {
-      setCurrentNote({
+      openNote({
         id: filePath,
         title: filePath.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || 'Untitled',
         content: result.content,
@@ -268,31 +584,42 @@ const App = () => {
       });
       setLastSaved(new Date());
     }
-  }, [readFile]);
+  }, [readFile, openNote, openTabs]);
 
   const handleOpenFolder = useCallback((dirPath: string) => {
     if (dirPath) {
+      setCurrentDir(dirPath);
+      localStorage.setItem('currentDir', dirPath);
       refreshFileList(dirPath);
+      refreshKnowledgeIndex(dirPath);
     }
-  }, [refreshFileList]);
+  }, [refreshFileList, refreshKnowledgeIndex]);
 
   const handleOpenFolderDialog = useCallback(async () => {
     const result = await electronAPI.invoke('show-open-dialog');
     if (!result.canceled && result.filePath) {
+      setCurrentDir(result.filePath);
+      localStorage.setItem('currentDir', result.filePath);
       refreshFileList(result.filePath);
+      refreshKnowledgeIndex(result.filePath);
     }
-  }, [refreshFileList]);
+  }, [refreshFileList, refreshKnowledgeIndex]);
 
   const handleSave = useCallback(async () => {
     if (!currentNote || !currentNote.isDirty) return;
     if (currentNote.filePath) {
       await writeFile(currentNote.filePath, currentNote.content);
-      setCurrentNote(prev => prev ? { ...prev, isDirty: false } : null);
+      updateActiveTab({ isDirty: false });
       setLastSaved(new Date());
+      // Refresh knowledge index since tags/links may have changed
+      if (currentDir) {
+        refreshKnowledgeIndex(currentDir);
+        refreshBacklinks();
+      }
     } else {
       handleSaveAs();
     }
-  }, [currentNote, writeFile]);
+  }, [currentNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateActiveTab]);
 
   const handleSaveAs = useCallback(async () => {
     if (!currentNote) return;
@@ -300,8 +627,7 @@ const App = () => {
     const result = await showSaveDialog(`~/Documents/${title}.md`);
     if (!result.canceled && result.filePath) {
       await writeFile(result.filePath, currentNote.content);
-      setCurrentNote({
-        ...currentNote,
+      updateActiveTab({
         filePath: result.filePath,
         isDirty: false,
         title: result.filePath.split('/').pop()?.replace(/\.md$/, '') || title,
@@ -309,7 +635,7 @@ const App = () => {
       setLastSaved(new Date());
       showToast('Saved successfully');
     }
-  }, [currentNote, writeFile, showSaveDialog, showToast]);
+  }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab]);
 
   const handleExportHtml = useCallback(async () => {
     if (!currentNote) return;
@@ -331,67 +657,66 @@ const App = () => {
 
   const handleContentChange = useCallback((content: string) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    setCurrentNote(prev => prev ? { ...prev, content, isDirty: true } : null);
+    updateActiveTab({ content, isDirty: true });
     debounceTimer.current = setTimeout(() => handleSave(), 2000);
-  }, [handleSave]);
+  }, [handleSave, updateActiveTab]);
 
   const handleTitleChange = useCallback((title: string) => {
-    setCurrentNote(prev => prev ? { ...prev, title, isDirty: true } : null);
-  }, []);
+    updateActiveTab({ title, isDirty: true });
+  }, [updateActiveTab]);
 
-  const handleWikiLinksChange = useCallback((links: WikiLinkItem[]) => {
-    const nodes: GraphNode[] = [];
-    const linkSet = new Set<string>();
-
-    if (currentNote) {
-      nodes.push({
-        id: currentNote.filePath || currentNote.id,
-        name: currentNote.title,
-        path: currentNote.filePath || '',
-      });
+  // 分屏右窗格的保存（独立防抖）
+  const splitDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSaveSplit = useCallback(async () => {
+    if (!splitNote || !splitNote.isDirty || !splitNote.filePath) return;
+    await writeFile(splitNote.filePath, splitNote.content);
+    updateNote(splitNote.id, { isDirty: false });
+    if (currentDir) {
+      refreshKnowledgeIndex(currentDir);
+      refreshBacklinks();
     }
+  }, [splitNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateNote]);
 
-    links.forEach(link => {
-      nodes.push({
-        id: link.targetPath,
-        name: link.text,
-        path: link.targetPath,
-      });
-      const sourceId = currentNote?.filePath || currentNote?.id || '';
-      const linkKey = `${sourceId}->${link.targetPath}`;
-      if (!linkSet.has(linkKey)) {
-        linkSet.add(linkKey);
-        setGraphLinks((prev: GraphLink[]) => [...prev, { source: sourceId, target: link.targetPath }]);
-      }
-    });
+  const handleSplitContentChange = useCallback((content: string) => {
+    if (!splitNote) return;
+    updateNote(splitNote.id, { content, isDirty: true });
+    if (splitDebounce.current) clearTimeout(splitDebounce.current);
+    splitDebounce.current = setTimeout(() => handleSaveSplit(), 2000);
+  }, [splitNote, updateNote, handleSaveSplit]);
 
-    setGraphNodes(nodes);
-  }, [currentNote]);
+  const handleSplitTitleChange = useCallback((title: string) => {
+    if (!splitNote) return;
+    updateNote(splitNote.id, { title, isDirty: true });
+  }, [splitNote, updateNote]);
+
+  // Wiki links are now tracked globally via refreshKnowledgeIndex (reads all notes).
+  // This handler is kept for the Editor's prop interface but does not mutate graph state
+  // (the previous implementation duplicated links on every keystroke).
+  const handleWikiLinksChange = useCallback((_links: WikiLinkItem[]) => {
+    // no-op: graph is rebuilt by refreshKnowledgeIndex after save / folder open
+  }, []);
 
   const handleSelectNote = useCallback((note: Note) => {
-    setCurrentNote(note);
+    openNote(note);
     setLastSaved(new Date());
-  }, []);
+  }, [openNote]);
 
   const handleJumpToHeading = useCallback((pos: number) => {
     editorRef.current?.jumpToHeading?.(pos);
   }, []);
 
-  // Track active heading based on cursor position
-  useEffect(() => {
-    if (headings.length === 0) {
-      setActiveHeading(null);
-      return;
-    }
-    // Just set the first heading as active for now
-    // Real implementation would track scroll position
-  }, [headings]);
+  // Track active heading based on cursor position（由 Editor 通过 onActiveHeadingChange 上报）
+  const handleActiveHeadingChange = useCallback((id: string | null) => {
+    setActiveHeading(id);
+  }, []);
 
   // Build command palette commands
   const commands: Command[] = [
     { id: 'new-note', title: 'New Note', shortcut: 'Cmd+N', category: 'File', action: handleNewNote },
     { id: 'save', title: 'Save', shortcut: 'Cmd+S', category: 'File', action: handleSave },
     { id: 'save-as', title: 'Save As', shortcut: 'Cmd+Shift+S', category: 'File', action: handleSaveAs },
+    { id: 'daily-note', title: "Today's Daily Note", shortcut: 'Cmd+Shift+D', category: 'File', action: handleCreateDaily },
+    { id: 'insert-template', title: 'Insert from Template', shortcut: 'Cmd+Shift+I', category: 'Insert', action: () => setShowQuickInsert(true) },
     { id: 'export-html', title: 'Export as HTML', category: 'Export', action: handleExportHtml },
     { id: 'export-pdf', title: 'Export as PDF', category: 'Export', action: handleExportPdf },
     { id: 'toggle-source', title: 'Toggle Source Mode', shortcut: 'Cmd+/', category: 'View', action: () => setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg') },
@@ -399,11 +724,36 @@ const App = () => {
     { id: 'toggle-typewriter', title: 'Toggle Typewriter Mode', category: 'View', action: () => setTypewriterMode(prev => !prev) },
     { id: 'toggle-sidebar', title: 'Toggle Sidebar', shortcut: 'Cmd+B', category: 'View', action: () => setSidebarOpen(prev => !prev) },
     { id: 'toggle-outline', title: 'Toggle Outline', category: 'View', action: () => setOutlineOpen(prev => !prev) },
+    { id: 'toggle-graph', title: 'Toggle Knowledge Graph', shortcut: 'Cmd+Shift+G', category: 'View', action: () => setShowKnowledgeGraph(prev => !prev) },
+    { id: 'toggle-backlinks', title: 'Toggle Backlinks', category: 'View', action: () => setShowBacklinks(prev => !prev) },
+    { id: 'toggle-ai', title: 'Toggle AI Assistant', shortcut: 'Cmd+J', category: 'AI', action: () => setShowAIPanel(prev => !prev) },
+    { id: 'open-settings', title: 'Open Settings', category: 'AI', action: () => setShowSettings(true) },
     { id: 'toggle-find', title: 'Find & Replace', shortcut: 'Cmd+F', category: 'Edit', action: () => setShowFindReplace(true) },
     { id: 'cycle-theme', title: 'Cycle Theme', category: 'View', action: cycleTheme },
     { id: 'quick-switch', title: 'Quick Switch File', shortcut: 'Cmd+P', category: 'Go', action: () => setShowQuickSwitcher(true) },
-    { id: 'toggle-graph', title: 'Toggle Knowledge Graph', category: 'View', action: () => setShowKnowledgeGraph(prev => !prev) },
+    { id: 'close-tab', title: 'Close Tab', shortcut: 'Cmd+W', category: 'View', action: () => activeTabId && closeTab(activeTabId) },
+    { id: 'next-tab', title: 'Next Tab', shortcut: 'Cmd+Shift+]', category: 'View', action: () => switchTab(1) },
+    { id: 'prev-tab', title: 'Previous Tab', shortcut: 'Cmd+Shift+[', category: 'View', action: () => switchTab(-1) },
+    { id: 'toggle-split', title: 'Toggle Split Pane', shortcut: 'Cmd+\\', category: 'View', action: toggleSplit },
   ];
+
+  const handleTagClick = useCallback((tag: string) => {
+    setActiveTag(prev => prev === tag ? null : tag);
+  }, []);
+
+  // When a tag is active, filter the quick switcher-style file list to that tag's notes
+  // 嵌套标签：选中父标签时包含所有后代标签的笔记（前缀匹配 "tag/" 或完全相等）
+  const taggedFiles = activeTag
+    ? Array.from(new Set(
+        tags
+          .filter(t => t.name === activeTag || t.name.startsWith(activeTag + '/'))
+          .flatMap(t => t.notes)
+      )).map(p => ({
+        path: p,
+        name: p.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || p,
+        lastModified: Date.now(),
+      }))
+    : allFiles;
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100%', overflow: 'hidden' }}>
@@ -413,45 +763,95 @@ const App = () => {
         onSelectNote={handleSelectNote}
         onNewNote={handleNewNote}
         onOpenFolder={handleOpenFolder}
+        tags={tags}
+        onTagClick={handleTagClick}
+        activeTag={activeTag}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenAI={() => setShowAIPanel(true)}
+        onCreateDaily={handleCreateDaily}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {currentNote ? (
-          <>
-            <Editor
-              content={currentNote.content}
-              onChange={handleContentChange}
-              title={currentNote.title}
-              onTitleChange={handleTitleChange}
-              editorMode={editorMode}
-              focusMode={focusMode}
-              typewriterMode={typewriterMode}
-              showFindReplace={showFindReplace}
-              onToggleFindReplace={() => setShowFindReplace(false)}
-              onStatsChange={setStats}
-              onHeadingsChange={setHeadings}
-              onWikiLinksChange={handleWikiLinksChange}
-              currentFilePath={currentNote.filePath}
-              editorRef={editorRef}
-            />
-            <StatusBar
-              theme={theme}
-              onCycleTheme={cycleTheme}
-              isDirty={currentNote.isDirty}
-              lastSaved={lastSaved}
-              stats={stats}
-              editorMode={editorMode}
-              focusMode={focusMode}
-              typewriterMode={typewriterMode}
-              onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
-              onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
-              onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
-            />
-          </>
-        ) : (
+        <TabsBar
+          tabs={openTabs}
+          activeId={activeTabId}
+          splitId={splitNote?.id || null}
+          onSelect={(id) => { setActiveTabId(id); setLastSaved(new Date()); }}
+          onClose={closeTab}
+          onOpenInSplit={openInSplit}
+          onToggleSplit={toggleSplit}
+          isSplit={!!splitNote}
+        />
+        {openTabs.length === 0 ? (
           <div className="empty-state">
             <h1>Welcome to ZenNote</h1>
             <p>Select a folder or create a new note to start writing</p>
+          </div>
+        ) : (
+          <div className={`editor-area ${splitNote ? 'split' : ''}`}>
+            <div className="editor-pane editor-pane-main">
+              {currentNote && (
+                <>
+                  <Breadcrumb
+                    filePath={currentNote.filePath}
+                    noteTitle={currentNote.title}
+                    headings={headings}
+                    activeHeadingId={activeHeading}
+                    onHeadingClick={handleJumpToHeading}
+                  />
+                  <Editor
+                    content={currentNote.content}
+                    onChange={handleContentChange}
+                    title={currentNote.title}
+                    onTitleChange={handleTitleChange}
+                    editorMode={editorMode}
+                    focusMode={focusMode}
+                    typewriterMode={typewriterMode}
+                    showFindReplace={showFindReplace}
+                    onToggleFindReplace={() => setShowFindReplace(false)}
+                    onStatsChange={setStats}
+                    onHeadingsChange={setHeadings}
+                    onWikiLinksChange={handleWikiLinksChange}
+                    currentFilePath={currentNote.filePath}
+                    editorRef={editorRef}
+                    onActiveHeadingChange={handleActiveHeadingChange}
+                  />
+                  <StatusBar
+                    theme={theme}
+                    onCycleTheme={cycleTheme}
+                    isDirty={currentNote.isDirty}
+                    lastSaved={lastSaved}
+                    stats={stats}
+                    editorMode={editorMode}
+                    focusMode={focusMode}
+                    typewriterMode={typewriterMode}
+                    onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
+                    onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
+                    onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
+                  />
+                </>
+              )}
+            </div>
+            {splitNote && (
+              <div className="editor-pane editor-pane-split">
+                <Editor
+                  content={splitNote.content}
+                  onChange={handleSplitContentChange}
+                  title={splitNote.title}
+                  onTitleChange={handleSplitTitleChange}
+                  editorMode={editorMode}
+                  focusMode={focusMode}
+                  typewriterMode={typewriterMode}
+                  showFindReplace={false}
+                  onToggleFindReplace={() => {}}
+                  onStatsChange={() => {}}
+                  onHeadingsChange={() => {}}
+                  onWikiLinksChange={() => {}}
+                  currentFilePath={splitNote.filePath}
+                  editorRef={editorRefSplit}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -465,9 +865,30 @@ const App = () => {
         />
       )}
 
+      {showBacklinks && currentNote && (
+        <BacklinksPanel
+          backlinks={backlinks}
+          onJump={(filePath) => {
+            handleOpenFile(filePath);
+            setShowBacklinks(false);
+          }}
+          onClose={() => setShowBacklinks(false)}
+        />
+      )}
+
+      {showAIPanel && (
+        <AIPanel
+          onAction={runAIAction}
+          onInsert={handleInsertText}
+          onClose={() => setShowAIPanel(false)}
+          enabled={aiConfig.enabled}
+          onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
+        />
+      )}
+
       {showQuickSwitcher && (
         <QuickSwitcher
-          files={allFiles}
+          files={taggedFiles}
           onSelect={(filePath) => {
             handleOpenFile(filePath);
             setShowQuickSwitcher(false);
@@ -487,14 +908,13 @@ const App = () => {
         <div className="knowledge-graph-panel">
           <div className="outline-header">
             <span>Knowledge Graph</span>
-            <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>
-              ×
-            </button>
+            <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>×</button>
           </div>
           <KnowledgeGraph
             nodes={graphNodes}
             links={graphLinks}
             currentFilePath={currentNote.filePath}
+            tags={tags}
             onNodeClick={(node) => {
               if (node.path && node.path.endsWith('.md')) {
                 handleOpenFile(node.path);
@@ -504,6 +924,58 @@ const App = () => {
           />
         </div>
       )}
+
+      <SettingsDialog
+        open={showSettings}
+        aiConfig={aiConfig}
+        templates={templates}
+        onSaveAI={(cfg) => {
+          setAIConfig(cfg);
+          localStorage.setItem('aiConfig', JSON.stringify(cfg));
+          showToast(cfg.enabled ? 'AI enabled' : 'AI disabled');
+        }}
+        onSaveTemplates={(tpls) => {
+          setTemplates(tpls);
+          localStorage.setItem('templates', JSON.stringify(tpls));
+        }}
+        onClose={() => setShowSettings(false)}
+      />
+
+      <QuickInsert
+        open={showQuickInsert}
+        templates={templates}
+        currentDir={currentDir}
+        onInsert={(content) => {
+          editorRef.current?.chain().focus().insertContent(content).run();
+        }}
+        onCreateDaily={async (filePath, content) => {
+          if (!filePath) {
+            showToast('Open a folder first');
+            return;
+          }
+          const dir = path.dirname(filePath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          if (!fs.existsSync(filePath)) {
+            fs.writeFileSync(filePath, content, 'utf-8');
+          }
+          const res = await readFile(filePath);
+          if (res.success && res.content !== undefined) {
+            openNote({
+              id: filePath,
+              title: todayTitle(),
+              content: res.content,
+              filePath,
+              lastModified: new Date(),
+              isDirty: false,
+            });
+            setLastSaved(new Date());
+            showToast('Daily note created');
+          }
+          refreshFileList(currentDir);
+          refreshKnowledgeIndex(currentDir);
+        }}
+        onClose={() => setShowQuickInsert(false)}
+      />
 
       {toast && <div className="toast">{toast}</div>}
     </div>

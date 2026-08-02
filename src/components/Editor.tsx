@@ -25,6 +25,9 @@ import Superscript from '@tiptap/extension-superscript';
 import Mathematics from '@tiptap/extension-mathematics';
 import { Mermaid } from '../lib/MermaidExtension';
 import { WikiLink } from '../lib/WikiLinkExtension';
+import { Tag } from '../lib/TagExtension';
+import { BlockReference } from '../lib/BlockReferenceExtension';
+import { MultiCursor } from '../lib/MultiCursorExtension';
 import { createLowlight } from 'lowlight';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
@@ -41,6 +44,7 @@ import cpp from 'highlight.js/lib/languages/cpp';
 import { Toolbar } from './Toolbar';
 import { FindReplace } from './FindReplace';
 import { EmojiPicker } from './EmojiPicker';
+import { Minimap } from './Minimap';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { EditorMode, HeadingItem, WikiLinkItem } from '../types';
 import mermaid from 'mermaid';
@@ -82,6 +86,7 @@ interface EditorProps {
   onWikiLinksChange: (links: WikiLinkItem[]) => void;
   currentFilePath: string;
   editorRef: React.MutableRefObject<any>;
+  onActiveHeadingChange?: (id: string | null) => void;
 }
 
 export const Editor = ({
@@ -99,9 +104,11 @@ export const Editor = ({
   onWikiLinksChange,
   currentFilePath,
   editorRef,
+  onActiveHeadingChange,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const editorScrollRef = useRef<HTMLDivElement>(null);
+  const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -136,6 +143,9 @@ export const Editor = ({
       Mathematics,
       Mermaid,
       WikiLink,
+      Tag,
+      BlockReference,
+      MultiCursor,
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -251,7 +261,19 @@ export const Editor = ({
       }
     });
     onHeadingsChange(headings);
-  }, [editor, onHeadingsChange]);
+
+    // 计算当前光标所在标题：最近的 H1/H2/H3 前驱
+    const cursorPos = editor.state.selection.from;
+    let activeId: string | null = null;
+    for (const h of headings) {
+      if (h.level <= 3 && h.pos <= cursorPos) {
+        activeId = h.id;
+      } else if (h.pos > cursorPos) {
+        break;
+      }
+    }
+    onActiveHeadingChange?.(activeId);
+  }, [editor, onHeadingsChange, onActiveHeadingChange]);
 
   const updateWikiLinks = useCallback(() => {
     if (!editor) return;
@@ -374,10 +396,13 @@ export const Editor = ({
         placeholder="Note title..."
       />
 
-      <div className="editor-scroll" ref={editorScrollRef}>
-        <div className="editor-content">
-          <EditorContent editor={editor} />
+      <div className="editor-body-row">
+        <div className="editor-scroll" ref={(el) => { editorScrollRef.current = el; setScrollContainerEl(el); }}>
+          <div className="editor-content">
+            <EditorContent editor={editor} />
+          </div>
         </div>
+        <Minimap editor={editor} scrollContainer={scrollContainerEl} />
       </div>
 
       {showEmojiPicker && (

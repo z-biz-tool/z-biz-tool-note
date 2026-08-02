@@ -145,6 +145,14 @@ async function createWindow() {
           label: 'Toggle Outline',
           click: () => mainWindow?.webContents.send('toggle-outline'),
         },
+        {
+          label: 'Toggle Knowledge Graph',
+          click: () => mainWindow?.webContents.send('toggle-graph'),
+        },
+        {
+          label: 'Toggle Backlinks',
+          click: () => mainWindow?.webContents.send('toggle-backlinks'),
+        },
         { type: 'separator' },
         {
           label: 'Toggle Dark Mode',
@@ -186,6 +194,44 @@ async function createWindow() {
         {
           label: 'Emoji',
           click: () => mainWindow?.webContents.send('insert-emoji'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Today\'s Daily Note',
+          accelerator: 'CmdOrCtrl+D',
+          click: () => mainWindow?.webContents.send('create-daily-note'),
+        },
+        {
+          label: 'From Template...',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => mainWindow?.webContents.send('insert-template'),
+        },
+      ],
+    },
+    {
+      label: 'AI',
+      submenu: [
+        {
+          label: 'Toggle AI Assistant',
+          accelerator: 'CmdOrCtrl+J',
+          click: () => mainWindow?.webContents.send('toggle-ai-panel'),
+        },
+        {
+          label: 'Summarize Note',
+          click: () => mainWindow?.webContents.send('ai-summarize'),
+        },
+        {
+          label: 'Extract Tags',
+          click: () => mainWindow?.webContents.send('ai-tags'),
+        },
+        {
+          label: 'Generate Outline',
+          click: () => mainWindow?.webContents.send('ai-outline'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Settings...',
+          click: () => mainWindow?.webContents.send('open-settings'),
         },
       ],
     },
@@ -536,6 +582,184 @@ ipcMain.handle('save-image', async (_event, imageData: string, notesDir: string,
 
     return { success: true, filePath: finalPath };
   } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+// ---------- Knowledge Graph / Backlinks / Tags ----------
+
+interface NoteIndex {
+  filePath: string;
+  fileName: string;
+  title: string;
+  content: string;
+  links: string[];   // raw [[wiki link]] targets
+  tags: string[];    // #tags found in content
+}
+
+function extractLinksFromContent(content: string): string[] {
+  const links: string[] = [];
+  const re = /\[\[([^\]]+)\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    const raw = m[1];
+    const note = raw.split('#')[0].trim();
+    if (note) links.push(note);
+  }
+  return links;
+}
+
+function extractTagsFromContent(content: string): string[] {
+  const tags: string[] = [];
+  const re = /(^|\s)#([\w\u4e00-\u9fa5][\w\u4e00-\u9fa5-/]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    tags.push(m[2]);
+  }
+  return tags;
+}
+
+function deriveTitle(content: string, fileName: string): string {
+  const firstHeading = content.match(/^#\s+(.+)$/m);
+  if (firstHeading) return firstHeading[1].trim();
+  return fileName.replace(/\.md$|\.markdown$/i, '');
+}
+
+ipcMain.handle('read-all-notes', async (_event, dirPath: string) => {
+  try {
+    const notes: NoteIndex[] = [];
+    const walk = (currentDir: string) => {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && /\.md$/i.test(entry.name)) {
+          try {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            notes.push({
+              filePath: fullPath,
+              fileName: entry.name,
+              title: deriveTitle(content, entry.name),
+              content,
+              links: extractLinksFromContent(content),
+              tags: extractTagsFromContent(content),
+            });
+          } catch { /* skip */ }
+        }
+      }
+    };
+    walk(dirPath);
+    return { success: true, notes };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+// Find all notes referencing a target note title (backlinks)
+ipcMain.handle('find-backlinks', async (_event, dirPath: string, targetTitle: string, targetPath: string) => {
+  try {
+    const backlinks: Array<{ sourcePath: string; sourceTitle: string; snippet: string; line: number }> = [];
+    const targetBase = targetTitle.replace(/\.md$/i, '').toLowerCase();
+    const walk = (currentDir: string) => {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && /\.md$/i.test(entry.name)) {
+          if (fullPath === targetPath) continue;
+          try {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const lines = content.split('\n');
+            lines.forEach((line, idx) => {
+              const re = /\[\[([^\]]+)\]\]/g;
+              let m: RegExpExecArray | null;
+              while ((m = re.exec(line)) !== null) {
+                const note = m[1].split('#')[0].trim().toLowerCase();
+                if (note === targetBase) {
+                  const start = Math.max(0, m.index - 30);
+                  const end = Math.min(line.length, m.index + m[0].length + 30);
+                  backlinks.push({
+                    sourcePath: fullPath,
+                    sourceTitle: deriveTitle(content, entry.name),
+                    snippet: (start > 0 ? '...' : '') + line.slice(start, end) + (end < line.length ? '...' : ''),
+                    line: idx + 1,
+                  });
+                }
+              }
+            });
+          } catch { /* skip */ }
+        }
+      }
+    };
+    walk(dirPath);
+    return { success: true, backlinks };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+});
+
+// ---------- AI: OpenAI-compatible chat completions ----------
+
+interface AIConfigDTO {
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  enabled: boolean;
+}
+
+interface ChatMessageDTO {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+ipcMain.handle('ai-chat', async (_event, config: AIConfigDTO, messages: ChatMessageDTO[]) => {
+  try {
+    if (!config?.enabled) {
+      return { success: false, error: 'AI is disabled. Open Settings → AI Provider to configure.' };
+    }
+    if (!config.baseURL || !config.apiKey || !config.model) {
+      return { success: false, error: 'AI config incomplete. Set baseURL, apiKey, and model.' };
+    }
+
+    const base = config.baseURL.replace(/\/$/, '');
+    const url = `${base}/chat/completions`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: 0.4,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      return { success: false, error: `HTTP ${resp.status}: ${text.slice(0, 300)}` };
+    }
+
+    const data: any = await resp.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    return { success: true, content };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      return { success: false, error: 'Request timed out (60s)' };
+    }
     return { success: false, error: (error as Error).message };
   }
 });
