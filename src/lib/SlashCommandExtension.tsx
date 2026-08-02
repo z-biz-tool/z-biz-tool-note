@@ -6,7 +6,7 @@ import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } fro
 import {
   FileTextOutlined, OrderedListOutlined, CodeOutlined, TableOutlined,
   FunctionOutlined, ApartmentOutlined, BulbOutlined, PictureOutlined,
-  CheckSquareOutlined, QuoteOutlined, LineOutlined, WarningOutlined,
+  CheckSquareOutlined, MessageOutlined, LineOutlined, WarningOutlined,
   InfoCircleOutlined, RocketOutlined, AlertOutlined, FormOutlined,
   HighlightOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
@@ -27,7 +27,7 @@ const COMMANDS: CommandItem[] = [
   { title: '无序列表', description: '项目符号列表', icon: <OrderedListOutlined />, category: '基础', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBulletList().run(); } },
   { title: '有序列表', description: '编号列表', icon: <OrderedListOutlined />, category: '基础', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleOrderedList().run(); } },
   { title: '任务列表', description: '待办事项', icon: <CheckSquareOutlined />, category: '基础', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleTaskList().run(); } },
-  { title: '引用', description: '引用块', icon: <QuoteOutlined />, category: '基础', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBlockquote().run(); } },
+  { title: '引用', description: '引用块', icon: <MessageOutlined />, category: '基础', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBlockquote().run(); } },
   { title: '分割线', description: '水平分割线', icon: <LineOutlined />, category: '基础', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setHorizontalRule().run(); } },
   // 高级块
   { title: '代码块', description: '代码高亮块', icon: <CodeOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleCodeBlock().run(); } },
@@ -40,9 +40,10 @@ const COMMANDS: CommandItem[] = [
   { title: '成功提示', description: '绿色成功框', icon: <RocketOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'success' }).run(); } },
   { title: '危险提示', description: '红色危险框', icon: <AlertOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'danger' }).run(); } },
   { title: '小贴士', description: '紫色提示框', icon: <BulbOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'tip' }).run(); } },
-  { title: '引用提示', description: '灰色引用框', icon: <QuoteOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'quote' }).run(); } },
+  { title: '引用提示', description: '灰色引用框', icon: <MessageOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'quote' }).run(); } },
   // 媒体
   { title: '图片', description: '插入图片', icon: <PictureOutlined />, category: '媒体', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setImage({ src: '' }).run(); } },
+  { title: '嵌入笔记', description: '![[笔记ID]]嵌入其他笔记', icon: <FileTextOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setEmbed({ noteId: '' }).run(); } },
   { title: '高亮', description: '文字高亮标记', icon: <HighlightOutlined />, category: '格式', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleHighlight().run(); } },
 ];
 

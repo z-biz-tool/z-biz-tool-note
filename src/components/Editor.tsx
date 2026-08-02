@@ -32,6 +32,10 @@ import { SlashCommand } from '../lib/SlashCommandExtension';
 import { Callout } from '../lib/CalloutExtension';
 import { DragHandle } from '../lib/DragHandleExtension';
 import { Fold } from '../lib/FoldExtension';
+import { Embed } from '../lib/EmbedExtension';
+import { TableEnhanced } from '../lib/TableEnhancedExtension';
+import { ImageEnhanced } from '../lib/ImageEnhancedExtension';
+import { SearchEnhanced } from '../lib/SearchEnhancedExtension';
 import { createLowlight } from 'lowlight';
 import js from 'highlight.js/lib/languages/javascript';
 import ts from 'highlight.js/lib/languages/typescript';
@@ -124,7 +128,7 @@ export const Editor = ({
         markedOptions: { gfm: true, breaks: true },
       }),
       Link.configure({ openOnClick: false, autolink: true }),
-      Image.configure({ inline: false, allowBase64: true }),
+      ImageEnhanced,
       CodeBlockLowlight.configure({ lowlight }),
       TaskList,
       TaskItem.configure({ nested: true }),
@@ -135,6 +139,7 @@ export const Editor = ({
       TableRow,
       TableCell,
       TableHeader,
+      TableEnhanced,
       HorizontalRule,
       Highlight,
       Typography,
@@ -154,6 +159,8 @@ export const Editor = ({
       Callout,
       DragHandle,
       Fold,
+      Embed,
+      SearchEnhanced,
     ],
     content,
     onUpdate: ({ editor }) => {
