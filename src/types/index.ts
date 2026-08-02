@@ -4,8 +4,10 @@ export interface Note {
   content: string;
   created: string;
   modified: string;
+  lastModified?: string;
   tags: string[];
   filePath?: string;
+  isDirty?: boolean;
 }
 
 export interface Config {
@@ -36,7 +38,9 @@ export interface WikiLinkItem {
 
 export interface GraphNode {
   id: string;
-  label: string;
+  name: string;
+  label?: string;
+  path?: string;
   group?: number;
 }
 
@@ -50,6 +54,8 @@ export interface AIConfig {
   apiKey: string;
   model: string;
   baseUrl?: string;
+  baseURL?: string;
+  enabled?: boolean;
 }
 
 export interface AIMessage {
