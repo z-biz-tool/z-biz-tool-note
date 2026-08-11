@@ -186,8 +186,12 @@ const App = () => {
     setSplitNote(prev => (prev && prev.id === id ? { ...prev, ...patch } : prev));
   }, []);
 
-  // 关闭标签
+  // 关闭标签（含未保存提示）
   const closeTab = useCallback((id: string) => {
+    const tab = openTabs.find(t => t.id === id);
+    if (tab?.isDirty && !window.confirm(`"${tab.title}" 有未保存的更改，确定关闭吗？`)) {
+      return;
+    }
     setOpenTabs(prev => {
       const idx = prev.findIndex(t => t.id === id);
       if (idx < 0) return prev;
@@ -201,7 +205,7 @@ const App = () => {
     });
     // 若关闭的是分屏笔记，清空分屏
     setSplitNote(prev => (prev && prev.id === id ? null : prev));
-  }, [activeTabId]);
+  }, [activeTabId, openTabs]);
 
   // 切换标签（方向 -1 = 上一个，1 = 下一个）
   const switchTab = useCallback((direction: 1 | -1) => {
@@ -237,13 +241,13 @@ const App = () => {
     // Load AI config
     const savedAI = localStorage.getItem('aiConfig');
     if (savedAI) {
-      try { setAIConfig(JSON.parse(savedAI)); } catch { /* ignore */ }
+      try { setAIConfig(JSON.parse(savedAI)); } catch (e) { console.warn('加载 AI 配置失败:', e); }
     }
 
     // Load templates
     const savedTpls = localStorage.getItem('templates');
     if (savedTpls) {
-      try { setTemplates(JSON.parse(savedTpls)); } catch { /* ignore */ }
+      try { setTemplates(JSON.parse(savedTpls)); } catch (e) { console.warn('加载模板失败:', e); }
     }
 
     // Load current dir
@@ -259,7 +263,7 @@ const App = () => {
       title: 'Welcome to ZenNote',
       content: DEMO_CONTENT,
       filePath: '',
-      lastModified: new Date(),
+      lastModified: new Date().toISOString(),
       isDirty: false,
     });
   }, []);
@@ -401,6 +405,23 @@ const App = () => {
     setTimeout(() => setToast(null), 2500);
   }, []);
 
+  // 文件监听：检测外部修改
+  useEffect(() => {
+    if (!currentNote?.filePath || !currentDir) return;
+    const interval = setInterval(async () => {
+      try {
+        const mtime = await invoke('get_file_modified', { path: currentNote.filePath });
+        // 如果文件被外部修改且我们已保存过
+        if (lastSaved && mtime > lastSaved.toISOString().replace('T', ' ').substring(0, 19)) {
+          showToast('文件已被外部修改，点击重新加载');
+        }
+      } catch {
+        // 文件可能已被删除，忽略
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [currentNote?.filePath, currentDir, lastSaved, showToast]);
+
   // Create today's daily note
   const handleCreateDaily = useCallback(async () => {
     if (!currentDir) {
@@ -411,13 +432,13 @@ const App = () => {
     const dir = filePath.substring(0, filePath.lastIndexOf('/'));
     try {
       await invoke('ensure_dir', { path: dir });
-    } catch {}
+    } catch (e) { console.warn('创建目录失败:', dir, e); }
     const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily/i.test(t.name));
     const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## Plan\n- [ ]\n`, todayTitle());
 
     try {
       await invoke('write_text_file', { path: filePath, content });
-    } catch {}
+    } catch (e) { console.warn('写入每日笔记失败:', filePath, e); }
     const result = await readFile(filePath);
     if (result.success && result.content !== undefined) {
       openNote({
@@ -425,7 +446,7 @@ const App = () => {
         title: todayTitle(),
         content: result.content,
         filePath,
-        lastModified: new Date(),
+        lastModified: new Date().toISOString(),
         isDirty: false,
       });
       setLastSaved(new Date());
@@ -578,7 +599,7 @@ const App = () => {
         title: filePath.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || 'Untitled',
         content: result.content,
         filePath,
-        lastModified: new Date(),
+        lastModified: new Date().toISOString(),
         isDirty: false,
       });
       setLastSaved(new Date());
@@ -608,6 +629,12 @@ const App = () => {
     if (!currentNote || !currentNote.isDirty) return;
     if (currentNote.filePath) {
       await writeFile(currentNote.filePath, currentNote.content);
+      // 创建备份（版本历史）
+      try {
+        await invoke('create_backup', { notePath: currentNote.filePath, content: currentNote.content });
+      } catch (e) {
+        console.warn('创建备份失败:', e);
+      }
       updateActiveTab({ isDirty: false });
       setLastSaved(new Date());
       // Refresh knowledge index since tags/links may have changed
@@ -833,6 +860,13 @@ const App = () => {
             </div>
             {splitNote && (
               <div className="editor-pane editor-pane-split">
+                <Breadcrumb
+                  filePath={splitNote.filePath}
+                  noteTitle={splitNote.title}
+                  headings={headings}
+                  activeHeadingId={activeHeading}
+                  onHeadingClick={handleJumpToHeading}
+                />
                 <Editor
                   content={splitNote.content}
                   onChange={handleSplitContentChange}
@@ -846,8 +880,21 @@ const App = () => {
                   onStatsChange={() => {}}
                   onHeadingsChange={() => {}}
                   onWikiLinksChange={() => {}}
-                  currentFilePath={splitNote.filePath}
+                  currentFilePath={splitNote.filePath || ''}
                   editorRef={editorRefSplit}
+                />
+                <StatusBar
+                  theme={theme}
+                  onCycleTheme={cycleTheme}
+                  isDirty={splitNote.isDirty}
+                  lastSaved={lastSaved}
+                  stats={stats}
+                  editorMode={editorMode}
+                  focusMode={focusMode}
+                  typewriterMode={typewriterMode}
+                  onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
+                  onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
+                  onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
                 />
               </div>
             )}
@@ -953,8 +1000,8 @@ const App = () => {
             return;
           }
           const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-          try { await invoke('ensure_dir', { path: dir }); } catch {}
-          try { await invoke('write_text_file', { path: filePath, content }); } catch {}
+          try { await invoke('ensure_dir', { path: dir }); } catch (e) { console.warn('创建目录失败:', dir, e); }
+          try { await invoke('write_text_file', { path: filePath, content }); } catch (e) { console.warn('写入每日笔记失败:', filePath, e); }
           const res = await readFile(filePath);
           if (res.success && res.content !== undefined) {
             openNote({
@@ -962,7 +1009,7 @@ const App = () => {
               title: todayTitle(),
               content: res.content,
               filePath,
-              lastModified: new Date(),
+              lastModified: new Date().toISOString(),
               isDirty: false,
             });
             setLastSaved(new Date());

@@ -41,7 +41,7 @@ export const TableEnhanced = Extension.create({
             const toolbar = document.createElement('div');
             toolbar.className = 'table-toolbar';
             toolbar.contentEditable = 'false';
-            toolbar.style.cssText = 'display:flex;gap:2px;padding:4px;background:#fff;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.12);position:absolute;top:-40px;left:0;z-index:100;';
+            toolbar.style.cssText = 'display:flex;gap:2px;padding:4px;background:var(--bg-primary);border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.12);position:absolute;top:-40px;left:0;z-index:100;';
 
             const buttons = [
               { label: '+行', action: 'addRowAfter' },
@@ -58,9 +58,9 @@ export const TableEnhanced = Extension.create({
               const btn = document.createElement('button');
               btn.textContent = label;
               btn.title = title || label;
-              btn.style.cssText = 'border:none;background:#f5f5f5;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px;color:#333;';
-              btn.addEventListener('mouseenter', () => { btn.style.background = '#e6f7ff'; btn.style.color = '#1677ff'; });
-              btn.addEventListener('mouseleave', () => { btn.style.background = '#f5f5f5'; btn.style.color = '#333'; });
+              btn.style.cssText = 'border:none;background:var(--bg-tertiary);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px;color:var(--text-primary);';
+              btn.addEventListener('mouseenter', () => { btn.style.background = 'color-mix(in srgb, var(--accent-color) 10%, var(--bg-primary))'; btn.style.color = 'var(--accent-color)'; });
+              btn.addEventListener('mouseleave', () => { btn.style.background = 'var(--bg-tertiary)'; btn.style.color = 'var(--text-primary)'; });
               btn.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 const commands = (editor as any).commands;

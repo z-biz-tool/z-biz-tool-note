@@ -73,19 +73,19 @@ function ImageEnhancedComponent({ node, updateAttributes }: any) {
         <div style={{ display: 'flex', gap: 4, marginBottom: 4, ...alignStyles[align] }} contentEditable={false}>
           <button
             onClick={() => updateAttributes({ align: 'left' })}
-            style={{ border: 'none', background: align === 'left' ? '#e6f7ff' : '#f5f5f5', padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
+            style={{ border: 'none', background: align === 'left' ? 'color-mix(in srgb, var(--accent-color) 10%, var(--bg-primary))' : 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
           >
             <AlignLeftOutlined />
           </button>
           <button
             onClick={() => updateAttributes({ align: 'center' })}
-            style={{ border: 'none', background: align === 'center' ? '#e6f7ff' : '#f5f5f5', padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
+            style={{ border: 'none', background: align === 'center' ? 'color-mix(in srgb, var(--accent-color) 10%, var(--bg-primary))' : 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
           >
             <AlignCenterOutlined />
           </button>
           <button
             onClick={() => updateAttributes({ align: 'right' })}
-            style={{ border: 'none', background: align === 'right' ? '#e6f7ff' : '#f5f5f5', padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
+            style={{ border: 'none', background: align === 'right' ? 'color-mix(in srgb, var(--accent-color) 10%, var(--bg-primary))' : 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontSize: 12 }}
           >
             <AlignRightOutlined />
           </button>
@@ -94,7 +94,7 @@ function ImageEnhancedComponent({ node, updateAttributes }: any) {
         {/* Image */}
         <div style={{ display: 'flex', ...alignStyles[align], position: 'relative' }}>
           {loading && (
-            <div style={{ width: 200, height: 120, background: '#f5f5f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
+            <div style={{ width: 200, height: 120, background: 'var(--bg-tertiary)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
               加载中...
             </div>
           )}
@@ -120,7 +120,7 @@ function ImageEnhancedComponent({ node, updateAttributes }: any) {
               width: 12,
               height: 12,
               cursor: 'nwse-resize',
-              background: '#1677ff',
+              background: 'var(--accent-color)',
               borderRadius: '0 0 4px 0',
               opacity: 0.5,
             }}
@@ -142,7 +142,7 @@ function ImageEnhancedComponent({ node, updateAttributes }: any) {
           ) : (
             <span
               onClick={() => setEditingCaption(true)}
-              style={{ fontSize: 12, color: '#999', cursor: 'text', fontStyle: 'italic' }}
+              style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'text', fontStyle: 'italic' }}
             >
               {caption || '点击添加图片说明...'}
             </span>

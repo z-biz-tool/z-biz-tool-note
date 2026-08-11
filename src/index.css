@@ -1391,7 +1391,6 @@ body {
   background: var(--accent-color);
   opacity: 0.18;
   border: 1px solid var(--accent-color);
-  pointer-events: none;
   transition: top 0.05s linear, height 0.05s linear;
 }
 .minimap:hover .minimap-viewport {
@@ -1549,4 +1548,54 @@ body {
 }
 .editor-pane-main {
   flex: 1;
+}
+
+/* ========== 响应式布局 ========== */
+
+/* 窄屏幕（< 900px）：侧边栏自动折叠，minimap 隐藏 */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed;
+    left: -260px;
+    z-index: 100;
+    transition: left var(--transition);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar.open {
+    left: 0;
+  }
+  .sidebar-collapsed {
+    width: 40px;
+  }
+  .minimap-container {
+    display: none;
+  }
+  .editor-area.split .editor-pane {
+    min-width: 100% !important;
+  }
+  .editor-area.split {
+    flex-direction: column;
+  }
+}
+
+/* 更窄屏幕（< 600px）：标签栏紧凑模式 */
+@media (max-width: 600px) {
+  .tabs-bar {
+    font-size: 11px;
+  }
+  .tab-item {
+    max-width: 100px;
+    padding: 4px 8px;
+  }
+  .breadcrumb {
+    font-size: 11px;
+  }
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .toolbar-btn {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
 }

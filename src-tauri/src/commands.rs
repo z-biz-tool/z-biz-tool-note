@@ -445,3 +445,497 @@ pub fn ensure_dir(path: String) -> Result<(), String> {
 pub fn write_text_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
 }
+
+// ==================== 新增结构体 ====================
+
+/// 目录条目（递归）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: String,
+    pub children: Vec<FileEntry>,
+}
+
+/// 搜索匹配结果
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SearchMatch {
+    pub file_path: String,
+    pub line: usize,
+    pub preview: String,
+}
+
+/// 笔记摘要（用于知识图谱）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NoteSummary {
+    pub file_path: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub links: Vec<String>,
+}
+
+/// 反向链接条目
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BacklinkEntry {
+    pub file_path: String,
+    pub title: String,
+    pub preview: String,
+}
+
+/// 备份条目（版本历史）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BackupEntry {
+    pub path: String,
+    pub timestamp: String,
+    pub modified: String,
+}
+
+/// AI聊天配置
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AiConfigPayload {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+}
+
+/// 聊天消息
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+// ==================== 新增命令 ====================
+
+/// 读取任意文件内容
+#[tauri::command]
+pub fn read_file(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))
+}
+
+/// 写入内容到任意文件
+#[tauri::command]
+pub fn write_file(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
+}
+
+/// 删除文件或目录
+#[tauri::command]
+pub fn delete_file(path: String) -> Result<(), String> {
+    if std::path::Path::new(&path).is_dir() {
+        std::fs::remove_dir_all(&path).map_err(|e| format!("删除目录失败: {}", e))
+    } else {
+        std::fs::remove_file(&path).map_err(|e| format!("删除文件失败: {}", e))
+    }
+}
+
+/// 重命名文件或目录
+#[tauri::command]
+pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    std::fs::rename(&old_path, &new_path).map_err(|e| format!("重命名失败: {}", e))
+}
+
+/// 检查文件或目录是否存在
+#[tauri::command]
+pub fn file_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+/// 递归列出目录内容
+#[tauri::command]
+pub fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
+    list_dir_recursive(&PathBuf::from(&path))
+}
+
+/// 递归列出目录的内部实现
+fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
+    if !dir.is_dir() {
+        return Err(format!("路径不是目录: {}", dir.display()));
+    }
+
+    let mut entries: Vec<FileEntry> = Vec::new();
+    let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let name = path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        // 只包含.md文件和目录
+        let is_dir = metadata.is_dir();
+        if !is_dir && path.extension().map_or(true, |ext| ext != "md") {
+            continue;
+        }
+
+        let modified = metadata.modified()
+            .map(|t| {
+                let dt: DateTime<Local> = t.into();
+                dt.format("%Y-%m-%d %H:%M:%S").to_string()
+            })
+            .unwrap_or_default();
+
+        let children = if is_dir {
+            list_dir_recursive(&path).unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        entries.push(FileEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            size: metadata.len(),
+            modified,
+            children,
+        });
+    }
+
+    // 排序：目录在前，文件在后
+    entries.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name))
+    });
+
+    Ok(entries)
+}
+
+/// 递归搜索目录中所有.md文件的内容
+#[tauri::command]
+pub fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMatch>, String> {
+    let query_lower = query.to_lowercase();
+    let mut results: Vec<SearchMatch> = Vec::new();
+    search_in_files_recursive(&PathBuf::from(&dir), &query_lower, &mut results)?;
+    Ok(results)
+}
+
+/// 递归搜索.md文件的内部实现
+fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec<SearchMatch>) -> Result<(), String> {
+    let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+
+        if path.is_dir() {
+            search_in_files_recursive(&path, query_lower, results)?;
+            continue;
+        }
+
+        if path.extension().map_or(true, |ext| ext != "md") {
+            continue;
+        }
+
+        if let Ok(content) = fs::read_to_string(&path) {
+            let file_path = path.to_string_lossy().to_string();
+            for (line_num, line) in content.lines().enumerate() {
+                let line_lower = line.to_lowercase();
+                if let Some(pos) = line_lower.find(query_lower) {
+                    // 提取匹配位置前后共50个字符的预览
+                    let start = pos.saturating_sub(25);
+                    let end = (pos + query_lower.len() + 25).min(line.len());
+                    let preview = if line.len() > 50 {
+                        format!("{}...{}", &line[start..pos], &line[pos..end])
+                    } else {
+                        line.to_string()
+                    };
+                    results.push(SearchMatch {
+                        file_path: file_path.clone(),
+                        line: line_num + 1,
+                        preview,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// 递归读取目录中所有.md文件的摘要信息（用于知识图谱）
+#[tauri::command]
+pub fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
+    let mut results: Vec<NoteSummary> = Vec::new();
+    read_all_notes_recursive(&PathBuf::from(&dir), &mut results)?;
+    Ok(results)
+}
+
+/// 递归读取笔记摘要的内部实现
+fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Result<(), String> {
+    let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+
+        if path.is_dir() {
+            read_all_notes_recursive(&path, results)?;
+            continue;
+        }
+
+        if path.extension().map_or(true, |ext| ext != "md") {
+            continue;
+        }
+
+        if let Ok(content) = fs::read_to_string(&path) {
+            let title = extract_title(&content);
+            let tags = extract_tags(&content);
+            let links = extract_links(&content);
+
+            results.push(NoteSummary {
+                file_path: path.to_string_lossy().to_string(),
+                title,
+                tags,
+                links,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// 从笔记内容提取 [[link]] 格式的链接
+fn extract_links(content: &str) -> Vec<String> {
+    let mut links = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    // 手动匹配 [[link]] 或 [[link#heading]] 格式
+    let mut i = 0;
+    let bytes = content.as_bytes();
+    while i < content.len() {
+        if bytes[i] == b'[' && i + 1 < content.len() && bytes[i + 1] == b'[' {
+            // 找到 [[ 开始
+            let start = i + 2;
+            if let Some(end) = content[start..].find("]]") {
+                let raw_link = &content[start..start + end];
+                // 提取链接主体（去掉 #heading 部分）
+                let link = raw_link.split('#').next().unwrap_or(raw_link).trim().to_string();
+                if !link.is_empty() && seen.insert(link.clone()) {
+                    links.push(link);
+                }
+                i = start + end + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    links
+}
+
+/// 查找反向链接：搜索所有.md文件中引用了指定笔记标题的文件
+#[tauri::command]
+pub fn find_backlinks(dir: String, note_title: String, note_path: String) -> Result<Vec<BacklinkEntry>, String> {
+    let mut results: Vec<BacklinkEntry> = Vec::new();
+    find_backlinks_recursive(&PathBuf::from(&dir), &note_title, &note_path, &mut results)?;
+    Ok(results)
+}
+
+/// 递归查找反向链接的内部实现
+fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, results: &mut Vec<BacklinkEntry>) -> Result<(), String> {
+    let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+
+        if path.is_dir() {
+            find_backlinks_recursive(&path, note_title, note_path, results)?;
+            continue;
+        }
+
+        if path.extension().map_or(true, |ext| ext != "md") {
+            continue;
+        }
+
+        // 跳过自身
+        if path.to_string_lossy() == note_path {
+            continue;
+        }
+
+        if let Ok(content) = fs::read_to_string(&path) {
+            let file_path = path.to_string_lossy().to_string();
+            let title = extract_title(&content);
+
+            // 搜索 [[note_title]] 或 [[note_title#heading]] 格式
+            let pattern = format!("[[{}", note_title);
+            let mut found = false;
+
+            for line in content.lines() {
+                if line.contains(&pattern) {
+                    // 验证是完整的 [[...]] 链接
+                    if let Some(start) = line.find(&format!("[[{}", note_title)) {
+                        let after = &line[start + 2..];
+                        if let Some(end) = after.find("]]") {
+                            let link_content = &after[..end];
+                            // link_content 应该是 note_title 或 note_title#heading
+                            if link_content == note_title || link_content.starts_with(&format!("{}#", note_title)) {
+                                if !found {
+                                    found = true;
+                                    // 提取包含链接的行的前100个字符作为预览
+                                    let preview = if line.len() > 100 {
+                                        format!("{}...", &line[..100])
+                                    } else {
+                                        line.to_string()
+                                    };
+                                    results.push(BacklinkEntry {
+                                        file_path: file_path.clone(),
+                                        title: title.clone(),
+                                        preview,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// AI聊天代理：转发请求到OpenAI兼容API
+#[tauri::command]
+pub async fn ai_chat(config: AiConfigPayload, messages: Vec<ChatMessage>) -> Result<String, String> {
+    // 构建请求URL
+    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+
+    // 构建请求体
+    let body = serde_json::json!({
+        "model": config.model,
+        "messages": messages,
+    });
+
+    // 发送HTTP POST请求
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求AI服务失败: {}", e))?;
+
+    // 检查HTTP状态码
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("AI服务返回错误: {} - {}", status, body));
+    }
+
+    // 解析响应JSON
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析AI响应失败: {}", e))?;
+
+    // 提取 choices[0].message.content
+    let content = json
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| "AI响应格式异常: 无法提取content".to_string())?;
+
+    Ok(content.to_string())
+}
+
+/// 创建笔记备份（版本历史）
+/// 备份存储在 ~/.z-note/backups/{note_id}/ 目录下，文件名为 {timestamp}.md
+/// 最多保留 20 个备份版本
+#[tauri::command]
+pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
+    let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let backup_base = base.join(".z-note").join("backups");
+
+    // 从文件路径生成备份目录名（替换 / 为 _）
+    let safe_name = note_path.replace('/', "_").replace('\\', "_");
+    let backup_dir = backup_base.join(&safe_name);
+    fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
+
+    // 写入备份文件
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let backup_path = backup_dir.join(format!("{}.md", timestamp));
+    fs::write(&backup_path, &content).map_err(|e| format!("写入备份失败: {}", e))?;
+
+    // 清理旧备份，只保留最近 20 个
+    if let Ok(entries) = fs::read_dir(&backup_dir) {
+        let mut files: Vec<_> = entries.flatten().collect();
+        files.sort_by_key(|e| e.file_name());
+        while files.len() > 20 {
+            if let Some(old) = files.first() {
+                let _ = fs::remove_file(old.path());
+            }
+            files.remove(0);
+        }
+    }
+
+    Ok(())
+}
+
+/// 列出笔记的备份版本
+#[tauri::command]
+pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
+    let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let backup_base = base.join(".z-note").join("backups");
+    let safe_name = note_path.replace('/', "_").replace('\\', "_");
+    let backup_dir = backup_base.join(&safe_name);
+
+    if !backup_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut entries = Vec::new();
+    if let Ok(dir_entries) = fs::read_dir(&backup_dir) {
+        for entry in dir_entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "md") {
+                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                let timestamp = filename.trim_end_matches(".md").to_string();
+                let modified = path.metadata()
+                    .and_then(|m| m.modified())
+                    .map(|t| {
+                        let dt: DateTime<Local> = t.into();
+                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                    })
+                    .unwrap_or_default();
+                entries.push(BackupEntry {
+                    path: path.to_string_lossy().to_string(),
+                    timestamp,
+                    modified,
+                });
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+    Ok(entries)
+}
+
+/// 恢复备份版本
+#[tauri::command]
+pub fn restore_backup(backup_path: String, target_path: String) -> Result<(), String> {
+    let content = fs::read_to_string(&backup_path)
+        .map_err(|e| format!("读取备份失败: {}", e))?;
+    fs::write(&target_path, &content)
+        .map_err(|e| format!("恢复备份失败: {}", e))
+}
+
+/// 获取文件修改时间（用于检测外部修改）
+#[tauri::command]
+pub fn get_file_modified(path: String) -> Result<String, String> {
+    let metadata = fs::metadata(&path)
+        .map_err(|e| format!("获取文件信息失败: {}", e))?;
+    let modified = metadata.modified()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .map_err(|e| format!("获取修改时间失败: {}", e))?;
+    Ok(modified)
+}

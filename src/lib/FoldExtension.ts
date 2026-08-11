@@ -4,10 +4,22 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 
+// 模块声明：让 TypeScript 识别 fold 命令
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    fold: {
+      toggleFold: () => ReturnType;
+    };
+  }
+}
+
 const FOLD_KEY = new PluginKey('fold');
 
 // 存储折叠状态
 const foldedPositions = new Set<number>();
+
+// 模块级变量，保存当前编辑器视图引用，供点击处理器使用
+let currentView: EditorView | null = null;
 
 function getHeadingLevel(node: PmNode): number | null {
   if (node.type.name === 'heading') return node.attrs.level;
@@ -87,16 +99,25 @@ export const Fold = Extension.create({
               const node = $pos.node(d);
               if (node.type.name === 'heading') {
                 const headingPos = $pos.before(d);
-                // Check if click is on the fold indicator area (left of heading)
+                // 检查点击是否在折叠指示器区域（标题左侧）
                 const coords = view.coordsAtPos(pos);
                 if (coords.left - view.posAtCoords({ left: coords.left - 20, top: coords.top })!.pos > 5) {
-                  // Click was near the fold indicator
+                  // 点击靠近折叠指示器
                 }
                 return false;
               }
             }
             return false;
           },
+        },
+        // 通过 view 回调保存编辑器视图引用
+        view(editorView: EditorView) {
+          currentView = editorView;
+          return {
+            destroy() {
+              currentView = null;
+            }
+          };
         },
       }),
     ];
@@ -116,14 +137,13 @@ function buildFoldDecorations(doc: PmNode): DecorationSet {
       foldIcon.className = 'fold-indicator folded';
       foldIcon.contentEditable = 'false';
       foldIcon.innerHTML = '▶';
-      foldIcon.style.cssText = 'cursor:pointer;color:#999;font-size:10px;margin-right:4px;user-select:none;';
+      foldIcon.style.cssText = 'cursor:pointer;color:var(--text-muted);font-size:10px;margin-right:4px;user-select:none;';
       foldIcon.addEventListener('click', () => {
         foldedPositions.delete(pos);
-        // Trigger re-render
-        const editorView = document.querySelector('.ProseMirror')?.__vue__?.$editor?.view;
-        if (editorView) {
-          const tr = editorView.state.tr.setMeta(FOLD_KEY, { toggled: true });
-          editorView.dispatch(tr);
+        // 触发重新渲染
+        if (currentView) {
+          const tr = currentView.state.tr.setMeta(FOLD_KEY, { toggled: true });
+          currentView.dispatch(tr);
         }
       });
 
@@ -140,15 +160,14 @@ function buildFoldDecorations(doc: PmNode): DecorationSet {
       foldIcon.className = 'fold-indicator';
       foldIcon.contentEditable = 'false';
       foldIcon.innerHTML = '▼';
-      foldIcon.style.cssText = 'cursor:pointer;color:#ccc;font-size:10px;margin-right:4px;user-select:none;transition:color 0.2s;';
-      foldIcon.addEventListener('mouseenter', () => { foldIcon.style.color = '#999'; });
-      foldIcon.addEventListener('mouseleave', () => { foldIcon.style.color = '#ccc'; });
+      foldIcon.style.cssText = 'cursor:pointer;color:var(--border-color);font-size:10px;margin-right:4px;user-select:none;transition:color 0.2s;';
+      foldIcon.addEventListener('mouseenter', () => { foldIcon.style.color = 'var(--text-secondary)'; });
+      foldIcon.addEventListener('mouseleave', () => { foldIcon.style.color = 'var(--border-color)'; });
       foldIcon.addEventListener('click', () => {
         foldedPositions.add(pos);
-        const editorView = document.querySelector('.ProseMirror')?.__vue__?.$editor?.view;
-        if (editorView) {
-          const tr = editorView.state.tr.setMeta(FOLD_KEY, { toggled: true });
-          editorView.dispatch(tr);
+        if (currentView) {
+          const tr = currentView.state.tr.setMeta(FOLD_KEY, { toggled: true });
+          currentView.dispatch(tr);
         }
       });
 

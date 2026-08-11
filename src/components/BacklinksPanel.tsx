@@ -25,16 +25,16 @@ export const BacklinksPanel = ({ backlinks, onJump, onClose }: BacklinksPanelPro
         ) : (
           backlinks.map((bl, i) => (
             <button
-              key={`${bl.sourcePath}-${i}`}
+              key={`${bl.noteId}-${i}`}
               className="backlink-item"
-              onClick={() => onJump(bl.sourcePath)}
-              title={bl.sourcePath}
+              onClick={() => onJump(bl.noteId)}
+              title={bl.noteId}
             >
               <div className="backlink-title">
                 <FileText size={13} />
-                <span>{bl.sourceTitle}</span>
+                <span>{bl.title}</span>
               </div>
-              <div className="backlink-snippet">{bl.snippet}</div>
+              <div className="backlink-snippet">{bl.preview}</div>
             </button>
           ))
         )}

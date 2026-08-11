@@ -2,10 +2,10 @@ export interface Note {
   id: string;
   title: string;
   content: string;
-  created: string;
-  modified: string;
+  created?: string;
+  modified?: string;
   lastModified?: string;
-  tags: string[];
+  tags?: string[];
   filePath?: string;
   isDirty?: boolean;
 }
@@ -20,7 +20,7 @@ export interface Config {
 
 export type SortBy = 'modified' | 'created' | 'title';
 export type ViewMode = 'list' | 'grid';
-export type EditorMode = 'wysiwyg' | 'source' | 'split';
+export type EditorMode = 'wysiwyg' | 'source';
 export type ThemeName = 'light' | 'dark' | 'sepia' | 'dracula' | 'nord' | 'solarized';
 
 export interface HeadingItem {
@@ -41,7 +41,7 @@ export interface GraphNode {
   name: string;
   label?: string;
   path?: string;
-  group?: number;
+  group?: number | string;
 }
 
 export interface GraphLink {
@@ -50,11 +50,10 @@ export interface GraphLink {
 }
 
 export interface AIConfig {
-  provider: string;
+  provider?: string;
   apiKey: string;
   model: string;
-  baseUrl?: string;
-  baseURL?: string;
+  baseURL: string;
   enabled?: boolean;
 }
 
@@ -66,13 +65,15 @@ export interface AIMessage {
 export interface Template {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   content: string;
+  builtin?: boolean;
 }
 
 export interface Tag {
   name: string;
   count: number;
+  notes: string[];
 }
 
 export interface Backlink {
@@ -83,17 +84,20 @@ export interface Backlink {
 
 export interface Command {
   id: string;
-  label: string;
+  title: string;
   shortcut?: string;
+  category?: string;
   action: () => void;
 }
 
 export interface FileItem {
   name: string;
   path: string;
-  is_dir: boolean;
-  size: number;
-  modified: string;
+  isDirectory: boolean;
+  isFile: boolean;
+  size?: number;
+  modified?: string;
+  children?: FileItem[];
 }
 
 export interface NoteStats {
@@ -101,4 +105,28 @@ export interface NoteStats {
   characters: number;
   lines: number;
   readingTime: number;
+}
+
+// 之前缺失的类型定义
+export interface RecentFile {
+  path: string;
+  name: string;
+  lastOpened: number;
+}
+
+export interface ThemeOption {
+  name: ThemeName;
+  label: string;
+  colors: {
+    bgPrimary: string;
+    bgSecondary: string;
+    bgTertiary: string;
+    textPrimary: string;
+    textSecondary: string;
+    textMuted: string;
+    borderColor: string;
+    accentColor: string;
+    accentHover: string;
+    codeBg: string;
+  };
 }

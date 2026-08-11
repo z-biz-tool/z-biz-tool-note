@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, InputRule } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useEffect } from 'react';
 import { FileTextOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -36,11 +36,11 @@ function EmbedComponent({ node, updateAttributes }: any) {
   return (
     <NodeViewWrapper>
       <div style={{
-        border: '1px solid #e8e8e8',
+        border: '1px solid var(--border-color)',
         borderRadius: 6,
         margin: '8px 0',
         overflow: 'hidden',
-        background: '#fafafa',
+        background: 'var(--bg-secondary)',
       }} className="embed-block">
         {/* Header */}
         <div style={{
@@ -48,8 +48,8 @@ function EmbedComponent({ node, updateAttributes }: any) {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '6px 12px',
-          background: '#f0f0f0',
-          borderBottom: '1px solid #e8e8e8',
+          background: 'var(--bg-tertiary)',
+          borderBottom: '1px solid var(--border-color)',
           fontSize: 12,
         }} contentEditable={false}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#1677ff' }}>
@@ -105,16 +105,18 @@ export const Embed = Node.create({
 
   addInputRules() {
     return [
-      // Match ![[noteId]] pattern
-      {
+      // 匹配 ![[noteId]] 模式
+      new InputRule({
         find: /!\[\[([^\]]+)\]\]$/,
-        handler: ({ state, range, match }: any) => {
+        handler: ({ state, range, match, commands }) => {
           const noteId = match[1];
           const node = state.schema.nodes.embed.create({ noteId });
           const tr = state.tr.replaceWith(range.from, range.to, node);
-          state.dispatch(tr);
+          // tiptap InputRule 会自动 dispatch 传入的 transaction
+          // 此处通过 commands.insertContent 插入节点
+          commands.insertContent({ type: 'embed', attrs: { noteId } });
         },
-      },
+      }),
     ];
   },
 });

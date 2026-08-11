@@ -10,6 +10,7 @@ interface MinimapProps {
 export const Minimap = ({ editor, scrollContainer }: MinimapProps) => {
   const [text, setText] = useState<string>('');
   const [viewport, setViewport] = useState<{ top: number; height: number }>({ top: 0, height: 0 });
+  const [dragging, setDragging] = useState(false);
   const minimapRef = useRef<HTMLDivElement>(null);
   const rafId = useRef<number | null>(null);
   const textTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,6 +84,44 @@ export const Minimap = ({ editor, scrollContainer }: MinimapProps) => {
     });
   }, [scrollContainer]);
 
+  // 拖拽视口高亮矩形：根据鼠标 Y 位置实时滚动编辑器
+  const handleViewportMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+  }, []);
+
+  // 拖拽中：计算鼠标在 minimap 中的位置，同步滚动编辑器
+  const handleDragMove = useCallback((clientY: number) => {
+    if (!scrollContainer || !minimapRef.current) return;
+    const rect = minimapRef.current.getBoundingClientRect();
+    const y = clientY - rect.top;
+    const ratio = Math.max(0, Math.min(1, y / rect.height));
+    const targetScrollTop = ratio * scrollContainer.scrollHeight - scrollContainer.clientHeight / 2;
+    scrollContainer.scrollTo({
+      top: Math.max(0, Math.min(scrollContainer.scrollHeight - scrollContainer.clientHeight, targetScrollTop)),
+      behavior: 'auto',
+    });
+  }, [scrollContainer]);
+
+  // 全局 mousemove / mouseup 事件（拖拽期间绑定到 window）
+  useEffect(() => {
+    if (!dragging) return;
+    const onMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      handleDragMove(e.clientY);
+    };
+    const onMouseUp = () => {
+      setDragging(false);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [dragging, handleDragMove]);
+
   if (!editor || !scrollContainer) return null;
 
   return (
@@ -95,7 +134,8 @@ export const Minimap = ({ editor, scrollContainer }: MinimapProps) => {
       <div className="minimap-content">{text}</div>
       <div
         className="minimap-viewport"
-        style={{ top: `${viewport.top}px`, height: `${viewport.height}px` }}
+        style={{ top: `${viewport.top}px`, height: `${viewport.height}px`, pointerEvents: dragging ? 'none' : 'auto', cursor: 'grab' }}
+        onMouseDown={handleViewportMouseDown}
       />
     </div>
   );

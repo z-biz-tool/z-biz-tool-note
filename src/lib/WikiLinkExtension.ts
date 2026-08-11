@@ -53,16 +53,19 @@ export const WikiLink = Node.create<WikiLinkOptions>({
     ];
   },
 
-  renderHTML() {
+  renderHTML({ node }) {
     return [
       'a',
       mergeAttributes(
         {
           'data-type': 'wiki-link',
           class: 'wiki-link',
+          href: node.attrs.href,
+          'data-text': node.attrs.text,
         },
         this.options.HTMLAttributes
       ),
+      node.attrs.text || node.attrs.href,
     ];
   },
 

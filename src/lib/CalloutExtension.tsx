@@ -2,13 +2,24 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { InfoCircleOutlined, WarningOutlined, RocketOutlined, AlertOutlined, BulbOutlined, MessageOutlined } from '@ant-design/icons';
 
+// 模块声明：让 TypeScript 识别 callout 命令
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    callout: {
+      setCallout: (attrs: { type?: string }) => ReturnType;
+      toggleCallout: (attrs: { type?: string }) => ReturnType;
+      unsetCallout: () => ReturnType;
+    };
+  }
+}
+
 const CALLOUT_STYLES: Record<string, { bg: string; border: string; icon: React.ReactNode; label: string }> = {
-  info:    { bg: '#e6f7ff', border: '#1677ff', icon: <InfoCircleOutlined />,  label: '信息' },
-  warning: { bg: '#fff7e6', border: '#fa8c16', icon: <WarningOutlined />,     label: '警告' },
-  success: { bg: '#f6ffed', border: '#52c41a', icon: <RocketOutlined />,      label: '成功' },
-  danger:  { bg: '#fff2f0', border: '#ff4d4f', icon: <AlertOutlined />,       label: '危险' },
-  tip:     { bg: '#f9f0ff', border: '#722ed1', icon: <BulbOutlined />,        label: '小贴士' },
-  quote:   { bg: '#f5f5f5', border: '#8c8c8c', icon: <MessageOutlined />,       label: '引用' },
+  info:    { bg: 'color-mix(in srgb, #1890ff 10%, var(--bg-primary))', border: '#1890ff', icon: <InfoCircleOutlined />,  label: '信息' },
+  warning: { bg: 'color-mix(in srgb, #fa8c16 10%, var(--bg-primary))', border: '#fa8c16', icon: <WarningOutlined />,     label: '警告' },
+  success: { bg: 'color-mix(in srgb, #52c41a 10%, var(--bg-primary))', border: '#52c41a', icon: <RocketOutlined />,      label: '成功' },
+  danger:  { bg: 'color-mix(in srgb, #f5222d 10%, var(--bg-primary))', border: '#ff4d4f', icon: <AlertOutlined />,       label: '危险' },
+  tip:     { bg: 'color-mix(in srgb, #722ed1 10%, var(--bg-primary))', border: '#722ed1', icon: <BulbOutlined />,        label: '小贴士' },
+  quote:   { bg: 'var(--bg-tertiary)', border: '#8c8c8c', icon: <MessageOutlined />,       label: '引用' },
 };
 
 function CalloutComponent({ node, updateAttributes }: any) {
@@ -39,7 +50,7 @@ function CalloutComponent({ node, updateAttributes }: any) {
             border: 'none',
             background: 'transparent',
             fontSize: 11,
-            color: '#999',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             flexShrink: 0,
           }}

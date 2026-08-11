@@ -102,7 +102,7 @@ const CommandList = forwardRef<CommandListRef, SuggestionProps<CommandItem>>((pr
 
   return (
     <div style={{
-      background: '#fff',
+      background: 'var(--bg-primary)',
       borderRadius: 8,
       boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
       padding: 4,
@@ -113,7 +113,7 @@ const CommandList = forwardRef<CommandListRef, SuggestionProps<CommandItem>>((pr
     }}>
       {Object.entries(categories).map(([cat, catItems]) => (
         <div key={cat}>
-          <div style={{ padding: '4px 8px', color: '#999', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>
+          <div style={{ padding: '4px 8px', color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>
             {cat}
           </div>
           {catItems.map((item) => {
@@ -129,15 +129,15 @@ const CommandList = forwardRef<CommandListRef, SuggestionProps<CommandItem>>((pr
                   padding: '6px 8px',
                   borderRadius: 4,
                   cursor: 'pointer',
-                  background: idx === selectedIndex ? '#f0f5ff' : 'transparent',
-                  color: idx === selectedIndex ? '#1677ff' : '#333',
+                  background: idx === selectedIndex ? 'color-mix(in srgb, var(--accent-color) 15%, var(--bg-primary))' : 'transparent',
+                  color: idx === selectedIndex ? 'var(--accent-color)' : 'var(--text-primary)',
                 }}
                 onMouseEnter={() => setSelectedIndex(idx)}
               >
                 <span style={{ fontSize: 16, width: 20, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 500 }}>{item.title}</div>
-                  <div style={{ fontSize: 11, color: '#999', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description}</div>
                 </div>
               </div>
             );
@@ -145,7 +145,7 @@ const CommandList = forwardRef<CommandListRef, SuggestionProps<CommandItem>>((pr
         </div>
       ))}
       {filteredItems.length === 0 && (
-        <div style={{ padding: 12, color: '#999', textAlign: 'center' }}>无匹配命令</div>
+        <div style={{ padding: 12, color: 'var(--text-muted)', textAlign: 'center' }}>无匹配命令</div>
       )}
     </div>
   );

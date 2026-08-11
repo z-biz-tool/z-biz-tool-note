@@ -47,7 +47,7 @@ export const DragHandle = Extension.create({
             handle.contentEditable = 'false';
             handle.draggable = true;
             handle.innerHTML = '⠿';
-            handle.style.cssText = 'cursor:grab;color:#999;font-size:14px;position:absolute;left:-24px;opacity:0;transition:opacity 0.2s;padding:2px 4px;user-select:none;';
+            handle.style.cssText = 'cursor:grab;color:var(--text-muted);font-size:14px;position:absolute;left:-24px;opacity:0;transition:opacity 0.2s;padding:2px 4px;user-select:none;';
 
             handle.addEventListener('mouseenter', () => { handle.style.opacity = '1'; });
             handle.addEventListener('mouseleave', () => { handle.style.opacity = '0'; });

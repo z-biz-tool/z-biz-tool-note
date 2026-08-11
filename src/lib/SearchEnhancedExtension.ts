@@ -151,8 +151,8 @@ export const SearchEnhanced = Extension.create({
               return Decoration.inline(match.from, match.to, {
                 class: isCurrent ? 'search-match-current' : 'search-match',
                 style: isCurrent
-                  ? 'background:#ffe58f;border-radius:2px;'
-                  : 'background:#fff3cd;border-radius:2px;',
+                  ? 'background:var(--search-match-current-bg, #ffe58f);border-radius:2px;'
+                  : 'background:var(--search-match-bg, #fff3cd);border-radius:2px;',
               });
             });
             return DecorationSet.create(newState.doc, decorations);

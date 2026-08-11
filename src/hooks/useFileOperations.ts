@@ -47,7 +47,7 @@ export const useFileOperations = () => {
     title: 'Untitled',
     content: '',
     filePath: '',
-    lastModified: new Date(),
+    lastModified: new Date().toISOString(),
     isDirty: false,
   });
 

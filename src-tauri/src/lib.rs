@@ -25,6 +25,20 @@ pub fn run() {
             commands::read_image,
             commands::ensure_dir,
             commands::write_text_file,
+            commands::read_file,
+            commands::write_file,
+            commands::delete_file,
+            commands::rename_file,
+            commands::file_exists,
+            commands::list_dir,
+            commands::search_in_files,
+            commands::read_all_notes,
+            commands::find_backlinks,
+            commands::ai_chat,
+            commands::create_backup,
+            commands::list_backups,
+            commands::restore_backup,
+            commands::get_file_modified,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

@@ -59,6 +59,8 @@ import mermaid from 'mermaid';
 
 import 'katex/dist/katex.min.css';
 
+let mermaidCounter = 0;
+
 mermaid.initialize({
   theme: 'default',
   startOnLoad: false,
@@ -117,6 +119,8 @@ export const Editor = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
+  const noteIdRef = useRef<string>('');
+  const stateCacheRef = useRef<Map<string, any>>(new Map());
 
   const editor = useEditor({
     extensions: [
@@ -183,12 +187,40 @@ export const Editor = ({
     }
   }, [editor, editorRef]);
 
-  // Update content when prop changes (file switch)
+  // 切换笔记时缓存/恢复编辑器状态（含 undo/redo 历史）
   useEffect(() => {
-    if (editor && content !== editor.getMarkdown()) {
+    if (!editor) return;
+
+    // 缓存当前笔记的编辑器状态（含 undo/redo 历史）
+    if (noteIdRef.current && noteIdRef.current !== currentFilePath) {
+      stateCacheRef.current.set(noteIdRef.current, editor.view.state);
+    }
+
+    // 切换到新笔记：尝试恢复缓存的状态
+    if (currentFilePath !== noteIdRef.current) {
+      const cached = stateCacheRef.current.get(currentFilePath);
+      if (cached) {
+        // 恢复缓存的状态（保留 undo 历史）
+        editor.view.updateState(cached);
+      } else if (content !== editor.getMarkdown()) {
+        // 新笔记：设置内容
+        editor.commands.setContent(content);
+      }
+      noteIdRef.current = currentFilePath;
+    } else if (content !== editor.getMarkdown()) {
+      // 同一笔记内容外部更新（罕见）
       editor.commands.setContent(content);
     }
-  }, [content, editor]);
+  }, [content, editor, currentFilePath]);
+
+  // 组件卸载时缓存当前状态
+  useEffect(() => {
+    return () => {
+      if (editor && noteIdRef.current) {
+        stateCacheRef.current.set(noteIdRef.current, editor.view.state);
+      }
+    };
+  }, [editor]);
 
   // Source mode toggle
   useEffect(() => {
@@ -315,7 +347,7 @@ export const Editor = ({
       const codeElement = container.querySelector('code');
       if (codeElement && codeElement.textContent) {
         const code = codeElement.textContent;
-        mermaid.render('mermaid-' + Date.now(), code).then((result) => {
+        mermaid.render('mermaid-' + (++mermaidCounter), code).then((result) => {
           container.innerHTML = result.svg;
         }).catch(() => {
           container.innerHTML = '<pre style="color: red;">Invalid Mermaid syntax</pre>';

@@ -92,7 +92,7 @@ export const KnowledgeGraph = ({ nodes, links, onNodeClick, currentFilePath, tag
           nodeColor={(node: GraphNode) => {
             if (node.path === currentFilePath) return '#4f46e5';
             if (hoveredNode === node.id) return '#818cf8';
-            return nodeTagColor.get(node.path) || node.group || '#6b7280';
+            return String(nodeTagColor.get(node.path) || node.group || '#6b7280');
           }}
           nodeRelSize={16}
           linkColor="#d1d5db"

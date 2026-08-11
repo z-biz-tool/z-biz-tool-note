@@ -132,56 +132,48 @@ const multiCursorPlugin = new Plugin<MultiCursorState>({
     const docChanged = transactions.some(tr => tr.docChanged);
     if (!docChanged) return null;
 
-    // 若存在「选区型」额外范围（from !== to），文档变更时清空（替换只作用于主选区）
-    const hasSelectionRange = ps.ranges.some(r => r.from !== r.to);
-    if (hasSelectionRange) {
-      const tr = newState.tr.setMeta(multiCursorKey, { type: 'clear' });
-      tr.setMeta(SYNC_META, true);
-      return tr;
-    }
-
-    // 仅同步纯插入 / 纯删除（多光标同时输入/退格）
     const lastTr = transactions[transactions.length - 1];
     const replaceSteps = lastTr.steps.filter(s => s instanceof ReplaceStep) as ReplaceStep[];
-    if (replaceSteps.length === 0) {
-      const tr = newState.tr.setMeta(multiCursorKey, { type: 'clear' });
-      tr.setMeta(SYNC_META, true);
-      return tr;
-    }
-
-    // 跳过替换型步骤（from !== to 且 slice 非空）—— 不同步
-    const hasReplacement = replaceSteps.some(s => s.from !== s.to && s.slice.size > 0);
-    if (hasReplacement) {
-      const tr = newState.tr.setMeta(multiCursorKey, { type: 'clear' });
-      tr.setMeta(SYNC_META, true);
-      return tr;
-    }
+    if (replaceSteps.length === 0) return null;
 
     const tr = newState.tr;
     // 额外光标按位置降序处理，避免先插入影响后续位置
     const sortedCursors = [...ps.ranges].sort((a, b) => b.from - a.from);
+
     for (const cursor of sortedCursors) {
-      // 将旧坐标映射到 newState（lastTr 已应用）
       let pos = lastTr.mapping.map(cursor.from);
+      const posEnd = lastTr.mapping.map(cursor.to);
+
       for (const step of replaceSteps) {
         if (step.from === step.to && step.slice.size > 0) {
           // 纯插入：在 pos 处插入相同 slice
           tr.step(new ReplaceStep(pos, pos, step.slice));
           pos += step.slice.size;
         } else if (step.from !== step.to && step.slice.size === 0) {
-          // 纯删除：删除 pos 前 (to - from) 个字符
-          const len = step.to - step.from;
-          tr.step(new ReplaceStep(Math.max(0, pos - len), pos, Slice.empty));
-          pos -= len;
+          // 纯删除：删除 pos 到 posEnd 范围
+          tr.step(new ReplaceStep(pos, posEnd, Slice.empty));
+          pos = posEnd - (step.to - step.from);
+          if (pos < 0) pos = 0;
+        } else if (step.from !== step.to && step.slice.size > 0) {
+          // 替换型操作：先删除选区，再插入内容
+          tr.step(new ReplaceStep(pos, posEnd, step.slice));
+          pos = pos + step.slice.size - (step.to - step.from);
         }
       }
     }
 
-    // 重映射额外光标到最终文档坐标
+    // 重映射额外光标到最终文档坐标（替换后都变成光标型）
     const newRanges: ExtraRange[] = ps.ranges.map(r => {
       let f = lastTr.mapping.map(r.from);
       f = tr.mapping.map(f);
-      return { from: f, to: f };
+      // 替换型操作后，光标应在插入内容末尾
+      let t = lastTr.mapping.map(r.to);
+      t = tr.mapping.map(t);
+      // 如果原始是选区型且发生了替换，光标在插入末尾
+      if (r.from !== r.to && replaceSteps.some(s => s.from !== s.to && s.slice.size > 0)) {
+        return { from: f, to: f };
+      }
+      return { from: f, to: t };
     });
 
     tr.setMeta(multiCursorKey, { type: 'set', ranges: newRanges });

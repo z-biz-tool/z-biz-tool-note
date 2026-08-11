@@ -107,7 +107,7 @@ export const Sidebar = ({
           title: file.name.replace(/\.md$|\.markdown$/, ''),
           content: result.content,
           filePath: file.path,
-          lastModified: new Date(),
+          lastModified: new Date().toISOString(),
           isDirty: false,
         });
       }
@@ -122,22 +122,28 @@ export const Sidebar = ({
     setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, type, item: file || undefined });
   };
 
+  // 路径工具函数（替代 Node.js path 模块）
+  const pathDirname = (p: string) => p.substring(0, p.lastIndexOf('/')) || p;
+  const pathJoin = (...parts: string[]) => parts.join('/').replace(/\/+/g, '/');
+  const pathBasename = (p: string) => p.split('/').pop() || p;
+  const pathExtname = (p: string) => { const lastDot = p.lastIndexOf('.'); const lastSlash = p.lastIndexOf('/'); return lastDot > lastSlash ? p.substring(lastDot) : ''; };
+
   const handleNewFile = async () => {
     const ctx = contextMenu;
     if (!ctx) return;
     const item = ctx.item;
     let parentDir = currentDir;
     if (item?.path) {
-      parentDir = item.isDirectory ? item.path : path.dirname(item.path);
+      parentDir = item.isDirectory ? item.path : pathDirname(item.path);
     }
     if (!parentDir) return;
     let fileName = 'Untitled.md';
     let counter = 1;
-    while (fs.existsSync(path.join(parentDir, fileName))) {
+    while (await invoke<boolean>('file_exists', { path: pathJoin(parentDir, fileName) })) {
       fileName = `Untitled ${counter++}.md`;
     }
-    const filePath = path.join(parentDir, fileName);
-    fs.writeFileSync(filePath, '# Untitled\n\nStart writing...');
+    const filePath = pathJoin(parentDir, fileName);
+    await invoke('write_text_file', { path: filePath, content: '# Untitled\n\nStart writing...' });
     loadFileTree(currentDir);
     onRefresh?.();
     setContextMenu(null);
@@ -149,16 +155,16 @@ export const Sidebar = ({
     const item = ctx.item;
     let parentDir = currentDir;
     if (item?.path) {
-      parentDir = item.isDirectory ? item.path : path.dirname(item.path);
+      parentDir = item.isDirectory ? item.path : pathDirname(item.path);
     }
     if (!parentDir) return;
     let folderName = 'New Folder';
     let counter = 1;
-    while (fs.existsSync(path.join(parentDir, folderName))) {
+    while (await invoke<boolean>('file_exists', { path: pathJoin(parentDir, folderName) })) {
       folderName = `New Folder ${counter++}`;
     }
-    const folderPath = path.join(parentDir, folderName);
-    fs.mkdirSync(folderPath, { recursive: true });
+    const folderPath = pathJoin(parentDir, folderName);
+    await invoke('ensure_dir', { path: folderPath });
     loadFileTree(currentDir);
     onRefresh?.();
     setContextMenu(null);
@@ -167,16 +173,16 @@ export const Sidebar = ({
   const handleRename = async () => {
     if (!contextMenu?.item) return;
     const oldPath = contextMenu.item.path;
-    const dir = path.dirname(oldPath);
-    const oldName = path.basename(oldPath);
-    const extension = path.extname(oldName);
+    const dir = pathDirname(oldPath);
+    const oldName = pathBasename(oldPath);
+    const extension = pathExtname(oldName);
     const baseName = oldName.replace(extension, '');
     let newName = `${baseName} (renamed)${extension}`;
     let counter = 1;
-    while (fs.existsSync(path.join(dir, newName))) {
+    while (await invoke<boolean>('file_exists', { path: pathJoin(dir, newName) })) {
       newName = `${baseName} (renamed ${counter++})${extension}`;
     }
-    fs.renameSync(oldPath, path.join(dir, newName));
+    await invoke('rename_file', { oldPath, newPath: pathJoin(dir, newName) });
     loadFileTree(currentDir);
     onRefresh?.();
     setContextMenu(null);
@@ -184,11 +190,7 @@ export const Sidebar = ({
 
   const handleDelete = async () => {
     if (!contextMenu?.item) return;
-    if (contextMenu.item.isDirectory) {
-      fs.rmSync(contextMenu.item.path, { recursive: true, force: true });
-    } else {
-      fs.unlinkSync(contextMenu.item.path);
-    }
+    await invoke('delete_file', { path: contextMenu.item.path });
     loadFileTree(currentDir);
     onRefresh?.();
     setContextMenu(null);
@@ -203,7 +205,7 @@ export const Sidebar = ({
         title: file.name,
         content: result.content,
         filePath: file.path,
-        lastModified: new Date(),
+        lastModified: new Date().toISOString(),
         isDirty: false,
       });
     }
@@ -373,7 +375,7 @@ export const Sidebar = ({
                         title: result.fileName,
                         content: res.content,
                         filePath: result.filePath,
-                        lastModified: new Date(),
+                        lastModified: new Date().toISOString(),
                         isDirty: false,
                       });
                     }
