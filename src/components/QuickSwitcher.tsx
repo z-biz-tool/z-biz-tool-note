@@ -68,7 +68,7 @@ export const QuickSwitcher = ({ files, onSelect, onClose }: QuickSwitcherProps) 
   };
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
+    <div className="modal-overlay quick-switcher-overlay" onClick={handleOverlayClick}>
       <div className="modal-box">
         <input
           ref={inputRef}

@@ -15,6 +15,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { QuickInsert } from './components/QuickInsert';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
+import VersionHistory from './components/VersionHistory';
 import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink } from './types';
 import { useFileOperations } from './hooks/useFileOperations';
 import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
@@ -129,7 +130,11 @@ const App = () => {
   const [stats, setStats] = useState({ words: 0, characters: 0, lines: 0, readingTime: 0 });
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
   const [activeHeading, setActiveHeading] = useState<string | null>(null);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  // 分屏右窗格独立的标题/统计状态
+  const [splitHeadings, setSplitHeadings] = useState<HeadingItem[]>([]);
+  const [splitActiveHeading, setSplitActiveHeading] = useState<string | null>(null);
+  const [splitStats, setSplitStats] = useState({ words: 0, characters: 0, lines: 0, readingTime: 0 });
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [allFiles, setAllFiles] = useState<Array<{ path: string; name: string; lastModified: number }>>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
@@ -156,10 +161,19 @@ const App = () => {
   // Templates state
   const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
   const [showQuickInsert, setShowQuickInsert] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   const editorRef = useRef<any>(null);
   const editorRefSplit = useRef<any>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 用于避免防抖回调中的过期闭包问题（声明，在对应函数定义后赋值）
+  const handleSaveRef = useRef<() => void>(() => {});
+  const handleSaveSplitRef = useRef<() => void>(() => {});
+  const openTabsRef = useRef(openTabs);
+  openTabsRef.current = openTabs;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
 
   // ---------- 多标签 / 分屏 辅助函数 ----------
   // 打开（或聚焦）一篇笔记到左窗格
@@ -188,7 +202,7 @@ const App = () => {
 
   // 关闭标签（含未保存提示）
   const closeTab = useCallback((id: string) => {
-    const tab = openTabs.find(t => t.id === id);
+    const tab = openTabsRef.current.find(t => t.id === id);
     if (tab?.isDirty && !window.confirm(`"${tab.title}" 有未保存的更改，确定关闭吗？`)) {
       return;
     }
@@ -197,7 +211,7 @@ const App = () => {
       if (idx < 0) return prev;
       const next = prev.filter(t => t.id !== id);
       // 若关闭的是当前激活标签，则切换到相邻标签
-      if (activeTabId === id) {
+      if (activeTabIdRef.current === id) {
         const newActive = next[Math.min(idx, next.length - 1)];
         setActiveTabId(newActive ? newActive.id : null);
       }
@@ -205,7 +219,23 @@ const App = () => {
     });
     // 若关闭的是分屏笔记，清空分屏
     setSplitNote(prev => (prev && prev.id === id ? null : prev));
-  }, [activeTabId, openTabs]);
+  }, []);
+
+  // 关闭其他标签（保留指定标签）
+  const closeOtherTabs = useCallback((keepId: string) => {
+    setOpenTabs(prev => prev.filter(t => t.id === keepId));
+    setActiveTabId(keepId);
+    setSplitNote(null);
+  }, []);
+
+  // 关闭右侧标签
+  const closeTabsToRight = useCallback((tabId: string) => {
+    setOpenTabs(prev => {
+      const idx = prev.findIndex(t => t.id === tabId);
+      if (idx < 0) return prev;
+      return prev.slice(0, idx + 1);
+    });
+  }, []);
 
   // 切换标签（方向 -1 = 上一个，1 = 下一个）
   const switchTab = useCallback((direction: 1 | -1) => {
@@ -356,7 +386,7 @@ const App = () => {
   }, [refreshBacklinks]);
 
   // Run an AI action against the current note
-  const runAIAction = useCallback(async (action: AIAction, context?: string): Promise<string> => {
+  const runAIAction = useCallback(async (action: AIAction, context?: string, history?: AIMessage[]): Promise<string> => {
     if (!aiConfig.enabled) {
       throw new Error('AI is not enabled. Open Settings → AI Provider to configure.');
     }
@@ -365,25 +395,14 @@ const App = () => {
     const noteTitle = currentNote?.title || '';
     const truncated = noteContent.length > 8000 ? noteContent.slice(0, 8000) + '\n...[truncated]' : noteContent;
 
-    const systemPrompts: Record<AIAction, string> = {
-      summarize: 'You are a notes assistant. Summarize the user\'s note into 5 concise bullet points capturing the key ideas. Respond in markdown.',
-      tags: 'You are a notes assistant. Suggest 5-10 short #tags (single-word or hyphenated, lowercase) that fit this note. Respond with only a comma-separated list of tags, no preamble.',
-      outline: 'You are a notes assistant. Generate a structured markdown outline (## headings + sub-points) that organizes the topics in this note. Respond in markdown.',
-      'suggest-links': `You are a notes assistant. Given the note and a list of available note titles, suggest 3-5 wiki links ([[Note Title]]) that the author could add to connect related ideas. Respond as a markdown list. Available titles:\n${allFiles.map(f => f.name).slice(0, 100).join('\n')}`,
-      chat: 'You are ZenNote\'s AI assistant. Answer the user\'s questions about their notes concisely. Use markdown when helpful.',
-    };
-
-    const userPrompts: Record<AIAction, string> = {
-      summarize: `Summarize this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
-      tags: `Suggest tags for this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
-      outline: `Generate an outline for this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
-      'suggest-links': `Suggest wiki links for this note.\n\nTitle: ${noteTitle}\n\nContent:\n${truncated}`,
-      chat: context || `Note: ${noteTitle}\n\n${truncated}`,
-    };
+    const systemPrompt = action === 'chat'
+      ? '你是一个智能笔记助手，帮助用户整理和分析笔记内容。'
+      : `你是一个笔记分析助手。请根据用户的内容执行以下操作：${action}`;
 
     const messages: AIMessage[] = [
-      { role: 'system', content: systemPrompts[action] },
-      { role: 'user', content: userPrompts[action] },
+      { role: 'system', content: systemPrompt },
+      ...(history || []),
+      { role: 'user', content: action === 'chat' ? (context || `Note: ${noteTitle}\n\n${truncated}`) : context || '' },
     ];
 
     const result = await electronAPI.invoke('ai-chat', aiConfig, messages);
@@ -410,17 +429,27 @@ const App = () => {
     if (!currentNote?.filePath || !currentDir) return;
     const interval = setInterval(async () => {
       try {
-        const mtime = await invoke('get_file_modified', { path: currentNote.filePath });
-        // 如果文件被外部修改且我们已保存过
-        if (lastSaved && mtime > lastSaved.toISOString().replace('T', ' ').substring(0, 19)) {
-          showToast('文件已被外部修改，点击重新加载');
+        const mtime = await invoke('get_file_modified', { path: currentNote.filePath }) as string;
+        if (lastSaved && mtime !== lastSaved) {
+          if (window.confirm('文件已被外部修改，是否重新加载？')) {
+            // 重新加载文件内容
+            try {
+              const result = await invoke('read_file', { path: currentNote.filePath }) as string;
+              if (result) {
+                updateActiveTab({ content: result, isDirty: false });
+              }
+            } catch (e) {
+              console.warn('重新加载失败:', e);
+            }
+          }
+          setLastSaved(mtime); // 更新记录，避免重复提示
         }
       } catch {
         // 文件可能已被删除，忽略
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [currentNote?.filePath, currentDir, lastSaved, showToast]);
+  }, [currentNote?.filePath, currentDir, lastSaved, showToast, updateActiveTab]);
 
   // Create today's daily note
   const handleCreateDaily = useCallback(async () => {
@@ -449,7 +478,11 @@ const App = () => {
         lastModified: new Date().toISOString(),
         isDirty: false,
       });
-      setLastSaved(new Date());
+      // 保存后记录文件修改时间（用于外部修改检测）
+      try {
+        const mtime = await invoke('get_file_modified', { path: filePath }) as string;
+        setLastSaved(mtime);
+      } catch {}
       showToast('Daily note opened');
     }
     refreshFileList(currentDir);
@@ -457,6 +490,9 @@ const App = () => {
   }, [currentDir, templates, readFile, refreshFileList, refreshKnowledgeIndex, showToast, openNote]);
 
   // Electron IPC listeners
+  // 注意：此 effect 依赖数组为 []，所有 handler 闭包捕获的是首次渲染的值。
+  // 当前应用已迁移至 Tauri，electronAPI.isElectron 为 false，此 effect 会直接 return，
+  // 因此过期闭包不会造成实际问题。若将来恢复 Electron 支持，需将 handler 改为 ref 或添加依赖。
   useEffect(() => {
     if (!electronAPI.isElectron) return;
 
@@ -517,6 +553,16 @@ const App = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const cmd = e.metaKey || e.ctrlKey;
+      // Cmd+S 保存
+      if (cmd && e.key === 's') {
+        e.preventDefault();
+        if (document.activeElement?.closest('.editor-pane-split')) {
+          handleSaveSplitRef.current();
+        } else {
+          handleSaveRef.current();
+        }
+        return;
+      }
       if (cmd && e.key === 'p' && !e.shiftKey) {
         e.preventDefault();
         setShowQuickSwitcher(true);
@@ -542,10 +588,14 @@ const App = () => {
       } else if (cmd && e.shiftKey && e.key === 'G') {
         e.preventDefault();
         setShowKnowledgeGraph(prev => !prev);
+      } else if (cmd && e.shiftKey && e.key === 'H') {
+        // Cmd+Shift+H：版本历史
+        e.preventDefault();
+        setShowVersionHistory(true);
       } else if (cmd && e.key === 'w' && !e.shiftKey) {
         // Cmd+W：关闭当前标签
         e.preventDefault();
-        if (activeTabId) closeTab(activeTabId);
+        if (activeTabIdRef.current) closeTab(activeTabIdRef.current);
       } else if (cmd && e.shiftKey && e.code === 'BracketLeft') {
         // Cmd+Shift+[：上一个标签
         e.preventDefault();
@@ -563,13 +613,14 @@ const App = () => {
         setShowCommandPalette(false);
         setShowFindReplace(false);
         setShowQuickInsert(false);
+        setShowVersionHistory(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     // handleCreateDaily / handleOpenFolderDialog 声明在 effect 之后，但均为稳定 useCallback，捕获首帧即可
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId, closeTab, switchTab, toggleSplit]);
+  }, [closeTab, switchTab, toggleSplit]);
 
   const cycleTheme = useCallback(() => {
     setTheme(prev => {
@@ -589,7 +640,11 @@ const App = () => {
     // 若标签已打开，仅聚焦，避免覆盖未保存编辑
     if (openTabs.some(t => t.id === filePath)) {
       setActiveTabId(filePath);
-      setLastSaved(new Date());
+      // 记录文件修改时间（用于外部修改检测）
+      try {
+        const mtime = await invoke('get_file_modified', { path: filePath }) as string;
+        setLastSaved(mtime);
+      } catch {}
       return;
     }
     const result = await readFile(filePath);
@@ -602,7 +657,11 @@ const App = () => {
         lastModified: new Date().toISOString(),
         isDirty: false,
       });
-      setLastSaved(new Date());
+      // 记录文件修改时间（用于外部修改检测）
+      try {
+        const mtime = await invoke('get_file_modified', { path: filePath }) as string;
+        setLastSaved(mtime);
+      } catch {}
     }
   }, [readFile, openNote, openTabs]);
 
@@ -636,7 +695,11 @@ const App = () => {
         console.warn('创建备份失败:', e);
       }
       updateActiveTab({ isDirty: false });
-      setLastSaved(new Date());
+      // 保存后记录文件修改时间（用于外部修改检测）
+      try {
+        const mtime = await invoke('get_file_modified', { path: currentNote.filePath }) as string;
+        setLastSaved(mtime);
+      } catch {}
       // Refresh knowledge index since tags/links may have changed
       if (currentDir) {
         refreshKnowledgeIndex(currentDir);
@@ -646,6 +709,7 @@ const App = () => {
       handleSaveAs();
     }
   }, [currentNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateActiveTab]);
+  handleSaveRef.current = handleSave;
 
   const handleSaveAs = useCallback(async () => {
     if (!currentNote) return;
@@ -658,7 +722,11 @@ const App = () => {
         isDirty: false,
         title: result.filePath.split('/').pop()?.replace(/\.md$/, '') || title,
       });
-      setLastSaved(new Date());
+      // 保存后记录文件修改时间（用于外部修改检测）
+      try {
+        const mtime = await invoke('get_file_modified', { path: result.filePath }) as string;
+        setLastSaved(mtime);
+      } catch {}
       showToast('Saved successfully');
     }
   }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab]);
@@ -684,8 +752,8 @@ const App = () => {
   const handleContentChange = useCallback((content: string) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     updateActiveTab({ content, isDirty: true });
-    debounceTimer.current = setTimeout(() => handleSave(), 2000);
-  }, [handleSave, updateActiveTab]);
+    debounceTimer.current = setTimeout(() => handleSaveRef.current(), 2000);
+  }, [updateActiveTab]);
 
   const handleTitleChange = useCallback((title: string) => {
     updateActiveTab({ title, isDirty: true });
@@ -702,13 +770,14 @@ const App = () => {
       refreshBacklinks();
     }
   }, [splitNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateNote]);
+  handleSaveSplitRef.current = handleSaveSplit;
 
   const handleSplitContentChange = useCallback((content: string) => {
     if (!splitNote) return;
     updateNote(splitNote.id, { content, isDirty: true });
     if (splitDebounce.current) clearTimeout(splitDebounce.current);
-    splitDebounce.current = setTimeout(() => handleSaveSplit(), 2000);
-  }, [splitNote, updateNote, handleSaveSplit]);
+    splitDebounce.current = setTimeout(() => handleSaveSplitRef.current(), 2000);
+  }, [splitNote, updateNote]);
 
   const handleSplitTitleChange = useCallback((title: string) => {
     if (!splitNote) return;
@@ -724,16 +793,33 @@ const App = () => {
 
   const handleSelectNote = useCallback((note: Note) => {
     openNote(note);
-    setLastSaved(new Date());
+    // 记录文件修改时间（用于外部修改检测）
+    if (note.filePath) {
+      invoke('get_file_modified', { path: note.filePath }).then((mtime: string) => {
+        setLastSaved(mtime);
+      }).catch(() => {});
+    } else {
+      setLastSaved(null);
+    }
   }, [openNote]);
 
   const handleJumpToHeading = useCallback((pos: number) => {
     editorRef.current?.jumpToHeading?.(pos);
   }, []);
 
+  // 分屏右窗格标题跳转（使用 editorRefSplit）
+  const handleJumpToHeadingSplit = useCallback((pos: number) => {
+    editorRefSplit.current?.jumpToHeading?.(pos);
+  }, []);
+
   // Track active heading based on cursor position（由 Editor 通过 onActiveHeadingChange 上报）
   const handleActiveHeadingChange = useCallback((id: string | null) => {
     setActiveHeading(id);
+  }, []);
+
+  // 分屏右窗格的活跃标题变化
+  const handleSplitActiveHeadingChange = useCallback((id: string | null) => {
+    setSplitActiveHeading(id);
   }, []);
 
   // Build command palette commands
@@ -761,6 +847,7 @@ const App = () => {
     { id: 'next-tab', title: 'Next Tab', shortcut: 'Cmd+Shift+]', category: 'View', action: () => switchTab(1) },
     { id: 'prev-tab', title: 'Previous Tab', shortcut: 'Cmd+Shift+[', category: 'View', action: () => switchTab(-1) },
     { id: 'toggle-split', title: 'Toggle Split Pane', shortcut: 'Cmd+\\', category: 'View', action: toggleSplit },
+    { id: 'version-history', title: '版本历史', shortcut: 'Cmd+Shift+H', category: '文件', action: () => setShowVersionHistory(true) },
   ];
 
   const handleTagClick = useCallback((tag: string) => {
@@ -802,11 +889,24 @@ const App = () => {
           tabs={openTabs}
           activeId={activeTabId}
           splitId={splitNote?.id || null}
-          onSelect={(id) => { setActiveTabId(id); setLastSaved(new Date()); }}
+          onSelect={(id) => {
+            setActiveTabId(id);
+            // 切换标签时记录文件修改时间（用于外部修改检测）
+            const tab = openTabs.find(t => t.id === id);
+            if (tab?.filePath) {
+              invoke('get_file_modified', { path: tab.filePath }).then((mtime: string) => {
+                setLastSaved(mtime);
+              }).catch(() => {});
+            } else {
+              setLastSaved(null);
+            }
+          }}
           onClose={closeTab}
           onOpenInSplit={openInSplit}
           onToggleSplit={toggleSplit}
           isSplit={!!splitNote}
+          onCloseOthers={closeOtherTabs}
+          onCloseToRight={closeTabsToRight}
         />
         {openTabs.length === 0 ? (
           <div className="empty-state">
@@ -841,6 +941,20 @@ const App = () => {
                     currentFilePath={currentNote.filePath}
                     editorRef={editorRef}
                     onActiveHeadingChange={handleActiveHeadingChange}
+                    onWikiLinkClick={(href: string) => {
+                      // 在已打开的标签中查找，或打开文件
+                      const targetTitle = href.replace(/#.*$/, '').trim();
+                      const targetNote = openTabs.find(t => t.title === targetTitle);
+                      if (targetNote) {
+                        setActiveTabId(targetNote.id);
+                      } else {
+                        // 尝试在文件系统中查找
+                        handleOpenFile(href);
+                      }
+                    }}
+                    onTagClick={(tag: string) => {
+                      handleTagClick(tag);
+                    }}
                   />
                   <StatusBar
                     theme={theme}
@@ -863,9 +977,9 @@ const App = () => {
                 <Breadcrumb
                   filePath={splitNote.filePath}
                   noteTitle={splitNote.title}
-                  headings={headings}
-                  activeHeadingId={activeHeading}
-                  onHeadingClick={handleJumpToHeading}
+                  headings={splitHeadings}
+                  activeHeadingId={splitActiveHeading}
+                  onHeadingClick={handleJumpToHeadingSplit}
                 />
                 <Editor
                   content={splitNote.content}
@@ -877,18 +991,31 @@ const App = () => {
                   typewriterMode={typewriterMode}
                   showFindReplace={false}
                   onToggleFindReplace={() => {}}
-                  onStatsChange={() => {}}
-                  onHeadingsChange={() => {}}
+                  onStatsChange={setSplitStats}
+                  onHeadingsChange={setSplitHeadings}
                   onWikiLinksChange={() => {}}
                   currentFilePath={splitNote.filePath || ''}
                   editorRef={editorRefSplit}
+                  onActiveHeadingChange={handleSplitActiveHeadingChange}
+                  onWikiLinkClick={(href: string) => {
+                    const targetTitle = href.replace(/#.*$/, '').trim();
+                    const targetNote = openTabs.find(t => t.title === targetTitle);
+                    if (targetNote) {
+                      setActiveTabId(targetNote.id);
+                    } else {
+                      handleOpenFile(href);
+                    }
+                  }}
+                  onTagClick={(tag: string) => {
+                    handleTagClick(tag);
+                  }}
                 />
                 <StatusBar
                   theme={theme}
                   onCycleTheme={cycleTheme}
                   isDirty={splitNote.isDirty}
                   lastSaved={lastSaved}
-                  stats={stats}
+                  stats={splitStats}
                   editorMode={editorMode}
                   focusMode={focusMode}
                   typewriterMode={typewriterMode}
@@ -1012,7 +1139,11 @@ const App = () => {
               lastModified: new Date().toISOString(),
               isDirty: false,
             });
-            setLastSaved(new Date());
+            // 保存后记录文件修改时间（用于外部修改检测）
+            try {
+              const mtime = await invoke('get_file_modified', { path: filePath }) as string;
+              setLastSaved(mtime);
+            } catch {}
             showToast('Daily note created');
           }
           refreshFileList(currentDir);
@@ -1020,6 +1151,17 @@ const App = () => {
         }}
         onClose={() => setShowQuickInsert(false)}
       />
+
+      {showVersionHistory && currentNote?.filePath && (
+        <VersionHistory
+          notePath={currentNote.filePath}
+          onRestore={(content) => {
+            updateActiveTab({ content, isDirty: true });
+            setShowVersionHistory(false);
+          }}
+          onClose={() => setShowVersionHistory(false)}
+        />
+      )}
 
       {toast && <div className="toast">{toast}</div>}
     </div>

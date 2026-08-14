@@ -4,6 +4,24 @@ use std::path::PathBuf;
 use chrono::{DateTime, Local};
 use uuid::Uuid;
 
+/// 验证路径是否在允许的目录范围内（防止路径遍历攻击）
+fn validate_path(path: &str) -> Result<PathBuf, String> {
+    let canonical = std::path::Path::new(path)
+        .canonicalize()
+        .map_err(|e| format!("路径无效: {}", e))?;
+
+    // 允许访问用户主目录下的所有文件（笔记库通常在主目录下）
+    // 以及 /tmp 目录（用于临时导出）
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    let tmp = PathBuf::from("/tmp");
+
+    if canonical.starts_with(&home) || canonical.starts_with(&tmp) {
+        Ok(canonical)
+    } else {
+        Err(format!("路径不在允许范围内: {}", path))
+    }
+}
+
 /// 笔记元数据
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NoteMeta {
@@ -71,6 +89,15 @@ fn id_from_filename(filename: &str) -> String {
     filename.trim_end_matches(".md").to_string()
 }
 
+/// HTML 特殊字符转义（防止 XSS）
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+     .replace('<', "&lt;")
+     .replace('>', "&gt;")
+     .replace('"', "&quot;")
+     .replace('\'', "&#39;")
+}
+
 /// 从笔记内容提取标题（第一行 # 标题 或 第一行文本）
 fn extract_title(content: &str) -> String {
     content
@@ -80,8 +107,9 @@ fn extract_title(content: &str) -> String {
             let trimmed = line.trim();
             if trimmed.starts_with("# ") {
                 trimmed.trim_start_matches("# ").to_string()
-            } else if trimmed.len() > 50 {
-                format!("{}...", &trimmed[..50])
+            } else if trimmed.chars().count() > 50 {
+                let truncated: String = trimmed.chars().take(50).collect();
+                format!("{}...", truncated)
             } else {
                 trimmed.to_string()
             }
@@ -223,21 +251,21 @@ pub fn export_note(id: String, format: String, path: String) -> String {
         for line in content.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("# ") {
-                html.push_str(&format!("<h1>{}</h1>", trimmed.trim_start_matches("# ")));
+                html.push_str(&format!("<h1>{}</h1>", escape_html(trimmed.trim_start_matches("# "))));
             } else if trimmed.starts_with("## ") {
-                html.push_str(&format!("<h2>{}</h2>", trimmed.trim_start_matches("## ")));
+                html.push_str(&format!("<h2>{}</h2>", escape_html(trimmed.trim_start_matches("## "))));
             } else if trimmed.starts_with("### ") {
-                html.push_str(&format!("<h3>{}</h3>", trimmed.trim_start_matches("### ")));
+                html.push_str(&format!("<h3>{}</h3>", escape_html(trimmed.trim_start_matches("### "))));
             } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-                html.push_str(&format!("<li>{}</li>", &trimmed[2..]));
+                html.push_str(&format!("<li>{}</li>", escape_html(&trimmed[2..])));
             } else if trimmed.starts_with("> ") {
-                html.push_str(&format!("<blockquote>{}</blockquote>", trimmed.trim_start_matches("> ")));
+                html.push_str(&format!("<blockquote>{}</blockquote>", escape_html(trimmed.trim_start_matches("> "))));
             } else if trimmed.starts_with("```") {
                 html.push_str("<pre><code>");
             } else if trimmed.is_empty() {
                 html.push_str("<br/>");
             } else {
-                html.push_str(&format!("<p>{}</p>", trimmed));
+                html.push_str(&format!("<p>{}</p>", escape_html(trimmed)));
             }
         }
         html.push_str("</body></html>");
@@ -512,12 +540,14 @@ pub struct ChatMessage {
 /// 读取任意文件内容
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
+    validate_path(&path)?;
     fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))
 }
 
 /// 写入内容到任意文件
 #[tauri::command]
 pub fn write_file(path: String, content: String) -> Result<(), String> {
+    validate_path(&path)?;
     fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
 }
 
@@ -534,6 +564,8 @@ pub fn delete_file(path: String) -> Result<(), String> {
 /// 重命名文件或目录
 #[tauri::command]
 pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    validate_path(&old_path)?;
+    validate_path(&new_path)?;
     std::fs::rename(&old_path, &new_path).map_err(|e| format!("重命名失败: {}", e))
 }
 
@@ -570,9 +602,10 @@ fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
             .to_string_lossy()
             .to_string();
 
-        // 只包含.md文件和目录
+        // 只显示目录和常见文件类型
         let is_dir = metadata.is_dir();
-        if !is_dir && path.extension().map_or(true, |ext| ext != "md") {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !is_dir && !matches!(ext, "md" | "markdown" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "pdf" | "doc" | "docx" | "txt") {
             continue;
         }
 
@@ -638,10 +671,13 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
                 let line_lower = line.to_lowercase();
                 if let Some(pos) = line_lower.find(query_lower) {
                     // 提取匹配位置前后共50个字符的预览
-                    let start = pos.saturating_sub(25);
-                    let end = (pos + query_lower.len() + 25).min(line.len());
-                    let preview = if line.len() > 50 {
-                        format!("{}...{}", &line[start..pos], &line[pos..end])
+                    let chars: Vec<char> = line.chars().collect();
+                    let preview = if chars.len() > 50 {
+                        let match_char_pos = line[..pos].chars().count();
+                        let preview_start = match_char_pos.saturating_sub(10);
+                        let preview_end = (match_char_pos + 40).min(chars.len());
+                        let preview_str: String = chars[preview_start..preview_end].iter().collect();
+                        format!("{}...", preview_str)
                     } else {
                         line.to_string()
                     };
@@ -775,8 +811,9 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
                                 if !found {
                                     found = true;
                                     // 提取包含链接的行的前100个字符作为预览
-                                    let preview = if line.len() > 100 {
-                                        format!("{}...", &line[..100])
+                                    let preview = if line.chars().count() > 100 {
+                                        let truncated: String = line.chars().take(100).collect();
+                                        format!("{}...", truncated)
                                     } else {
                                         line.to_string()
                                     };
@@ -881,6 +918,7 @@ pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
 /// 列出笔记的备份版本
 #[tauri::command]
 pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
+    validate_path(&note_path)?;
     let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let backup_base = base.join(".z-note").join("backups");
     let safe_name = note_path.replace('/', "_").replace('\\', "_");
@@ -929,6 +967,7 @@ pub fn restore_backup(backup_path: String, target_path: String) -> Result<(), St
 /// 获取文件修改时间（用于检测外部修改）
 #[tauri::command]
 pub fn get_file_modified(path: String) -> Result<String, String> {
+    validate_path(&path)?;
     let metadata = fs::metadata(&path)
         .map_err(|e| format!("获取文件信息失败: {}", e))?;
     let modified = metadata.modified()

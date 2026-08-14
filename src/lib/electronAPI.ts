@@ -120,9 +120,20 @@ export const electronAPI = {
           return { success: true, filePath: result };
         }
         case 'export-pdf': {
-          // 暂时以 md 格式导出
-          const result = await invoke<string>('export_note', { id: args[0], format: 'md', path: args[1] });
-          return { success: true, filePath: result };
+          // 生成 HTML 并通过浏览器打印为 PDF
+          const htmlResult = await invoke<string>('export_note', { id: args[0], format: 'html', path: '' });
+          if (htmlResult) {
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+              printWindow.document.write(htmlResult);
+              printWindow.document.close();
+              printWindow.onload = () => {
+                printWindow.print();
+                printWindow.close();
+              };
+            }
+          }
+          return { success: true, filePath: '' };
         }
         case 'search-in-files': {
           const matches = await invoke<any[]>('search_in_files', { dir: args[0], query: args[1] });
@@ -149,7 +160,13 @@ export const electronAPI = {
           return { success: true, notes };
         }
         case 'find-backlinks': {
-          const backlinks = await invoke<any[]>('find_backlinks', { dir: args[0], noteTitle: args[1], notePath: args[2] });
+          const result = await invoke<any[]>('find_backlinks', { dir: args[0], noteTitle: args[1], notePath: args[2] });
+          // Rust BacklinkEntry 的字段为 file_path/title/preview，前端 Backlink 类型使用 noteId
+          const backlinks = (result || []).map((bl: any) => ({
+            noteId: bl.file_path,
+            title: bl.title,
+            preview: bl.preview,
+          }));
           return { success: true, backlinks };
         }
         default:

@@ -1,7 +1,10 @@
 import { Mark, mergeAttributes } from '@tiptap/core';
+import { Plugin } from '@tiptap/pm/state';
 
 export interface TagOptions {
   HTMLAttributes: Record<string, any>;
+  // 点击标签时的回调
+  onTagClick: ((tag: string) => void) | null;
 }
 
 declare module '@tiptap/core' {
@@ -23,6 +26,7 @@ export const Tag = Mark.create<TagOptions>({
   addOptions() {
     return {
       HTMLAttributes: {},
+      onTagClick: null as ((tag: string) => void) | null,
     };
   },
 
@@ -45,6 +49,7 @@ export const Tag = Mark.create<TagOptions>({
         {
           'data-type': 'tag',
           'data-name': name || '',
+          'data-tag-name': name || '',
           class: 'tag-mark',
           href: '#',
         },
@@ -71,6 +76,28 @@ export const Tag = Mark.create<TagOptions>({
 
   addKeyboardShortcuts() {
     return {};
+  },
+
+  // 拦截标签点击，调用 onTagClick 回调
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleClick: (view, pos, event) => {
+            const target = event.target as HTMLElement;
+            const tagEl = target.closest('[data-type="tag"]') as HTMLElement;
+            if (tagEl) {
+              const tag = tagEl.getAttribute('data-tag-name') || tagEl.textContent?.replace('#', '');
+              if (tag && this.options.onTagClick) {
+                this.options.onTagClick(tag);
+                return true;
+              }
+            }
+            return false;
+          },
+        },
+      }),
+    ];
   },
 });
 

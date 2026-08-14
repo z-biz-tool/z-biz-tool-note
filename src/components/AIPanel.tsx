@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, Loader2, FileText, Tag, ListTree, MessageSquare, Network } from 'lucide-react';
+import type { AIMessage } from '../types';
 
 interface AIPanelProps {
-  onAction: (action: AIAction, context?: string) => Promise<string>;
+  onAction: (action: AIAction, context?: string, history?: AIMessage[]) => Promise<string>;
   onInsert: (text: string) => void;
   onClose: () => void;
   enabled: boolean;
@@ -64,7 +65,7 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings }
     setLoading(true);
     setBusyAction('chat');
     try {
-      const result = await onAction('chat', userMsg);
+      const result = await onAction('chat', userMsg, chat.map(m => ({ role: m.role, content: m.content }) as AIMessage).slice(-10)); // 传最近 10 条对话历史
       setChat(prev => [...prev, { role: 'assistant', content: result }]);
     } catch (e: any) {
       setChat(prev => [...prev, { role: 'assistant', content: `Error: ${e.message || e}` }]);

@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { X, Save, Plus, Trash2, FileText } from 'lucide-react';
-import type { AIConfig, Template } from '../types';
+import type { AIConfig, Template, Config } from '../types';
 
 interface SettingsDialogProps {
   open: boolean;
   aiConfig: AIConfig;
   templates: Template[];
+  config: Config;
   onSaveAI: (config: AIConfig) => void;
   onSaveTemplates: (templates: Template[]) => void;
+  onSaveConfig: (config: Config) => void;
   onClose: () => void;
 }
 
@@ -59,25 +61,28 @@ const DEFAULT_TEMPLATES: Template[] = [
 ];
 
 export const SettingsDialog = ({
-  open, aiConfig, templates, onSaveAI, onSaveTemplates, onClose
+  open, aiConfig, templates, config, onSaveAI, onSaveTemplates, onSaveConfig, onClose
 }: SettingsDialogProps) => {
-  const [tab, setTab] = useState<'ai' | 'templates'>('ai');
+  const [tab, setTab] = useState<'ai' | 'templates' | 'appearance'>('ai');
   const [ai, setAI] = useState<AIConfig>(aiConfig);
   const [tpls, setTpls] = useState<Template[]>(templates.length ? templates : DEFAULT_TEMPLATES);
   const [editingTpl, setEditingTpl] = useState<Template | null>(null);
+  const [cfg, setCfg] = useState<Config>(config);
 
   useEffect(() => {
     if (open) {
       setAI(aiConfig);
       setTpls(templates.length ? templates : DEFAULT_TEMPLATES);
+      setCfg(config);
     }
-  }, [open, aiConfig, templates]);
+  }, [open, aiConfig, templates, config]);
 
   if (!open) return null;
 
   const handleSave = () => {
     onSaveAI(ai);
     onSaveTemplates(tpls);
+    onSaveConfig(cfg);
     onClose();
   };
 
@@ -112,6 +117,9 @@ export const SettingsDialog = ({
         <div className="modal-tabs">
           <button className={`modal-tab ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>
             AI Provider
+          </button>
+          <button className={`modal-tab ${tab === 'appearance' ? 'active' : ''}`} onClick={() => setTab('appearance')}>
+            外观
           </button>
           <button className={`modal-tab ${tab === 'templates' ? 'active' : ''}`} onClick={() => setTab('templates')}>
             Templates
@@ -171,6 +179,48 @@ export const SettingsDialog = ({
                 <button onClick={() => setAI({ ...ai, baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' })}>智谱</button>
                 <button onClick={() => setAI({ ...ai, baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' })}>Kimi</button>
                 <button onClick={() => setAI({ ...ai, baseURL: 'http://localhost:11434/v1', model: 'llama3.1' })}>Ollama</button>
+              </div>
+            </div>
+          )}
+
+          {tab === 'appearance' && (
+            <div className="settings-form">
+              {/* 字体大小设置 */}
+              <div className="setting-item">
+                <label>字体大小</label>
+                <input
+                  type="range"
+                  min="12"
+                  max="24"
+                  value={cfg.fontSize || 16}
+                  onChange={(e) => {
+                    const size = parseInt(e.target.value);
+                    setCfg(prev => ({ ...prev, fontSize: size }));
+                    document.documentElement.style.setProperty('--font-size-base', size + 'px');
+                  }}
+                />
+                <span>{cfg.fontSize || 16}px</span>
+              </div>
+
+              {/* 字体选择 */}
+              <div className="setting-item">
+                <label>字体</label>
+                <select
+                  value={cfg.fontFamily || 'system-ui'}
+                  onChange={(e) => {
+                    const family = e.target.value;
+                    setCfg(prev => ({ ...prev, fontFamily: family }));
+                    document.documentElement.style.setProperty('--font-family', family);
+                  }}
+                >
+                  <option value="system-ui">系统默认</option>
+                  <option value="'Helvetica Neue', sans-serif">Helvetica Neue</option>
+                  <option value="'PingFang SC', sans-serif">苹方</option>
+                  <option value="'Source Han Sans SC', sans-serif">思源黑体</option>
+                  <option value="'Source Han Serif SC', serif">思源宋体</option>
+                  <option value="Georgia, serif">Georgia</option>
+                  <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
+                </select>
               </div>
             </div>
           )}

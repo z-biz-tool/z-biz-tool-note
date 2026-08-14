@@ -59,7 +59,6 @@ import mermaid from 'mermaid';
 
 import 'katex/dist/katex.min.css';
 
-let mermaidCounter = 0;
 
 mermaid.initialize({
   theme: 'default',
@@ -97,6 +96,10 @@ interface EditorProps {
   currentFilePath: string;
   editorRef: React.MutableRefObject<any>;
   onActiveHeadingChange?: (id: string | null) => void;
+  // 点击 wiki-link 时的回调
+  onWikiLinkClick?: (href: string) => void;
+  // 点击标签时的回调
+  onTagClick?: (tag: string) => void;
 }
 
 export const Editor = ({
@@ -115,12 +118,15 @@ export const Editor = ({
   currentFilePath,
   editorRef,
   onActiveHeadingChange,
+  onWikiLinkClick,
+  onTagClick,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
   const noteIdRef = useRef<string>('');
   const stateCacheRef = useRef<Map<string, any>>(new Map());
+  const mermaidCounterRef = useRef(0);
 
   const editor = useEditor({
     extensions: [
@@ -155,8 +161,17 @@ export const Editor = ({
       Superscript,
       Mathematics,
       Mermaid,
-      WikiLink,
-      Tag,
+      WikiLink.configure({
+        onNavigate: (href: string) => {
+          // 查找并打开目标笔记
+          if (onWikiLinkClick) onWikiLinkClick(href);
+        },
+      }),
+      Tag.configure({
+        onTagClick: (tag: string) => {
+          if (onTagClick) onTagClick(tag);
+        },
+      }),
       BlockReference,
       MultiCursor,
       SlashCommand,
@@ -194,6 +209,11 @@ export const Editor = ({
     // 缓存当前笔记的编辑器状态（含 undo/redo 历史）
     if (noteIdRef.current && noteIdRef.current !== currentFilePath) {
       stateCacheRef.current.set(noteIdRef.current, editor.view.state);
+      // 限制缓存大小，避免内存泄漏
+      if (stateCacheRef.current.size > 10) {
+        const firstKey = stateCacheRef.current.keys().next().value;
+        if (firstKey) stateCacheRef.current.delete(firstKey);
+      }
     }
 
     // 切换到新笔记：尝试恢复缓存的状态
@@ -218,6 +238,11 @@ export const Editor = ({
     return () => {
       if (editor && noteIdRef.current) {
         stateCacheRef.current.set(noteIdRef.current, editor.view.state);
+        // 限制缓存大小，避免内存泄漏
+        if (stateCacheRef.current.size > 10) {
+          const firstKey = stateCacheRef.current.keys().next().value;
+          if (firstKey) stateCacheRef.current.delete(firstKey);
+        }
       }
     };
   }, [editor]);
@@ -287,10 +312,14 @@ export const Editor = ({
   const updateStats = useCallback(() => {
     if (!editor) return;
     const text = editor.getText();
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    // CJK 感知的字数统计
+    const cjkCount = (text.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []).length;
+    const nonCjkText = text.replace(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g, ' ');
+    const nonCjkWords = nonCjkText.trim() ? nonCjkText.trim().split(/\s+/).length : 0;
+    const words = cjkCount + nonCjkWords;
     const characters = text.length;
     const lines = text.split('\n').length;
-    const readingTime = Math.max(1, Math.ceil(words / 200));
+    const readingTime = Math.max(1, Math.ceil(words / 200)); // CJK 约 200 字/分钟
     onStatsChange({ words, characters, lines, readingTime });
   }, [editor, onStatsChange]);
 
@@ -347,7 +376,7 @@ export const Editor = ({
       const codeElement = container.querySelector('code');
       if (codeElement && codeElement.textContent) {
         const code = codeElement.textContent;
-        mermaid.render('mermaid-' + (++mermaidCounter), code).then((result) => {
+        mermaid.render('mermaid-' + (++mermaidCounterRef.current), code).then((result) => {
           container.innerHTML = result.svg;
         }).catch(() => {
           container.innerHTML = '<pre style="color: red;">Invalid Mermaid syntax</pre>';

@@ -188,11 +188,25 @@ export const Sidebar = ({
     setContextMenu(null);
   };
 
-  const handleDelete = async () => {
-    if (!contextMenu?.item) return;
-    await invoke('delete_file', { path: contextMenu.item.path });
-    loadFileTree(currentDir);
-    onRefresh?.();
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const item = contextMenu?.item;
+    if (!item) return;
+
+    const isDir = item.isDirectory || item.is_dir;
+    const msg = isDir
+      ? `确定删除文件夹 "${item.name}" 及其所有内容吗？此操作不可撤销。`
+      : `确定删除笔记 "${item.name}" 吗？此操作不可撤销。`;
+
+    if (!window.confirm(msg)) return;
+
+    try {
+      await invoke('delete_file', { path: item.path });
+      onRefresh?.();
+    } catch (err) {
+      console.error('删除失败:', err);
+      alert('删除失败: ' + err);
+    }
     setContextMenu(null);
   };
 

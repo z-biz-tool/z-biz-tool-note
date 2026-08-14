@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { X, SplitSquareHorizontal, FileText } from 'lucide-react';
 import type { Note } from '../types';
 
@@ -10,6 +11,8 @@ interface TabsBarProps {
   onOpenInSplit: (id: string) => void;
   onToggleSplit: () => void;
   isSplit: boolean;
+  onCloseOthers?: (keepId: string) => void;
+  onCloseToRight?: (tabId: string) => void;
 }
 
 // 顶部标签栏：展示所有打开的笔记；点击切换、中键或右键在分屏中打开、× 关闭
@@ -22,7 +25,26 @@ export const TabsBar = ({
   onOpenInSplit,
   onToggleSplit,
   isSplit,
+  onCloseOthers,
+  onCloseToRight,
 }: TabsBarProps) => {
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+
+  // 右键菜单处理
+  const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+  };
+
+  // 点击外部关闭右键菜单
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [contextMenu]);
+
   if (tabs.length === 0) return null;
 
   return (
@@ -36,6 +58,7 @@ export const TabsBar = ({
               key={tab.id}
               className={`tab-item ${isActive ? 'active' : ''} ${isSplitTab ? 'split' : ''}`}
               onClick={() => onSelect(tab.id)}
+              onContextMenu={(e) => handleContextMenu(e, tab.id)}
               onAuxClick={(e) => {
                 // 中键点击：在分屏中打开
                 if (e.button === 1) {
@@ -69,6 +92,17 @@ export const TabsBar = ({
       >
         <SplitSquareHorizontal size={14} />
       </button>
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div className="tab-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <div className="tab-context-item" onClick={() => { onClose(contextMenu.tabId); setContextMenu(null); }}>关闭标签</div>
+          <div className="tab-context-item" onClick={() => { onCloseOthers?.(contextMenu.tabId); setContextMenu(null); }}>关闭其他标签</div>
+          <div className="tab-context-item" onClick={() => { onCloseToRight?.(contextMenu.tabId); setContextMenu(null); }}>关闭右侧标签</div>
+          <div className="tab-context-separator" />
+          <div className="tab-context-item" onClick={() => { navigator.clipboard.writeText(contextMenu.tabId); setContextMenu(null); }}>复制文件路径</div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,7 +1,10 @@
 import { Node, mergeAttributes } from '@tiptap/core';
+import { Plugin } from '@tiptap/pm/state';
 
 export interface WikiLinkOptions {
   HTMLAttributes: Record<string, any>;
+  // 点击 wiki-link 时的回调
+  onNavigate: ((href: string) => void) | null;
 }
 
 declare module '@tiptap/core' {
@@ -24,6 +27,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   addOptions() {
     return {
       HTMLAttributes: {},
+      onNavigate: null as ((href: string) => void) | null,
     };
   },
 
@@ -82,5 +86,27 @@ export const WikiLink = Node.create<WikiLinkOptions>({
 
   addKeyboardShortcuts() {
     return {};
+  },
+
+  // 拦截 wiki-link 点击，调用 onNavigate 回调
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleClick: (view, pos, event) => {
+            const target = event.target as HTMLElement;
+            if (target.closest('[data-type="wiki-link"]')) {
+              const linkEl = target.closest('a') as HTMLElement;
+              const href = linkEl?.getAttribute('data-text') || linkEl?.getAttribute('href');
+              if (href && this.options.onNavigate) {
+                this.options.onNavigate(href);
+                return true;
+              }
+            }
+            return false;
+          },
+        },
+      }),
+    ];
   },
 });

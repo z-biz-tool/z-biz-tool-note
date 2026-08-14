@@ -5,7 +5,7 @@ interface StatusBarProps {
   theme: ThemeName;
   onCycleTheme: () => void;
   isDirty: boolean;
-  lastSaved: Date | null;
+  lastSaved: string | null;
   stats: { words: number; characters: number; lines: number; readingTime: number };
   editorMode: 'wysiwyg' | 'source';
   focusMode: boolean;
