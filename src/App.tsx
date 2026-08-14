@@ -16,7 +16,7 @@ import { QuickInsert } from './components/QuickInsert';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
 import VersionHistory from './components/VersionHistory';
-import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink } from './types';
+import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink, Config } from './types';
 import { useFileOperations } from './hooks/useFileOperations';
 import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
 import './index.css';
@@ -158,6 +158,15 @@ const App = () => {
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  // 字体配置
+  const [config, setConfig] = useState<Config>({
+    theme: 'light',
+    fontSize: 16,
+    fontFamily: 'system-ui',
+    autoSave: true,
+    lastNoteId: '',
+  });
+
   // Templates state
   const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
   const [showQuickInsert, setShowQuickInsert] = useState(false);
@@ -272,6 +281,21 @@ const App = () => {
     const savedAI = localStorage.getItem('aiConfig');
     if (savedAI) {
       try { setAIConfig(JSON.parse(savedAI)); } catch (e) { console.warn('加载 AI 配置失败:', e); }
+    }
+
+    // 加载字体配置
+    const savedConfig = localStorage.getItem('appConfig');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        setConfig(parsed);
+        if (parsed.fontSize) {
+          document.documentElement.style.setProperty('--font-size-base', parsed.fontSize + 'px');
+        }
+        if (parsed.fontFamily) {
+          document.documentElement.style.setProperty('--font-family', parsed.fontFamily);
+        }
+      } catch (e) { console.warn('加载配置失败:', e); }
     }
 
     // Load templates
@@ -1102,6 +1126,7 @@ const App = () => {
         open={showSettings}
         aiConfig={aiConfig}
         templates={templates}
+        config={config}
         onSaveAI={(cfg) => {
           setAIConfig(cfg);
           localStorage.setItem('aiConfig', JSON.stringify(cfg));
@@ -1110,6 +1135,10 @@ const App = () => {
         onSaveTemplates={(tpls) => {
           setTemplates(tpls);
           localStorage.setItem('templates', JSON.stringify(tpls));
+        }}
+        onSaveConfig={(cfg) => {
+          setConfig(cfg);
+          localStorage.setItem('appConfig', JSON.stringify(cfg));
         }}
         onClose={() => setShowSettings(false)}
       />
