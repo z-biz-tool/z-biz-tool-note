@@ -188,12 +188,12 @@ export const Sidebar = ({
     setContextMenu(null);
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     const item = contextMenu?.item;
     if (!item) return;
 
-    const isDir = item.isDirectory || item.is_dir;
+    const isDir = item.isDirectory;
     const msg = isDir
       ? `确定删除文件夹 "${item.name}" 及其所有内容吗？此操作不可撤销。`
       : `确定删除笔记 "${item.name}" 吗？此操作不可撤销。`;
