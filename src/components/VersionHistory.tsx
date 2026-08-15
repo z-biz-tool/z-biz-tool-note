@@ -56,7 +56,7 @@ export default function VersionHistory({ notePath, onRestore, onClose }: Version
   }, [previewPath, notePath, preview, onRestore, onClose]);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="版本历史" onClick={onClose}>
       <div className="version-history-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3><Clock size={16} /> 版本历史</h3>

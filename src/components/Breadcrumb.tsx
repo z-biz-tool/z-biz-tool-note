@@ -1,3 +1,4 @@
+import React from 'react';
 import { ChevronRight, FileText, Hash } from 'lucide-react';
 import type { HeadingItem } from '../types';
 
@@ -11,7 +12,7 @@ interface BreadcrumbProps {
 
 // 顶部面包屑：[文件夹] / [子文件夹] / [笔记标题] / [当前 # 标题]
 // 文件夹/笔记段为静态展示，标题段可点击跳转。
-export const Breadcrumb = ({
+export const Breadcrumb = React.memo(({
   filePath,
   noteTitle,
   headings,
@@ -63,4 +64,4 @@ export const Breadcrumb = ({
       </div>
     </div>
   );
-};
+});

@@ -40,16 +40,17 @@ export const FolderContextMenu = ({
   return (
     <div
       className="context-menu"
+      role="menu"
       style={{ left: x, top: y }}
       onClick={handleClickOutside}
     >
       {type === 'empty' && (
         <>
-          <button className="context-menu-item" onClick={(e) => { e.stopPropagation(); onNewFile(); }}>
+          <button className="context-menu-item" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onNewFile(); }} onKeyDown={(e) => { if (e.key === 'Enter') onNewFile(); }}>
             <FileText size={16} />
             <span>New File</span>
           </button>
-          <button className="context-menu-item" onClick={(e) => { e.stopPropagation(); onNewFolder(); }}>
+          <button className="context-menu-item" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onNewFolder(); }} onKeyDown={(e) => { if (e.key === 'Enter') onNewFolder(); }}>
             <FolderPlus size={16} />
             <span>New Folder</span>
           </button>
@@ -58,12 +59,12 @@ export const FolderContextMenu = ({
 
       {type === 'file' && (
         <>
-          <button className="context-menu-item" onClick={(e) => { e.stopPropagation(); onRename(); }}>
+          <button className="context-menu-item" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onRename(); }} onKeyDown={(e) => { if (e.key === 'Enter') onRename(); }}>
             <Edit3 size={16} />
             <span>Rename</span>
           </button>
           <div className="context-menu-divider"></div>
-          <button className="context-menu-item danger" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+          <button className="context-menu-item danger" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onDelete(); }} onKeyDown={(e) => { if (e.key === 'Enter') onDelete(); }}>
             <Trash2 size={16} />
             <span>Delete</span>
           </button>
@@ -72,20 +73,20 @@ export const FolderContextMenu = ({
 
       {type === 'folder' && (
         <>
-          <button className="context-menu-item" onClick={(e) => { e.stopPropagation(); onNewFile(); }}>
+          <button className="context-menu-item" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onNewFile(); }} onKeyDown={(e) => { if (e.key === 'Enter') onNewFile(); }}>
             <FileText size={16} />
             <span>New File</span>
           </button>
-          <button className="context-menu-item" onClick={(e) => { e.stopPropagation(); onNewFolder(); }}>
+          <button className="context-menu-item" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onNewFolder(); }} onKeyDown={(e) => { if (e.key === 'Enter') onNewFolder(); }}>
             <FolderPlus size={16} />
             <span>New Folder</span>
           </button>
           <div className="context-menu-divider"></div>
-          <button className="context-menu-item" onClick={(e) => { e.stopPropagation(); onRename(); }}>
+          <button className="context-menu-item" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onRename(); }} onKeyDown={(e) => { if (e.key === 'Enter') onRename(); }}>
             <Edit3 size={16} />
             <span>Rename</span>
           </button>
-          <button className="context-menu-item danger" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+          <button className="context-menu-item danger" role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); onDelete(); }} onKeyDown={(e) => { if (e.key === 'Enter') onDelete(); }}>
             <Trash2 size={16} />
             <span>Delete</span>
           </button>

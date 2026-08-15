@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import type { Editor } from '@tiptap/react';
 
 interface MinimapProps {
@@ -7,7 +7,7 @@ interface MinimapProps {
 }
 
 // 右侧缩略图：镜像整篇笔记纯文本，点击跳转，高亮当前视口
-export const Minimap = ({ editor, scrollContainer }: MinimapProps) => {
+export const Minimap = React.memo(({ editor, scrollContainer }: MinimapProps) => {
   const [text, setText] = useState<string>('');
   const [viewport, setViewport] = useState<{ top: number; height: number }>({ top: 0, height: 0 });
   const [dragging, setDragging] = useState(false);
@@ -139,4 +139,4 @@ export const Minimap = ({ editor, scrollContainer }: MinimapProps) => {
       />
     </div>
   );
-};
+});

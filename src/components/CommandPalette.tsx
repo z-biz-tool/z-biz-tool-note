@@ -61,7 +61,7 @@ export const CommandPalette = ({ commands, onClose }: CommandPaletteProps) => {
   };
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="命令面板" onClick={handleOverlayClick}>
       <div className="modal-box">
         <input
           ref={inputRef}

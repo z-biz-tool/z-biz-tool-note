@@ -1,3 +1,4 @@
+import React from 'react';
 import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode } from 'lucide-react';
 import type { ThemeName } from '../types';
 
@@ -15,7 +16,7 @@ interface StatusBarProps {
   onToggleTypewriterMode: () => void;
 }
 
-export const StatusBar = ({
+export const StatusBar = React.memo(({
   theme,
   onCycleTheme,
   isDirty,
@@ -29,7 +30,7 @@ export const StatusBar = ({
   onToggleTypewriterMode,
 }: StatusBarProps) => {
   return (
-    <div className="status-bar">
+    <div className="status-bar" role="status" aria-live="polite">
       <div className="status-bar-section">
         {isDirty ? (
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--warning-color)' }}>
@@ -70,4 +71,4 @@ export const StatusBar = ({
       </div>
     </div>
   );
-};
+});

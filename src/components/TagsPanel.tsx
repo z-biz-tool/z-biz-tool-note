@@ -1,5 +1,5 @@
+import React, { useState, useMemo } from 'react';
 import { Hash, ChevronRight, ChevronDown, Folder } from 'lucide-react';
-import { useState, useMemo } from 'react';
 import type { Tag } from '../types';
 
 interface TagsPanelProps {
@@ -17,7 +17,7 @@ interface TagTreeNode {
   aggregatedCount: number; // 自身 + 所有后代笔记的去重数量
 }
 
-export const TagsPanel = ({ tags, onTagClick, activeTag }: TagsPanelProps) => {
+export const TagsPanel = React.memo(({ tags, onTagClick, activeTag }: TagsPanelProps) => {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // 将扁平 tag 列表构建为树（按 / 分割路径），并预计算聚合 count
@@ -141,4 +141,4 @@ export const TagsPanel = ({ tags, onTagClick, activeTag }: TagsPanelProps) => {
       {renderNode(tree, 0)}
     </div>
   );
-};
+});

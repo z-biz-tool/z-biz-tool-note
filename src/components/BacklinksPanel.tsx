@@ -1,3 +1,4 @@
+import React from 'react';
 import { Link2, FileText } from 'lucide-react';
 import type { Backlink } from '../types';
 
@@ -7,7 +8,7 @@ interface BacklinksPanelProps {
   onClose: () => void;
 }
 
-export const BacklinksPanel = ({ backlinks, onJump, onClose }: BacklinksPanelProps) => {
+export const BacklinksPanel = React.memo(({ backlinks, onJump, onClose }: BacklinksPanelProps) => {
   return (
     <div className="backlinks-panel">
       <div className="outline-header">
@@ -41,4 +42,4 @@ export const BacklinksPanel = ({ backlinks, onJump, onClose }: BacklinksPanelPro
       </div>
     </div>
   );
-};
+});

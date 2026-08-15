@@ -17,6 +17,8 @@ interface SidebarProps {
   onNewNote: () => void;
   onOpenFolder: (dirPath: string) => void;
   onRefresh?: () => void;
+  refreshKey?: number;
+  onRename?: (oldPath: string, newPath: string, newName: string) => void;
   tags?: Tag[];
   onTagClick?: (tag: string) => void;
   activeTag?: string | null;
@@ -28,7 +30,7 @@ interface SidebarProps {
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
-  isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh,
+  isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily,
 }: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
@@ -53,6 +55,13 @@ export const Sidebar = ({
       loadFileTree(savedDir);
     }
   }, []);
+
+  // 当 refreshKey 变化时重新加载文件树
+  useEffect(() => {
+    if (currentDir) {
+      loadFileTree(currentDir);
+    }
+  }, [refreshKey]);
 
   const loadFileTree = async (dir: string) => {
     setLoading(true);
@@ -171,20 +180,27 @@ export const Sidebar = ({
   };
 
   const handleRename = async () => {
-    if (!contextMenu?.item) return;
-    const oldPath = contextMenu.item.path;
-    const dir = pathDirname(oldPath);
-    const oldName = pathBasename(oldPath);
-    const extension = pathExtname(oldName);
-    const baseName = oldName.replace(extension, '');
-    let newName = `${baseName} (renamed)${extension}`;
-    let counter = 1;
-    while (await invoke<boolean>('file_exists', { path: pathJoin(dir, newName) })) {
-      newName = `${baseName} (renamed ${counter++})${extension}`;
+    const item = contextMenu?.item;
+    if (!item) return;
+    
+    const newName = prompt('输入新名称:', item.name);
+    if (!newName || newName === item.name) return;
+    
+    const parentDir = pathDirname(item.path);
+    const newPath = pathJoin(parentDir, newName);
+    
+    try {
+      if (await invoke('file_exists', { path: newPath })) {
+        alert('该名称已存在');
+        return;
+      }
+      await invoke('rename_file', { oldPath: item.path, newPath });
+      onRename?.(item.path, newPath, newName);
+      onRefresh?.();
+    } catch (err) {
+      console.error('重命名失败:', err);
+      alert('重命名失败: ' + err);
     }
-    await invoke('rename_file', { oldPath, newPath: pathJoin(dir, newName) });
-    loadFileTree(currentDir);
-    onRefresh?.();
     setContextMenu(null);
   };
 
@@ -263,6 +279,7 @@ export const Sidebar = ({
           <button
             className={`sidebar-file-item ${currentNote?.filePath === file.path ? 'active' : ''}`}
             style={{ paddingLeft: `${12 + depth * 16 + 20}px` }}
+            role="treeitem"
             onClick={() => handleFileClick(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
           >
@@ -288,7 +305,7 @@ export const Sidebar = ({
   }
 
   return (
-    <div className="sidebar">
+    <div className="sidebar" role="navigation" aria-label="笔记导航">
       <div className="sidebar-header">
         <span className="sidebar-title">ZenNote</span>
         <button className="toolbar-btn" onClick={onNewNote} title="New Note">
@@ -321,7 +338,7 @@ export const Sidebar = ({
               {currentDir ? currentDir.split('/').pop() : 'No folder'}
             </span>
           </div>
-          <div className="sidebar-file-list" onContextMenu={(e) => handleContextMenu(e)}>
+          <div className="sidebar-file-list" role="tree" onContextMenu={(e) => handleContextMenu(e)}>
             {loading ? (
               <div className="sidebar-empty">Loading...</div>
             ) : fileTree.length === 0 ? (

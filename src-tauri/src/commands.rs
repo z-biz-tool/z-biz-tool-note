@@ -482,6 +482,7 @@ pub struct FileEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    pub is_file: bool,
     pub size: u64,
     pub modified: String,
     pub children: Vec<FileEntry>,
@@ -554,6 +555,7 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
 /// 删除文件或目录
 #[tauri::command]
 pub fn delete_file(path: String) -> Result<(), String> {
+    validate_path(&path)?;
     if std::path::Path::new(&path).is_dir() {
         std::fs::remove_dir_all(&path).map_err(|e| format!("删除目录失败: {}", e))
     } else {
@@ -572,12 +574,14 @@ pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
 /// 检查文件或目录是否存在
 #[tauri::command]
 pub fn file_exists(path: String) -> bool {
+    if validate_path(&path).is_err() { return false; }
     std::path::Path::new(&path).exists()
 }
 
 /// 递归列出目录内容
 #[tauri::command]
 pub fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
+    validate_path(&path)?;
     list_dir_recursive(&PathBuf::from(&path))
 }
 
@@ -604,6 +608,7 @@ fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
 
         // 只显示目录和常见文件类型
         let is_dir = metadata.is_dir();
+        let is_file = !is_dir;
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if !is_dir && !matches!(ext, "md" | "markdown" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "pdf" | "doc" | "docx" | "txt") {
             continue;
@@ -626,6 +631,7 @@ fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
             name,
             path: path.to_string_lossy().to_string(),
             is_dir,
+            is_file,
             size: metadata.len(),
             modified,
             children,

@@ -356,9 +356,13 @@ body {
   padding: 10px 20px; background: var(--bg-tertiary); color: var(--text-primary);
   border: 1px solid var(--border-color); border-radius: var(--radius-md);
   box-shadow: var(--shadow-md); font-size: 14px; z-index: 10000;
-  animation: toastIn 0.3s ease;
+  animation: toastIn 0.3s ease-out;
+}
+.toast.toast-exit {
+  animation: toastOut 0.3s ease-in forwards;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toastOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-10px); } }
 
 /* ===== Theme Selector ===== */
 .theme-selector { display: flex; gap: 8px; padding: 12px; }
@@ -964,26 +968,27 @@ body {
   border-color: var(--accent-color);
 }
 
-.btn-primary {
+.btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  background: var(--accent-color);
-  color: #fff;
+  padding: 6px 14px;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 500;
-  transition: background var(--transition);
+  transition: opacity var(--transition);
 }
-.btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.btn-primary:disabled {
+.btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent-color);
+  color: white;
+}
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.85;
 }
 .btn-secondary {
   padding: 8px 14px;
@@ -1505,6 +1510,15 @@ body {
 .tab-item.split {
   border-bottom: 2px solid var(--text-muted);
 }
+.tab-item.dragging {
+  opacity: 0.4;
+}
+.tab-item.drag-over-left {
+  box-shadow: inset 3px 0 0 0 var(--accent-color);
+}
+.tab-item.drag-over-right {
+  box-shadow: inset -3px 0 0 0 var(--accent-color);
+}
 .tab-icon {
   flex-shrink: 0;
   opacity: 0.6;
@@ -1723,22 +1737,7 @@ body {
   border-top: 1px solid var(--border-color);
   gap: 8px;
 }
-.btn-primary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background: var(--accent-color);
-  color: white;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 13px;
-  transition: opacity var(--transition);
-}
-.btn-primary:hover {
-  opacity: 0.85;
-}
+
 
 /* ========== 标签右键菜单 ========== */
 .tab-context-menu {

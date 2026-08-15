@@ -100,6 +100,8 @@ interface EditorProps {
   onWikiLinkClick?: (href: string) => void;
   // 点击标签时的回调
   onTagClick?: (tag: string) => void;
+  // 滚动同步目标
+  scrollSyncTarget?: React.RefObject<HTMLElement>;
 }
 
 export const Editor = ({
@@ -120,6 +122,7 @@ export const Editor = ({
   onActiveHeadingChange,
   onWikiLinkClick,
   onTagClick,
+  scrollSyncTarget,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const editorScrollRef = useRef<HTMLDivElement>(null);
@@ -127,6 +130,39 @@ export const Editor = ({
   const noteIdRef = useRef<string>('');
   const stateCacheRef = useRef<Map<string, any>>(new Map());
   const mermaidCounterRef = useRef(0);
+
+  // 滚动同步
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const isScrollSyncing = useRef(false);
+
+  // 防抖更新统计信息和标题列表
+  const updateTimerRef = useRef<number>(0);
+  const updateStatsRef = useRef<() => void>(() => {});
+  const updateHeadingsRef = useRef<() => void>(() => {});
+  const updateWikiLinksRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !scrollSyncTarget?.current) return;
+
+    const handleScroll = () => {
+      if (isScrollSyncing.current) return;
+      isScrollSyncing.current = true;
+
+      const ratio = container.scrollTop / (container.scrollHeight - container.clientHeight || 1);
+      const target = scrollSyncTarget.current;
+      if (target) {
+        target.scrollTop = ratio * (target.scrollHeight - target.clientHeight);
+      }
+
+      requestAnimationFrame(() => {
+        isScrollSyncing.current = false;
+      });
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [scrollSyncTarget]);
 
   const editor = useEditor({
     extensions: [
@@ -185,9 +221,13 @@ export const Editor = ({
     onUpdate: ({ editor }) => {
       const markdown = editor.getMarkdown();
       onChange(markdown);
-      updateStats();
-      updateHeadings();
-      updateWikiLinks();
+      // 防抖更新统计信息和标题列表
+      if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = window.setTimeout(() => {
+        updateStatsRef.current();
+        updateHeadingsRef.current();
+        updateWikiLinksRef.current();
+      }, 300);
       setTimeout(renderMermaid, 100);
     },
     onSelectionUpdate: () => {
@@ -322,6 +362,7 @@ export const Editor = ({
     const readingTime = Math.max(1, Math.ceil(words / 200)); // CJK 约 200 字/分钟
     onStatsChange({ words, characters, lines, readingTime });
   }, [editor, onStatsChange]);
+  updateStatsRef.current = updateStats;
 
   const updateHeadings = useCallback(() => {
     if (!editor) return;
@@ -350,6 +391,7 @@ export const Editor = ({
     }
     onActiveHeadingChange?.(activeId);
   }, [editor, onHeadingsChange, onActiveHeadingChange]);
+  updateHeadingsRef.current = updateHeadings;
 
   const updateWikiLinks = useCallback(() => {
     if (!editor) return;
@@ -367,6 +409,7 @@ export const Editor = ({
     }
     onWikiLinksChange(links);
   }, [editor, onWikiLinksChange, currentFilePath]);
+  updateWikiLinksRef.current = updateWikiLinks;
 
   // Render Mermaid diagrams
   const renderMermaid = useCallback(() => {
@@ -385,10 +428,20 @@ export const Editor = ({
     });
   }, [editor]);
 
-  // Image paste handler - save to local storage
+  // 粘贴处理：Markdown 文本 + 图片
   useEffect(() => {
     if (!editor) return;
     const handlePaste = async (event: ClipboardEvent) => {
+      // 检测 Markdown 格式文本：如果粘贴的是纯文本且看起来像 Markdown，阻止 HTML 转换，直接插入纯文本
+      const html = event.clipboardData?.getData('text/html');
+      const text = event.clipboardData?.getData('text/plain');
+      if (html && text && /^(\s*#{1,6}\s|>\s|- {1,2}|\d+\.\s|\[.*\]\(|```|\*\*|__|\|)/m.test(text)) {
+        event.preventDefault();
+        editor.commands.insertContent(text);
+        return;
+      }
+
+      // 图片粘贴处理
       const items = event.clipboardData?.items;
       if (!items) return;
       for (const item of items) {
@@ -418,28 +471,46 @@ export const Editor = ({
     return () => element.removeEventListener('paste', handlePaste);
   }, [editor, currentFilePath]);
 
-  // Drag and drop image
+  // 拖拽图片处理 - 尝试保存到磁盘（与粘贴逻辑一致的磁盘路径
   useEffect(() => {
     if (!editor || !editorScrollRef.current) return;
     const handleDrop = async (event: DragEvent) => {
       const files = event.dataTransfer?.files;
       if (!files || files.length === 0) return;
-      for (const file of Array.from(files)) {
-        if (file.type.startsWith('image/')) {
-          event.preventDefault();
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = reader.result as string;
-            editor.chain().focus().setImage({ src: base64 }).run();
-          };
-          reader.readAsDataURL(file);
-        }
+      const imageFile = Array.from(files).find(f => f.type.startsWith('image/'));
+      if (!imageFile) return;
+      event.preventDefault();
+      // 尝试保存到磁盘（与粘贴逻辑一致）
+      if (currentFilePath) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const data = reader.result as string;
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const relativePath = await invoke('save_image', {
+              noteId: currentFilePath.split('/').pop()?.replace('.md', '') || 'untitled',
+              data,
+            });
+            editor.chain().focus().setImage({ src: relativePath as string, alt: imageFile.name }).run();
+          } catch {
+            // 保存失败，回退到 base64
+            editor.chain().focus().setImage({ src: data, alt: imageFile.name }).run();
+          }
+        };
+        reader.readAsDataURL(imageFile);
+        return;
       }
+      // 浏览器模式回退到 base64
+      const reader = new FileReader();
+      reader.onload = () => {
+        editor.chain().focus().setImage({ src: reader.result as string, alt: imageFile.name }).run();
+      };
+      reader.readAsDataURL(imageFile);
     };
     const element = editorScrollRef.current;
     element.addEventListener('drop', handleDrop);
     return () => element.removeEventListener('drop', handleDrop);
-  }, [editor]);
+  }, [editor, currentFilePath]);
 
   const jumpToHeading = useCallback((pos: number) => {
     if (!editor) return;
@@ -480,7 +551,7 @@ export const Editor = ({
       />
 
       <div className="editor-body-row">
-        <div className="editor-scroll" ref={(el) => { editorScrollRef.current = el; setScrollContainerEl(el); }}>
+        <div className="editor-scroll" ref={(el) => { editorScrollRef.current = el; scrollContainerRef.current = el; setScrollContainerEl(el); }}>
           <div className="editor-content">
             <EditorContent editor={editor} />
           </div>
