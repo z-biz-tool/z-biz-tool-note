@@ -563,6 +563,32 @@ pub fn delete_file(path: String) -> Result<(), String> {
     }
 }
 
+/// 将文件移到废纸篓（而非永久删除）
+#[tauri::command]
+pub fn move_to_trash(path: String) -> Result<(), String> {
+    validate_path(&path)?;
+    let home = dirs::home_dir().ok_or("无法获取主目录")?;
+    let trash_dir = home.join(".Trash");
+
+    let file_name = std::path::Path::new(&path)
+        .file_name()
+        .ok_or("无法获取文件名")?
+        .to_string_lossy()
+        .to_string();
+
+    let mut trash_path = trash_dir.join(&file_name);
+    // 处理同名文件
+    let mut counter = 1;
+    while trash_path.exists() {
+        let new_name = format!("{} ({})", file_name, counter);
+        trash_path = trash_dir.join(new_name);
+        counter += 1;
+    }
+
+    std::fs::rename(&path, &trash_path)
+        .map_err(|e| format!("移到废纸篓失败: {}", e))
+}
+
 /// 重命名文件或目录
 #[tauri::command]
 pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
@@ -703,6 +729,7 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
 /// 递归读取目录中所有.md文件的摘要信息（用于知识图谱）
 #[tauri::command]
 pub fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
+    validate_path(&dir)?;
     let mut results: Vec<NoteSummary> = Vec::new();
     read_all_notes_recursive(&PathBuf::from(&dir), &mut results)?;
     Ok(results)
@@ -771,6 +798,10 @@ fn extract_links(content: &str) -> Vec<String> {
 /// 查找反向链接：搜索所有.md文件中引用了指定笔记标题的文件
 #[tauri::command]
 pub fn find_backlinks(dir: String, note_title: String, note_path: String) -> Result<Vec<BacklinkEntry>, String> {
+    validate_path(&dir)?;
+    if !note_path.is_empty() {
+        validate_path(&note_path)?;
+    }
     let mut results: Vec<BacklinkEntry> = Vec::new();
     find_backlinks_recursive(&PathBuf::from(&dir), &note_title, &note_path, &mut results)?;
     Ok(results)

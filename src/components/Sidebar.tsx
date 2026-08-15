@@ -211,13 +211,13 @@ export const Sidebar = ({
 
     const isDir = item.isDirectory;
     const msg = isDir
-      ? `确定删除文件夹 "${item.name}" 及其所有内容吗？此操作不可撤销。`
-      : `确定删除笔记 "${item.name}" 吗？此操作不可撤销。`;
+      ? `确定将文件夹 "${item.name}" 移到废纸篓吗？`
+      : `确定将笔记 "${item.name}" 移到废纸篓吗？`;
 
     if (!window.confirm(msg)) return;
 
     try {
-      await invoke('delete_file', { path: item.path });
+      await invoke('move_to_trash', { path: item.path });
       onRefresh?.();
     } catch (err) {
       console.error('删除失败:', err);

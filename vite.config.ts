@@ -20,4 +20,16 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-tiptap': ['@tiptap/react', '@tiptap/starter-kit'],
+          'vendor-katex': ['katex'],
+          'vendor-mermaid': ['mermaid'],
+          'vendor-graph': ['react-force-graph-2d'],
+        },
+      },
+    },
+  },
 });

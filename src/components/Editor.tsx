@@ -125,7 +125,17 @@ export const Editor = ({
   scrollSyncTarget,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
+
+  // 图片点击预览
+  const handleEditorClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'IMG') {
+      e.preventDefault();
+      setLightboxSrc((target as HTMLImageElement).src);
+    }
+  }, []);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
   const noteIdRef = useRef<string>('');
   const stateCacheRef = useRef<Map<string, any>>(new Map());
@@ -528,7 +538,7 @@ export const Editor = ({
   if (!editor) return null;
 
   return (
-    <div className="editor-container">
+    <div className="editor-container" onClick={handleEditorClick}>
       <Toolbar
         editor={editor}
         onEmojiClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -567,6 +577,12 @@ export const Editor = ({
           }}
           onClose={() => setShowEmojiPicker(false)}
         />
+      )}
+      {lightboxSrc && (
+        <div className="lightbox-overlay" onClick={() => setLightboxSrc(null)}>
+          <img className="lightbox-image" src={lightboxSrc} alt="Preview" />
+          <button className="lightbox-close" onClick={() => setLightboxSrc(null)}>✕</button>
+        </div>
       )}
     </div>
   );

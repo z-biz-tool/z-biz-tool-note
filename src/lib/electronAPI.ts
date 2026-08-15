@@ -35,6 +35,35 @@ const demoFiles = [
   },
 ];
 
+// HTML 特殊字符转义（防止 XSS）
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 将 Markdown 内容转换为完整 HTML 文档
+function generateHtmlFromContent(content: string): string {
+  const htmlContent = content.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('### ')) return `<h3>${escapeHtml(trimmed.slice(4))}</h3>`;
+    if (trimmed.startsWith('## ')) return `<h2>${escapeHtml(trimmed.slice(3))}</h2>`;
+    if (trimmed.startsWith('# ')) return `<h1>${escapeHtml(trimmed.slice(2))}</h1>`;
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) return `<li>${escapeHtml(trimmed.slice(2))}</li>`;
+    if (trimmed.startsWith('> ')) return `<blockquote><p>${escapeHtml(trimmed.slice(2))}</p></blockquote>`;
+    if (trimmed === '---') return '<hr/>';
+    if (trimmed === '') return '';
+    return `<p>${escapeHtml(trimmed)}</p>`;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>ZenNote Export</title>
+<style>body{font-family:system-ui;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}
+h1,h2,h3{margin-top:1.5em}blockquote{border-left:3px solid #ddd;padding-left:1em;color:#666}
+code{background:#f5f5f5;padding:2px 4px;border-radius:3px}hr{border:none;border-top:1px solid #ddd;margin:2em 0}
+li{margin:0.3em 0}</style></head>
+<body>${htmlContent}</body></html>`;
+}
+
 export const electronAPI = {
   isTauri,
   isElectron: false, // 向后兼容
@@ -57,10 +86,22 @@ export const electronAPI = {
         case 'list-files':
         case 'list-files-recursive':
           return { success: true, files: demoFiles };
-        case 'export-html':
-          return { success: true, filePath: args[1] };
-        case 'export-pdf':
-          return { success: true, filePath: (args[1] || 'export.pdf').replace(/\.\w+$/, '.pdf') };
+        case 'export-html': {
+          const content = args[0] as string;
+          const fullHtml = generateHtmlFromContent(content);
+          return { success: true, html: fullHtml, filePath: args[1] };
+        }
+        case 'export-pdf': {
+          const content = args[0] as string;
+          const fullHtml = generateHtmlFromContent(content);
+          const printWindow = window.open('', '_blank');
+          if (printWindow) {
+            printWindow.document.write(fullHtml);
+            printWindow.document.close();
+            printWindow.onload = () => { printWindow.print(); printWindow.close(); };
+          }
+          return { success: true, filePath: '' };
+        }
         case 'search-in-files':
           return { success: true, matches: [] };
         case 'read-file-stats':
@@ -116,22 +157,25 @@ export const electronAPI = {
           return { success: true, files };
         }
         case 'export-html': {
-          const result = await invoke<string>('export_note', { id: args[0], format: 'html', path: args[1] });
-          return { success: true, filePath: result };
+          // 直接将内容导出为 HTML 文件
+          const content = args[0] as string;
+          const filePath = args[1] as string;
+          const fullHtml = generateHtmlFromContent(content);
+          if (filePath) {
+            await invoke('write_file', { path: filePath, content: fullHtml });
+            return { success: true, filePath };
+          }
+          return { success: true, html: fullHtml };
         }
         case 'export-pdf': {
-          // 生成 HTML 并通过浏览器打印为 PDF
-          const htmlResult = await invoke<string>('export_note', { id: args[0], format: 'html', path: '' });
-          if (htmlResult) {
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-              printWindow.document.write(htmlResult);
-              printWindow.document.close();
-              printWindow.onload = () => {
-                printWindow.print();
-                printWindow.close();
-              };
-            }
+          // PDF 导出通过浏览器打印
+          const content = args[0] as string;
+          const fullHtml = generateHtmlFromContent(content);
+          const printWindow = window.open('', '_blank');
+          if (printWindow) {
+            printWindow.document.write(fullHtml);
+            printWindow.document.close();
+            printWindow.onload = () => { printWindow.print(); printWindow.close(); };
           }
           return { success: true, filePath: '' };
         }

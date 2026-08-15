@@ -28,6 +28,7 @@ pub fn run() {
             commands::read_file,
             commands::write_file,
             commands::delete_file,
+            commands::move_to_trash,
             commands::rename_file,
             commands::file_exists,
             commands::list_dir,

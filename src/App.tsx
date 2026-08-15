@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import { Plus, Settings } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { electronAPI } from './lib/electronAPI';
 import { applyTheme, THEMES } from './lib/themes';
@@ -8,16 +9,19 @@ import { StatusBar } from './components/StatusBar';
 import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
-import { KnowledgeGraph } from './components/KnowledgeGraph';
 import { BacklinksPanel } from './components/BacklinksPanel';
-import { AIPanel, type AIAction } from './components/AIPanel';
-import { SettingsDialog } from './components/SettingsDialog';
 import { QuickInsert } from './components/QuickInsert';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
-import VersionHistory from './components/VersionHistory';
 import ErrorBoundary from './components/ErrorBoundary';
 import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink, Config } from './types';
+import type { AIAction } from './components/AIPanel';
+
+// 懒加载重型组件
+const KnowledgeGraph = lazy(() => import('./components/KnowledgeGraph').then(m => ({ default: m.KnowledgeGraph })));
+const VersionHistory = lazy(() => import('./components/VersionHistory'));
+const SettingsDialog = lazy(() => import('./components/SettingsDialog').then(m => ({ default: m.SettingsDialog })));
+const AIPanel = lazy(() => import('./components/AIPanel').then(m => ({ default: m.AIPanel })));
 import { useFileOperations } from './hooks/useFileOperations';
 import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
 import './index.css';
@@ -140,6 +144,7 @@ const App = () => {
   const [allFiles, setAllFiles] = useState<Array<{ path: string; name: string; lastModified: number }>>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [toastExiting, setToastExiting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
@@ -189,6 +194,8 @@ const App = () => {
   openTabsRef.current = openTabs;
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
+  const splitNoteRef = useRef(splitNote);
+  splitNoteRef.current = splitNote;
 
   // ---------- 多标签 / 分屏 辅助函数 ----------
   // 打开（或聚焦）一篇笔记到左窗格
@@ -257,7 +264,18 @@ const App = () => {
       if (dirtyCount > 0 && !window.confirm(`${dirtyCount} 个标签有未保存的更改，确定关闭吗？`)) {
         return prev;
       }
-      return prev.slice(0, idx + 1);
+      const kept = prev.slice(0, idx + 1);
+      // 如果活跃标签在关闭范围内，切换到最后一个保留的标签
+      const currentActiveId = activeTabIdRef.current;
+      if (!kept.some(t => t.id === currentActiveId)) {
+        setActiveTabId(kept[kept.length - 1]?.id || '');
+      }
+      // 如果分屏笔记在关闭范围内，关闭分屏
+      const currentSplit = splitNoteRef.current;
+      if (currentSplit && !kept.some(t => t.id === currentSplit.id)) {
+        setSplitNote(null);
+      }
+      return kept;
     });
   }, []);
 
@@ -713,6 +731,31 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeTab, switchTab, toggleSplit]);
 
+  // 关闭窗口前检查未保存的更改
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasDirty = openTabsRef.current.some(t => t.isDirty);
+      if (hasDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // 组件卸载时清理自动保存定时器
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+      if (splitDebounce.current) {
+        clearTimeout(splitDebounce.current);
+      }
+    };
+  }, []);
+
   const cycleTheme = useCallback(() => {
     setTheme(prev => {
       const idx = THEMES.findIndex(t => t.name === prev);
@@ -738,21 +781,26 @@ const App = () => {
       } catch {}
       return;
     }
-    const result = await readFile(filePath);
-    if (result.success && result.content !== undefined) {
-      openNote({
-        id: filePath,
-        title: filePath.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || 'Untitled',
-        content: result.content,
-        filePath,
-        lastModified: new Date().toISOString(),
-        isDirty: false,
-      });
-      // 记录文件修改时间（用于外部修改检测）
-      try {
-        const mtime = await invoke('get_file_modified', { path: filePath }) as string;
-        setLastSaved(mtime);
-      } catch {}
+    setIsLoading(true);
+    try {
+      const result = await readFile(filePath);
+      if (result.success && result.content !== undefined) {
+        openNote({
+          id: filePath,
+          title: filePath.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || 'Untitled',
+          content: result.content,
+          filePath,
+          lastModified: new Date().toISOString(),
+          isDirty: false,
+        });
+        // 记录文件修改时间（用于外部修改检测）
+        try {
+          const mtime = await invoke('get_file_modified', { path: filePath }) as string;
+          setLastSaved(mtime);
+        } catch {}
+      }
+    } finally {
+      setIsLoading(false);
     }
   }, [readFile, openNote]);
 
@@ -791,6 +839,7 @@ const App = () => {
         const mtime = await invoke('get_file_modified', { path: currentNote.filePath }) as string;
         setLastSaved(mtime);
       } catch {}
+      showToast('已保存');
       // Refresh knowledge index since tags/links may have changed
       if (currentDir) {
         refreshKnowledgeIndex(currentDir);
@@ -1008,13 +1057,32 @@ const App = () => {
           onReorder={reorderTabs}
         />
         {openTabs.length === 0 ? (
-          <div className="empty-state">
-            <h1>Welcome to ZenNote</h1>
-            <p>Select a folder or create a new note to start writing</p>
+          <div className="editor-empty">
+            <div className="empty-icon">📝</div>
+            <h2>欢迎使用 ZenNote</h2>
+            <p>选择一个文件夹或创建新笔记开始写作</p>
+            <div className="empty-actions">
+              <button className="btn btn-primary" onClick={handleNewNote}>
+                <Plus size={14} /> 新建笔记
+              </button>
+              <button className="btn" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={() => setShowSettings(true)}>
+                <Settings size={14} /> 打开设置
+              </button>
+            </div>
+            <div className="empty-shortcuts">
+              <div className="shortcut-hint"><kbd>Cmd+N</kbd> 新建笔记</div>
+              <div className="shortcut-hint"><kbd>Cmd+P</kbd> 快速切换</div>
+              <div className="shortcut-hint"><kbd>Cmd+Shift+P</kbd> 命令面板</div>
+            </div>
           </div>
         ) : (
           <div className={`editor-area ${splitNote ? 'split' : ''}`}>
             <div className="editor-pane editor-pane-main">
+              {isLoading && (
+                <div className="editor-loading">
+                  <div className="loading-spinner" />
+                </div>
+              )}
               {currentNote && (
                 <>
                   <Breadcrumb
@@ -1042,14 +1110,27 @@ const App = () => {
                     onActiveHeadingChange={handleActiveHeadingChange}
                     scrollSyncTarget={splitScrollRef}
                     onWikiLinkClick={(href: string) => {
-                      // 在已打开的标签中查找，或打开文件
-                      const targetTitle = href.replace(/#.*$/, '').trim();
-                      const targetNote = openTabs.find(t => t.title === targetTitle);
-                      if (targetNote) {
-                        setActiveTabId(targetNote.id);
+                      // 解析 WikiLink：提取笔记名和可选的标题锚点
+                      const title = href.replace(/#.*$/, '').trim();
+
+                      // 先在已打开的标签中查找
+                      const existingTab = openTabsRef.current.find(t => t.title === title);
+                      if (existingTab) {
+                        setActiveTabId(existingTab.id);
+                        return;
+                      }
+
+                      // 在文件列表中查找匹配的文件
+                      const matchedFile = allFiles.find(f => {
+                        const fileName = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
+                        return fileName === title || f.path?.endsWith(`/${title}.md`) || f.path?.endsWith(`/${title}.markdown`);
+                      });
+
+                      if (matchedFile) {
+                        handleOpenFile(matchedFile.path);
                       } else {
-                        // 尝试在文件系统中查找
-                        handleOpenFile(href);
+                        // 未找到，提示用户
+                        showToast(`未找到笔记: ${title}`);
                       }
                     }}
                     onTagClick={(tag: string) => {
@@ -1099,12 +1180,27 @@ const App = () => {
                   onActiveHeadingChange={handleSplitActiveHeadingChange}
                   scrollSyncTarget={mainScrollRef}
                   onWikiLinkClick={(href: string) => {
-                    const targetTitle = href.replace(/#.*$/, '').trim();
-                    const targetNote = openTabs.find(t => t.title === targetTitle);
-                    if (targetNote) {
-                      setActiveTabId(targetNote.id);
+                    // 解析 WikiLink：提取笔记名和可选的标题锚点
+                    const title = href.replace(/#.*$/, '').trim();
+
+                    // 先在已打开的标签中查找
+                    const existingTab = openTabsRef.current.find(t => t.title === title);
+                    if (existingTab) {
+                      setActiveTabId(existingTab.id);
+                      return;
+                    }
+
+                    // 在文件列表中查找匹配的文件
+                    const matchedFile = allFiles.find(f => {
+                      const fileName = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
+                      return fileName === title || f.path?.endsWith(`/${title}.md`) || f.path?.endsWith(`/${title}.markdown`);
+                    });
+
+                    if (matchedFile) {
+                      handleOpenFile(matchedFile.path);
                     } else {
-                      handleOpenFile(href);
+                      // 未找到，提示用户
+                      showToast(`未找到笔记: ${title}`);
                     }
                   }}
                   onTagClick={(tag: string) => {
@@ -1131,16 +1227,19 @@ const App = () => {
       </div>
 
       {outlineOpen && currentNote && (
-        <Outline
+        <div className="panel-animate">
+          <Outline
           headings={headings}
           activeId={activeHeading}
           onJump={handleJumpToHeading}
           onClose={() => setOutlineOpen(false)}
         />
+        </div>
       )}
 
       {showBacklinks && currentNote && (
-        <BacklinksPanel
+        <div className="panel-animate">
+          <BacklinksPanel
           backlinks={backlinks}
           onJump={(filePath) => {
             handleOpenFile(filePath);
@@ -1148,16 +1247,23 @@ const App = () => {
           }}
           onClose={() => setShowBacklinks(false)}
         />
+        </div>
       )}
 
       {showAIPanel && (
-        <AIPanel
-          onAction={runAIAction}
-          onInsert={handleInsertText}
-          onClose={() => setShowAIPanel(false)}
-          enabled={aiConfig.enabled}
-          onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
-        />
+        <div className="panel-animate">
+          <ErrorBoundary>
+            <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+              <AIPanel
+              onAction={runAIAction}
+              onInsert={handleInsertText}
+              onClose={() => setShowAIPanel(false)}
+              enabled={aiConfig.enabled}
+              onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
+            />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
       )}
 
       {showQuickSwitcher && (
@@ -1179,46 +1285,54 @@ const App = () => {
       )}
 
       {showKnowledgeGraph && currentNote && (
-        <div className="knowledge-graph-panel">
+        <div className="knowledge-graph-panel panel-animate">
           <div className="outline-header">
             <span>Knowledge Graph</span>
             <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>×</button>
           </div>
-          <KnowledgeGraph
-            nodes={graphNodes}
-            links={graphLinks}
-            currentFilePath={currentNote.filePath}
-            tags={tags}
-            onNodeClick={(node) => {
-              if (node.path && node.path.endsWith('.md')) {
-                handleOpenFile(node.path);
-              }
-              setShowKnowledgeGraph(false);
-            }}
-          />
+          <ErrorBoundary>
+            <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+              <KnowledgeGraph
+              nodes={graphNodes}
+              links={graphLinks}
+              currentFilePath={currentNote.filePath}
+              tags={tags}
+              onNodeClick={(node) => {
+                if (node.path && node.path.endsWith('.md')) {
+                  handleOpenFile(node.path);
+                }
+                setShowKnowledgeGraph(false);
+              }}
+            />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       )}
 
-      <SettingsDialog
-        open={showSettings}
-        aiConfig={aiConfig}
-        templates={templates}
-        config={config}
-        onSaveAI={(cfg) => {
-          setAIConfig(cfg);
-          localStorage.setItem('aiConfig', JSON.stringify(cfg));
-          showToast(cfg.enabled ? 'AI enabled' : 'AI disabled');
-        }}
-        onSaveTemplates={(tpls) => {
-          setTemplates(tpls);
-          localStorage.setItem('templates', JSON.stringify(tpls));
-        }}
-        onSaveConfig={(cfg) => {
-          setConfig(cfg);
-          localStorage.setItem('appConfig', JSON.stringify(cfg));
-        }}
-        onClose={() => setShowSettings(false)}
-      />
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <SettingsDialog
+          open={showSettings}
+          aiConfig={aiConfig}
+          templates={templates}
+          config={config}
+          onSaveAI={(cfg) => {
+            setAIConfig(cfg);
+            localStorage.setItem('aiConfig', JSON.stringify(cfg));
+            showToast(cfg.enabled ? 'AI enabled' : 'AI disabled');
+          }}
+          onSaveTemplates={(tpls) => {
+            setTemplates(tpls);
+            localStorage.setItem('templates', JSON.stringify(tpls));
+          }}
+          onSaveConfig={(cfg) => {
+            setConfig(cfg);
+            localStorage.setItem('appConfig', JSON.stringify(cfg));
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+        </Suspense>
+      </ErrorBoundary>
 
       <QuickInsert
         open={showQuickInsert}
@@ -1259,14 +1373,18 @@ const App = () => {
       />
 
       {showVersionHistory && currentNote?.filePath && (
-        <VersionHistory
-          notePath={currentNote.filePath}
-          onRestore={(content) => {
-            updateActiveTab({ content, isDirty: true });
-            setShowVersionHistory(false);
-          }}
-          onClose={() => setShowVersionHistory(false)}
-        />
+        <ErrorBoundary>
+          <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+            <VersionHistory
+            notePath={currentNote.filePath}
+            onRestore={(content) => {
+              updateActiveTab({ content, isDirty: true });
+              setShowVersionHistory(false);
+            }}
+            onClose={() => setShowVersionHistory(false)}
+          />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {toast && <div className={`toast ${toastExiting ? 'toast-exit' : ''}`} role="alert" aria-live="assertive">{toast}</div>}
