@@ -6,11 +6,12 @@ interface BacklinksPanelProps {
   backlinks: Backlink[];
   onJump: (filePath: string) => void;
   onClose: () => void;
+  width?: number;
 }
 
-export const BacklinksPanel = React.memo(({ backlinks, onJump, onClose }: BacklinksPanelProps) => {
+export const BacklinksPanel = React.memo(({ backlinks, onJump, onClose, width }: BacklinksPanelProps) => {
   return (
-    <div className="backlinks-panel">
+    <div className="backlinks-panel" style={width ? { width: `${width}px` } : undefined}>
       <div className="outline-header">
         <Link2 size={14} />
         <span>Backlinks</span>

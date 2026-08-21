@@ -25,13 +25,14 @@ interface SidebarProps {
   onOpenSettings?: () => void;
   onOpenAI?: () => void;
   onCreateDaily?: () => void;
+  width?: number;
 }
 
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
   isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
-  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily,
+  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
@@ -305,7 +306,7 @@ export const Sidebar = ({
   }
 
   return (
-    <div className="sidebar" role="navigation" aria-label="笔记导航">
+    <div className="sidebar" role="navigation" aria-label="笔记导航" style={width ? { width: `${width}px` } : undefined}>
       <div className="sidebar-header">
         <span className="sidebar-title">ZenNote</span>
         <button className="toolbar-btn" onClick={onNewNote} title="New Note">

@@ -6,9 +6,10 @@ interface OutlineProps {
   activeId: string | null;
   onJump: (pos: number) => void;
   onClose: () => void;
+  width?: number;
 }
 
-export const Outline = ({ headings, activeId, onJump, onClose }: OutlineProps) => {
+export const Outline = ({ headings, activeId, onJump, onClose, width }: OutlineProps) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -20,7 +21,7 @@ export const Outline = ({ headings, activeId, onJump, onClose }: OutlineProps) =
   }, [onClose]);
 
   return (
-    <div className="outline-panel">
+    <div className="outline-panel" style={width ? { width: `${width}px` } : undefined}>
       <div className="outline-header">
         Outline
         <button className="find-replace-btn" onClick={onClose} title="Close">

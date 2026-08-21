@@ -14,6 +14,10 @@ import { QuickInsert } from './components/QuickInsert';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
 import ErrorBoundary from './components/ErrorBoundary';
+import { I18nProvider } from './lib/i18n';
+import { Resizer } from './components/Resizer';
+import { PanelHeader } from './components/PanelHeader';
+import { ListTree, Link2, Sparkles, Network } from 'lucide-react';
 import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink, Config } from './types';
 import type { AIAction } from './components/AIPanel';
 
@@ -179,6 +183,23 @@ const App = () => {
   const [templates, setTemplates] = useState<Template[]>(BUILTIN_TEMPLATES);
   const [showQuickInsert, setShowQuickInsert] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+
+  // Resizable side panels (persisted in localStorage)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+    return Number.isFinite(v) && v >= 160 && v <= 600 ? v : 260;
+  });
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('rightPanelWidth') || '', 10);
+    return Number.isFinite(v) && v >= 200 && v <= 600 ? v : 300;
+  });
+  // 右侧面板"窄/宽"两种宽度预设（类似语雀），默认窄。
+  // 用户在当前模式下拖动 Resizer 只会更新当前预设。
+  const [rightPanelWide, setRightPanelWide] = useState<boolean>(() => {
+    return localStorage.getItem('rightPanelWide') === '1';
+  });
+  const RIGHT_PANEL_NARROW = 300;
+  const RIGHT_PANEL_WIDE = 520;
 
   const editorRef = useRef<any>(null);
   const editorRefSplit = useRef<any>(null);
@@ -1015,6 +1036,7 @@ const App = () => {
   }, [activeTag, tags, allFiles]);
 
   return (
+    <I18nProvider>
     <ErrorBoundary>
     <div style={{ display: 'flex', height: '100vh', width: '100%', overflow: 'hidden' }}>
       <Sidebar
@@ -1029,7 +1051,20 @@ const App = () => {
         onOpenSettings={() => setShowSettings(true)}
         onOpenAI={() => setShowAIPanel(true)}
         onCreateDaily={handleCreateDaily}
+        width={sidebarWidth}
       />
+      {sidebarOpen && (
+        <Resizer
+          side="left"
+          size={sidebarWidth}
+          min={180}
+          max={480}
+          onResize={(w) => {
+            setSidebarWidth(w);
+            localStorage.setItem('sidebarWidth', String(w));
+          }}
+        />
+      )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <TabsBar
@@ -1227,43 +1262,82 @@ const App = () => {
       </div>
 
       {outlineOpen && currentNote && (
-        <div className="panel-animate">
-          <Outline
-          headings={headings}
-          activeId={activeHeading}
-          onJump={handleJumpToHeading}
-          onClose={() => setOutlineOpen(false)}
-        />
-        </div>
+        <>
+          <Resizer
+            side="right"
+            size={rightPanelWidth}
+            min={200}
+            max={520}
+            onResize={(w) => {
+              setRightPanelWidth(w);
+              localStorage.setItem('rightPanelWidth', String(w));
+            }}
+          />
+          <div className="panel-animate">
+            <Outline
+            headings={headings}
+            activeId={activeHeading}
+            onJump={handleJumpToHeading}
+            onClose={() => setOutlineOpen(false)}
+            width={rightPanelWidth}
+          />
+          </div>
+        </>
       )}
 
       {showBacklinks && currentNote && (
-        <div className="panel-animate">
-          <BacklinksPanel
-          backlinks={backlinks}
-          onJump={(filePath) => {
-            handleOpenFile(filePath);
-            setShowBacklinks(false);
-          }}
-          onClose={() => setShowBacklinks(false)}
-        />
-        </div>
+        <>
+          <Resizer
+            side="right"
+            size={rightPanelWidth}
+            min={200}
+            max={520}
+            onResize={(w) => {
+              setRightPanelWidth(w);
+              localStorage.setItem('rightPanelWidth', String(w));
+            }}
+          />
+          <div className="panel-animate">
+            <BacklinksPanel
+            backlinks={backlinks}
+            onJump={(filePath) => {
+              handleOpenFile(filePath);
+              setShowBacklinks(false);
+            }}
+            onClose={() => setShowBacklinks(false)}
+            width={rightPanelWidth}
+          />
+          </div>
+        </>
       )}
 
       {showAIPanel && (
-        <div className="panel-animate">
-          <ErrorBoundary>
-            <Suspense fallback={<div className="panel-loading">加载中...</div>}>
-              <AIPanel
-              onAction={runAIAction}
-              onInsert={handleInsertText}
-              onClose={() => setShowAIPanel(false)}
-              enabled={aiConfig.enabled}
-              onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
-            />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
+        <>
+          <Resizer
+            side="right"
+            size={rightPanelWidth}
+            min={280}
+            max={600}
+            onResize={(w) => {
+              setRightPanelWidth(w);
+              localStorage.setItem('rightPanelWidth', String(w));
+            }}
+          />
+          <div className="panel-animate">
+            <ErrorBoundary>
+              <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+                <AIPanel
+                onAction={runAIAction}
+                onInsert={handleInsertText}
+                onClose={() => setShowAIPanel(false)}
+                enabled={aiConfig.enabled}
+                onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
+                width={rightPanelWidth}
+              />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        </>
       )}
 
       {showQuickSwitcher && (
@@ -1285,28 +1359,43 @@ const App = () => {
       )}
 
       {showKnowledgeGraph && currentNote && (
-        <div className="knowledge-graph-panel panel-animate">
-          <div className="outline-header">
-            <span>Knowledge Graph</span>
-            <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>×</button>
+        <>
+          <Resizer
+            side="right"
+            size={rightPanelWidth}
+            min={260}
+            max={600}
+            onResize={(w) => {
+              setRightPanelWidth(w);
+              localStorage.setItem('rightPanelWidth', String(w));
+            }}
+          />
+          <div
+            className="knowledge-graph-panel panel-animate"
+            style={rightPanelWidth ? { width: `${rightPanelWidth}px` } : undefined}
+          >
+            <div className="outline-header">
+              <span>Knowledge Graph</span>
+              <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>×</button>
+            </div>
+            <ErrorBoundary>
+              <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+                <KnowledgeGraph
+                nodes={graphNodes}
+                links={graphLinks}
+                currentFilePath={currentNote.filePath}
+                tags={tags}
+                onNodeClick={(node) => {
+                  if (node.path && node.path.endsWith('.md')) {
+                    handleOpenFile(node.path);
+                  }
+                  setShowKnowledgeGraph(false);
+                }}
+              />
+              </Suspense>
+            </ErrorBoundary>
           </div>
-          <ErrorBoundary>
-            <Suspense fallback={<div className="panel-loading">加载中...</div>}>
-              <KnowledgeGraph
-              nodes={graphNodes}
-              links={graphLinks}
-              currentFilePath={currentNote.filePath}
-              tags={tags}
-              onNodeClick={(node) => {
-                if (node.path && node.path.endsWith('.md')) {
-                  handleOpenFile(node.path);
-                }
-                setShowKnowledgeGraph(false);
-              }}
-            />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
+        </>
       )}
 
       <ErrorBoundary>
@@ -1390,6 +1479,7 @@ const App = () => {
       {toast && <div className={`toast ${toastExiting ? 'toast-exit' : ''}`} role="alert" aria-live="assertive">{toast}</div>}
     </div>
     </ErrorBoundary>
+    </I18nProvider>
   );
 };
 

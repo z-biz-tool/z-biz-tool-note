@@ -8,6 +8,7 @@ interface AIPanelProps {
   onClose: () => void;
   enabled: boolean;
   onOpenSettings: () => void;
+  width?: number;
 }
 
 export type AIAction = 'summarize' | 'tags' | 'outline' | 'suggest-links' | 'chat';
@@ -24,7 +25,7 @@ const ACTIONS: Array<{ id: AIAction; label: string; icon: any; desc: string }> =
   { id: 'suggest-links', label: 'Suggest Links', icon: Network, desc: 'Recommend wiki links to other notes' },
 ];
 
-export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings }: AIPanelProps) => {
+export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, width }: AIPanelProps) => {
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -76,7 +77,7 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings }
   };
 
   return (
-    <div className="ai-panel">
+    <div className="ai-panel" style={width ? { width: `${width}px` } : undefined}>
       <div className="outline-header">
         <Sparkles size={14} />
         <span>AI Assistant</span>
