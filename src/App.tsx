@@ -17,7 +17,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { I18nProvider } from './lib/i18n';
 import { Resizer } from './components/Resizer';
 import { PanelHeader } from './components/PanelHeader';
-import { ListTree, Link2, Sparkles, Network } from 'lucide-react';
+import { ListTree, Link2, Sparkles, Network, FileText } from 'lucide-react';
 import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink, Config } from './types';
 import type { AIAction } from './components/AIPanel';
 
@@ -193,13 +193,13 @@ const App = () => {
     const v = parseInt(localStorage.getItem('rightPanelWidth') || '', 10);
     return Number.isFinite(v) && v >= 200 && v <= 600 ? v : 300;
   });
-  // 右侧面板"窄/宽"两种宽度预设（类似语雀），默认窄。
-  // 用户在当前模式下拖动 Resizer 只会更新当前预设。
+  // 右侧面板"窄/宽"两种展示形态（类似语雀）：
+  //   窄 = 当前固定宽度（300px），可拖拽 Resizer 微调
+  //   宽 = 占满除侧边栏外的全部右侧空间，编辑器隐藏
   const [rightPanelWide, setRightPanelWide] = useState<boolean>(() => {
     return localStorage.getItem('rightPanelWide') === '1';
   });
   const RIGHT_PANEL_NARROW = 300;
-  const RIGHT_PANEL_WIDE = 520;
 
   const editorRef = useRef<any>(null);
   const editorRefSplit = useRef<any>(null);
@@ -1020,6 +1020,23 @@ const App = () => {
     setActiveTag(prev => prev === tag ? null : tag);
   }, []);
 
+  // 右侧面板"宽/窄"切换：窄 = 300px(可拖拽微调)；宽 = 占满除侧边栏外的剩余宽度(隐藏编辑器)
+  const toggleRightPanelWide = useCallback(() => {
+    setRightPanelWide(prev => {
+      const next = !prev;
+      localStorage.setItem('rightPanelWide', next ? '1' : '0');
+      return next;
+    });
+  }, []);
+
+  // 当前打开的右侧面板（按优先级：KnowledgeGraph > AIPanel > Backlinks > Outline）
+  const activeRightPanel: 'graph' | 'ai' | 'backlinks' | 'outline' | null =
+    showKnowledgeGraph && currentNote ? 'graph'
+    : showAIPanel ? 'ai'
+    : showBacklinks && currentNote ? 'backlinks'
+    : outlineOpen && currentNote ? 'outline'
+    : null;
+
   // When a tag is active, filter the quick switcher-style file list to that tag's notes
   // 嵌套标签：选中父标签时包含所有后代标签的笔记（前缀匹配 "tag/" 或完全相等）
   const taggedFiles = useMemo(() => {
@@ -1066,7 +1083,7 @@ const App = () => {
         />
       )}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, flexDirection: 'column', overflow: 'hidden', display: rightPanelWide ? 'none' : 'flex' }}>
         <TabsBar
           tabs={openTabs}
           activeId={activeTabId}
@@ -1261,85 +1278,6 @@ const App = () => {
         )}
       </div>
 
-      {outlineOpen && currentNote && (
-        <>
-          <Resizer
-            side="right"
-            size={rightPanelWidth}
-            min={200}
-            max={520}
-            onResize={(w) => {
-              setRightPanelWidth(w);
-              localStorage.setItem('rightPanelWidth', String(w));
-            }}
-          />
-          <div className="panel-animate">
-            <Outline
-            headings={headings}
-            activeId={activeHeading}
-            onJump={handleJumpToHeading}
-            onClose={() => setOutlineOpen(false)}
-            width={rightPanelWidth}
-          />
-          </div>
-        </>
-      )}
-
-      {showBacklinks && currentNote && (
-        <>
-          <Resizer
-            side="right"
-            size={rightPanelWidth}
-            min={200}
-            max={520}
-            onResize={(w) => {
-              setRightPanelWidth(w);
-              localStorage.setItem('rightPanelWidth', String(w));
-            }}
-          />
-          <div className="panel-animate">
-            <BacklinksPanel
-            backlinks={backlinks}
-            onJump={(filePath) => {
-              handleOpenFile(filePath);
-              setShowBacklinks(false);
-            }}
-            onClose={() => setShowBacklinks(false)}
-            width={rightPanelWidth}
-          />
-          </div>
-        </>
-      )}
-
-      {showAIPanel && (
-        <>
-          <Resizer
-            side="right"
-            size={rightPanelWidth}
-            min={280}
-            max={600}
-            onResize={(w) => {
-              setRightPanelWidth(w);
-              localStorage.setItem('rightPanelWidth', String(w));
-            }}
-          />
-          <div className="panel-animate">
-            <ErrorBoundary>
-              <Suspense fallback={<div className="panel-loading">加载中...</div>}>
-                <AIPanel
-                onAction={runAIAction}
-                onInsert={handleInsertText}
-                onClose={() => setShowAIPanel(false)}
-                enabled={aiConfig.enabled}
-                onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
-                width={rightPanelWidth}
-              />
-              </Suspense>
-            </ErrorBoundary>
-          </div>
-        </>
-      )}
-
       {showQuickSwitcher && (
         <QuickSwitcher
           files={taggedFiles}
@@ -1358,26 +1296,171 @@ const App = () => {
         />
       )}
 
+      {outlineOpen && currentNote && (
+        <>
+          {!rightPanelWide && (
+            <Resizer
+              side="right"
+              size={rightPanelWidth}
+              min={200}
+              max={520}
+              onResize={(w) => {
+                setRightPanelWidth(w);
+                localStorage.setItem('rightPanelWidth', String(w));
+              }}
+            />
+          )}
+          <div
+            className="outline-panel panel-animate"
+            style={rightPanelWide ? { flex: 1, minWidth: 0 } : { width: rightPanelWidth, flexShrink: 0 }}
+          >
+            <PanelHeader
+              icon={<ListTree size={14} />}
+              title="Outline"
+              wide={rightPanelWide}
+              onToggleWide={toggleRightPanelWide}
+              onClose={() => setOutlineOpen(false)}
+            />
+            <div className="outline-list">
+              {headings.length === 0 ? (
+                <div className="outline-item">No headings found</div>
+              ) : (
+                headings.map((heading) => (
+                  <button
+                    key={heading.id}
+                    className={`outline-item${activeHeading === heading.id ? ' active' : ''}`}
+                    style={{ paddingLeft: `${12 + (heading.level - 1) * 16}px` }}
+                    onClick={() => handleJumpToHeading(heading.pos)}
+                    title={heading.text}
+                  >
+                    {heading.text}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {showBacklinks && currentNote && (
+        <>
+          {!rightPanelWide && (
+            <Resizer
+              side="right"
+              size={rightPanelWidth}
+              min={200}
+              max={520}
+              onResize={(w) => {
+                setRightPanelWidth(w);
+                localStorage.setItem('rightPanelWidth', String(w));
+              }}
+            />
+          )}
+          <div
+            className="backlinks-panel panel-animate"
+            style={rightPanelWide ? { flex: 1, minWidth: 0 } : { width: rightPanelWidth, flexShrink: 0 }}
+          >
+            <PanelHeader
+              icon={<Link2 size={14} />}
+              title="Backlinks"
+              badge={<span className="count-badge">{backlinks.length}</span>}
+              wide={rightPanelWide}
+              onToggleWide={toggleRightPanelWide}
+              onClose={() => setShowBacklinks(false)}
+            />
+            <div className="backlinks-list">
+              {backlinks.length === 0 ? (
+                <div className="sidebar-empty">
+                  <p>No backlinks yet</p>
+                  <p className="hint">Other notes will appear here when they link to this note via [[wiki links]]</p>
+                </div>
+              ) : (
+                backlinks.map(b => (
+                  <button
+                    key={b.noteId}
+                    className="sidebar-file-item"
+                    onClick={() => {
+                      handleOpenFile(b.noteId);
+                      setShowBacklinks(false);
+                    }}
+                    title={b.noteId}
+                  >
+                    <FileText size={14} />
+                    <span>{b.title}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {showAIPanel && (
+        <>
+          {!rightPanelWide && (
+            <Resizer
+              side="right"
+              size={rightPanelWidth}
+              min={280}
+              max={600}
+              onResize={(w) => {
+                setRightPanelWidth(w);
+                localStorage.setItem('rightPanelWidth', String(w));
+              }}
+            />
+          )}
+          <div
+            className="ai-panel panel-animate"
+            style={rightPanelWide ? { flex: 1, minWidth: 0 } : { width: rightPanelWidth, flexShrink: 0 }}
+          >
+            <PanelHeader
+              icon={<Sparkles size={14} />}
+              title="AI Assistant"
+              wide={rightPanelWide}
+              onToggleWide={toggleRightPanelWide}
+              onClose={() => setShowAIPanel(false)}
+            />
+            <ErrorBoundary>
+              <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+                <AIPanel
+                  onAction={runAIAction}
+                  onInsert={handleInsertText}
+                  onClose={() => setShowAIPanel(false)}
+                  enabled={aiConfig.enabled}
+                  onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
+                  width={rightPanelWide ? undefined : rightPanelWidth}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        </>
+      )}
+
       {showKnowledgeGraph && currentNote && (
         <>
-          <Resizer
-            side="right"
-            size={rightPanelWidth}
-            min={260}
-            max={600}
-            onResize={(w) => {
-              setRightPanelWidth(w);
-              localStorage.setItem('rightPanelWidth', String(w));
-            }}
-          />
+          {!rightPanelWide && (
+            <Resizer
+              side="right"
+              size={rightPanelWidth}
+              min={260}
+              max={600}
+              onResize={(w) => {
+                setRightPanelWidth(w);
+                localStorage.setItem('rightPanelWidth', String(w));
+              }}
+            />
+          )}
           <div
             className="knowledge-graph-panel panel-animate"
-            style={rightPanelWidth ? { width: `${rightPanelWidth}px` } : undefined}
+            style={rightPanelWide ? { flex: 1, minWidth: 0 } : { width: rightPanelWidth, flexShrink: 0 }}
           >
-            <div className="outline-header">
-              <span>Knowledge Graph</span>
-              <button className="toolbar-btn" onClick={() => setShowKnowledgeGraph(false)}>×</button>
-            </div>
+            <PanelHeader
+              icon={<Network size={14} />}
+              title="Knowledge Graph"
+              wide={rightPanelWide}
+              onToggleWide={toggleRightPanelWide}
+              onClose={() => setShowKnowledgeGraph(false)}
+            />
             <ErrorBoundary>
               <Suspense fallback={<div className="panel-loading">加载中...</div>}>
                 <KnowledgeGraph
