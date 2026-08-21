@@ -104,7 +104,7 @@ export const Sidebar = ({
         const result = await listFiles(file.path);
         if (result.success && result.files) {
           (file as any).children = result.files.filter((f: FileItem) => !f.name.startsWith('.'));
-          setFileTree([...fileTree]);
+          setFileTree(prev => [...prev]);
         }
       }
     } else if (file.isFile && (file.name.endsWith('.md') || file.name.endsWith('.markdown'))) {

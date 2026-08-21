@@ -32,6 +32,7 @@ pub fn run() {
             commands::rename_file,
             commands::file_exists,
             commands::list_dir,
+            commands::list_dir_recursive,
             commands::search_in_files,
             commands::read_all_notes,
             commands::find_backlinks,

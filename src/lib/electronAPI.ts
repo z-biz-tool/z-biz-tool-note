@@ -40,6 +40,20 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// 将 Rust FileEntry 的 snake_case 字段（is_dir/is_file）归一化为前端 FileItem 的 camelCase 字段（isDirectory/isFile）。
+// 单层列目录时 children 为空数组，转为 undefined 以便 Sidebar 通过 !file.children 触发按需加载
+function normalizeFileEntry(entry: any): any {
+  if (!entry || typeof entry !== 'object') return entry;
+  return {
+    ...entry,
+    isDirectory: entry.isDirectory ?? entry.is_dir ?? false,
+    isFile: entry.isFile ?? entry.is_file ?? false,
+    children: Array.isArray(entry.children) && entry.children.length > 0
+      ? entry.children.map(normalizeFileEntry)
+      : undefined,
+  };
+}
+
 // 将 Markdown 内容转换为完整 HTML 文档
 function generateHtmlFromContent(content: string): string {
   const htmlContent = content.split('\n').map(line => {
@@ -151,10 +165,13 @@ export const electronAPI = {
           }
           return { canceled: true };
         }
-        case 'list-files':
-        case 'list-files-recursive': {
+        case 'list-files': {
           const files = await invoke<any[]>('list_dir', { path: args[0] });
-          return { success: true, files };
+          return { success: true, files: (files || []).map(normalizeFileEntry) };
+        }
+        case 'list-files-recursive': {
+          const files = await invoke<any[]>('list_dir_recursive', { path: args[0] });
+          return { success: true, files: (files || []).map(normalizeFileEntry) };
         }
         case 'export-html': {
           // 直接将内容导出为 HTML 文件

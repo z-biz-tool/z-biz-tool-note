@@ -540,21 +540,21 @@ pub struct ChatMessage {
 
 /// 读取任意文件内容
 #[tauri::command]
-pub fn read_file(path: String) -> Result<String, String> {
+pub async fn read_file(path: String) -> Result<String, String> {
     validate_path(&path)?;
     fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))
 }
 
 /// 写入内容到任意文件
 #[tauri::command]
-pub fn write_file(path: String, content: String) -> Result<(), String> {
+pub async fn write_file(path: String, content: String) -> Result<(), String> {
     validate_path(&path)?;
     fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
 }
 
 /// 删除文件或目录
 #[tauri::command]
-pub fn delete_file(path: String) -> Result<(), String> {
+pub async fn delete_file(path: String) -> Result<(), String> {
     validate_path(&path)?;
     if std::path::Path::new(&path).is_dir() {
         std::fs::remove_dir_all(&path).map_err(|e| format!("删除目录失败: {}", e))
@@ -565,7 +565,7 @@ pub fn delete_file(path: String) -> Result<(), String> {
 
 /// 将文件移到废纸篓（而非永久删除）
 #[tauri::command]
-pub fn move_to_trash(path: String) -> Result<(), String> {
+pub async fn move_to_trash(path: String) -> Result<(), String> {
     validate_path(&path)?;
     let home = dirs::home_dir().ok_or("无法获取主目录")?;
     let trash_dir = home.join(".Trash");
@@ -591,7 +591,7 @@ pub fn move_to_trash(path: String) -> Result<(), String> {
 
 /// 重命名文件或目录
 #[tauri::command]
-pub fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+pub async fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
     validate_path(&old_path)?;
     validate_path(&new_path)?;
     std::fs::rename(&old_path, &new_path).map_err(|e| format!("重命名失败: {}", e))
@@ -604,15 +604,33 @@ pub fn file_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
 }
 
-/// 递归列出目录内容
+/// 列出目录内容（单层；子目录的 children 由前端展开时按需加载，避免大目录递归遍历阻塞 UI）
 #[tauri::command]
-pub fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
+pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
     validate_path(&path)?;
-    list_dir_recursive(&PathBuf::from(&path))
+    list_dir_single(&PathBuf::from(&path))
 }
 
-/// 递归列出目录的内部实现
-fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
+/// 递归列出目录全部内容（供快速切换器等需要全量文件列表的场景）
+#[tauri::command]
+pub async fn list_dir_recursive(path: String) -> Result<Vec<FileEntry>, String> {
+    validate_path(&path)?;
+    list_dir_recursive_impl(&PathBuf::from(&path))
+}
+
+/// 递归列出的内部实现
+fn list_dir_recursive_impl(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
+    let mut single = list_dir_single(dir)?;
+    for entry in single.iter_mut() {
+        if entry.is_dir {
+            entry.children = list_dir_recursive_impl(&PathBuf::from(&entry.path)).unwrap_or_default();
+        }
+    }
+    Ok(single)
+}
+
+/// 单层列出目录内容
+fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
     if !dir.is_dir() {
         return Err(format!("路径不是目录: {}", dir.display()));
     }
@@ -647,12 +665,6 @@ fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
             })
             .unwrap_or_default();
 
-        let children = if is_dir {
-            list_dir_recursive(&path).unwrap_or_default()
-        } else {
-            vec![]
-        };
-
         entries.push(FileEntry {
             name,
             path: path.to_string_lossy().to_string(),
@@ -660,7 +672,7 @@ fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
             is_file,
             size: metadata.len(),
             modified,
-            children,
+            children: vec![],
         });
     }
 
@@ -674,7 +686,7 @@ fn list_dir_recursive(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
 
 /// 递归搜索目录中所有.md文件的内容
 #[tauri::command]
-pub fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMatch>, String> {
+pub async fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMatch>, String> {
     let query_lower = query.to_lowercase();
     let mut results: Vec<SearchMatch> = Vec::new();
     search_in_files_recursive(&PathBuf::from(&dir), &query_lower, &mut results)?;
@@ -728,7 +740,7 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
 
 /// 递归读取目录中所有.md文件的摘要信息（用于知识图谱）
 #[tauri::command]
-pub fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
+pub async fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
     validate_path(&dir)?;
     let mut results: Vec<NoteSummary> = Vec::new();
     read_all_notes_recursive(&PathBuf::from(&dir), &mut results)?;
@@ -797,7 +809,7 @@ fn extract_links(content: &str) -> Vec<String> {
 
 /// 查找反向链接：搜索所有.md文件中引用了指定笔记标题的文件
 #[tauri::command]
-pub fn find_backlinks(dir: String, note_title: String, note_path: String) -> Result<Vec<BacklinkEntry>, String> {
+pub async fn find_backlinks(dir: String, note_title: String, note_path: String) -> Result<Vec<BacklinkEntry>, String> {
     validate_path(&dir)?;
     if !note_path.is_empty() {
         validate_path(&note_path)?;
@@ -1003,7 +1015,7 @@ pub fn restore_backup(backup_path: String, target_path: String) -> Result<(), St
 
 /// 获取文件修改时间（用于检测外部修改）
 #[tauri::command]
-pub fn get_file_modified(path: String) -> Result<String, String> {
+pub async fn get_file_modified(path: String) -> Result<String, String> {
     validate_path(&path)?;
     let metadata = fs::metadata(&path)
         .map_err(|e| format!("获取文件信息失败: {}", e))?;
