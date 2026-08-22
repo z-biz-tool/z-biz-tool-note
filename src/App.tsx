@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
-import { Plus, Settings } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { electronAPI } from './lib/electronAPI';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
@@ -13,6 +13,7 @@ import { BacklinksPanel } from './components/BacklinksPanel';
 import { QuickInsert } from './components/QuickInsert';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
+import { Welcome } from './components/Welcome';
 import ErrorBoundary from './components/ErrorBoundary';
 import { I18nProvider } from './lib/i18n';
 import { Resizer } from './components/Resizer';
@@ -395,15 +396,7 @@ const App = () => {
       refreshFileList(savedDir);
       refreshKnowledgeIndex(savedDir);
     }
-
-    openNote({
-      id: 'demo-welcome',
-      title: 'Welcome to ZenNote',
-      content: DEMO_CONTENT,
-      filePath: '',
-      lastModified: new Date().toISOString(),
-      isDirty: false,
-    });
+    // VS Code 风格：启动时不自动打开 demo 笔记，显示 Welcome 首屏（可通过 Recent/Welcome Guide 快速进入）
   }, []);
 
   // Load files for quick switcher when a directory is opened
@@ -988,6 +981,59 @@ const App = () => {
     setSplitActiveHeading(id);
   }, []);
 
+  // ===== 原生菜单栏事件分发（Rust 侧 emit 的 "zennote-menu"）=====
+  // 动作表每次渲染刷新到 ref，确保菜单触发时调用的是最新闭包（依赖 currentNote 等状态）。
+  // 注意：必须位于所有被引用 handler 声明之后（useMemo factory 在渲染时立即执行，避免 TDZ）。
+  const openWelcomeGuide = useCallback(() => {
+    openNote({
+      id: 'demo-welcome',
+      title: 'Welcome to ZenNote',
+      content: DEMO_CONTENT,
+      filePath: '',
+      lastModified: new Date().toISOString(),
+      isDirty: false,
+    });
+  }, [openNote]);
+  const menuActions: Record<string, () => void> = useMemo(() => ({
+    'new-note': handleNewNote,
+    'open-folder': handleOpenFolderDialog,
+    'save': () => handleSaveRef.current(),
+    'save-as': handleSaveAs,
+    'export-html': handleExportHtml,
+    'export-pdf': handleExportPdf,
+    'create-daily': handleCreateDaily,
+    'version-history': () => setShowVersionHistory(true),
+    'close-tab': () => { if (activeTabIdRef.current) closeTab(activeTabIdRef.current); },
+    'find': () => setShowFindReplace(true),
+    'toggle-sidebar': () => setSidebarOpen(prev => !prev),
+    'toggle-outline': () => setOutlineOpen(prev => !prev),
+    'toggle-backlinks': () => setShowBacklinks(prev => !prev),
+    'toggle-graph': () => setShowKnowledgeGraph(prev => !prev),
+    'toggle-ai': () => setShowAIPanel(prev => !prev),
+    'toggle-source': () => setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg'),
+    'toggle-focus': () => setFocusMode(prev => !prev),
+    'toggle-typewriter': () => setTypewriterMode(prev => !prev),
+    'cycle-theme': cycleTheme,
+    'quick-switch': () => setShowQuickSwitcher(true),
+    'command-palette': () => setShowCommandPalette(true),
+    'command-palette-help': () => setShowCommandPalette(true),
+    'prev-tab': () => switchTab(-1),
+    'next-tab': () => switchTab(1),
+    'open-settings': () => setShowSettings(true),
+    'welcome-guide': openWelcomeGuide,
+  }), [handleNewNote, handleOpenFolderDialog, handleSaveAs, handleExportHtml, handleExportPdf, handleCreateDaily, cycleTheme, closeTab, switchTab, openWelcomeGuide]);
+  const menuActionsRef = useRef(menuActions);
+  menuActionsRef.current = menuActions;
+
+  useEffect(() => {
+    if (!electronAPI.isTauri) return;
+    let unlisten: (() => void) | undefined;
+    listen<string>('zennote-menu', (event) => {
+      menuActionsRef.current[event.payload]?.();
+    }).then(fn => { unlisten = fn; }).catch(console.warn);
+    return () => { unlisten?.(); };
+  }, []);
+
   // Build command palette commands
   const commands: Command[] = useMemo(() => [
     { id: 'new-note', title: 'New Note', shortcut: 'Cmd+N', category: 'File', action: handleNewNote },
@@ -1109,24 +1155,14 @@ const App = () => {
           onReorder={reorderTabs}
         />
         {openTabs.length === 0 ? (
-          <div className="editor-empty">
-            <div className="empty-icon">📝</div>
-            <h2>欢迎使用 ZenNote</h2>
-            <p>选择一个文件夹或创建新笔记开始写作</p>
-            <div className="empty-actions">
-              <button className="btn btn-primary" onClick={handleNewNote}>
-                <Plus size={14} /> 新建笔记
-              </button>
-              <button className="btn" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }} onClick={() => setShowSettings(true)}>
-                <Settings size={14} /> 打开设置
-              </button>
-            </div>
-            <div className="empty-shortcuts">
-              <div className="shortcut-hint"><kbd>Cmd+N</kbd> 新建笔记</div>
-              <div className="shortcut-hint"><kbd>Cmd+P</kbd> 快速切换</div>
-              <div className="shortcut-hint"><kbd>Cmd+Shift+P</kbd> 命令面板</div>
-            </div>
-          </div>
+          <Welcome
+            onNewNote={handleNewNote}
+            onOpenFolder={handleOpenFolderDialog}
+            onCreateDaily={handleCreateDaily}
+            onOpenGuide={openWelcomeGuide}
+            onOpenFile={handleOpenFile}
+            currentDir={currentDir}
+          />
         ) : (
           <div className={`editor-area ${splitNote ? 'split' : ''}`}>
             <div className="editor-pane editor-pane-main">
