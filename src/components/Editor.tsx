@@ -272,8 +272,10 @@ export const Editor = ({
       if (cached) {
         // 恢复缓存的状态（保留 undo 历史）
         editor.view.updateState(cached);
-      } else if (content !== editor.getMarkdown()) {
-        // 新笔记：设置内容
+      } else {
+        // 新笔记：强制 setContent（useEditor 不会把 content 字段当 markdown 解析，
+        // 会作为 HTML 处理，markdown 字符被保留为纯文本节点，导致 getMarkdown()
+        // 返回值与原始 content 字符串相等而跳过 setContent，markdown 永不渲染）
         editor.commands.setContent(content);
       }
       noteIdRef.current = currentFilePath;

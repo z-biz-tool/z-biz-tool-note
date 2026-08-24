@@ -53,11 +53,14 @@
     "katex": "^0.18.1",
     "lowlight": "^3.0.0",
     "lucide-react": "^1.28.0",
+    "mammoth": "^1.12.1",
     "mermaid": "^11.16.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.29.1",
-    "tippy.js": "^6.3.7"
+    "tippy.js": "^6.3.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

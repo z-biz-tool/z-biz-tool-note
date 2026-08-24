@@ -45,6 +45,8 @@ pub fn run() {
             commands::ensure_dir,
             commands::write_text_file,
             commands::read_file,
+            commands::read_file_binary,
+            commands::get_file_meta,
             commands::write_file,
             commands::delete_file,
             commands::move_to_trash,

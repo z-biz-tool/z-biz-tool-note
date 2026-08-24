@@ -88,6 +88,10 @@ export const electronAPI = {
       switch (channel) {
         case 'read-file':
           return { success: true, content: localStorage.getItem(`note-${args[0]}`) || '', filePath: args[0] };
+        case 'read-file-binary':
+          return { success: false, error: '浏览器模式不可用' };
+        case 'get-file-meta':
+          return { success: true, size: 0, modified: new Date().toISOString(), mime: 'application/octet-stream', filePath: args[0] };
         case 'write-file':
           localStorage.setItem(`note-${args[0]}`, args[1]);
           return { success: true };
@@ -141,6 +145,14 @@ export const electronAPI = {
         case 'read-file': {
           const content = await invoke<string>('read_file', { path: args[0] });
           return { success: true, content, filePath: args[0] };
+        }
+        case 'read-file-binary': {
+          const base64 = await invoke<string>('read_file_binary', { path: args[0] });
+          return { success: true, base64, filePath: args[0] };
+        }
+        case 'get-file-meta': {
+          const meta = await invoke<{ size: number; modified: string; mime: string }>('get_file_meta', { path: args[0] });
+          return { success: true, ...meta, filePath: args[0] };
         }
         case 'write-file': {
           await invoke('write_file', { path: args[0], content: args[1] });

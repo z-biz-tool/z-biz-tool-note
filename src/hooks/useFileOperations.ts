@@ -6,6 +6,14 @@ export const useFileOperations = () => {
     return electronAPI.invoke('read-file', filePath);
   };
 
+  const readFileBinary = async (filePath: string) => {
+    return electronAPI.invoke('read-file-binary', filePath);
+  };
+
+  const getFileMeta = async (filePath: string) => {
+    return electronAPI.invoke('get-file-meta', filePath);
+  };
+
   const writeFile = async (filePath: string, content: string) => {
     return electronAPI.invoke('write-file', filePath, content);
   };
@@ -53,6 +61,8 @@ export const useFileOperations = () => {
 
   return {
     readFile,
+    readFileBinary,
+    getFileMeta,
     writeFile,
     showSaveDialog,
     showOpenDialog,

@@ -1,3 +1,5 @@
+import type { FileKind } from '../lib/fileTypes';
+
 export interface Note {
   id: string;
   title: string;
@@ -8,6 +10,13 @@ export interface Note {
   tags?: string[];
   filePath?: string;
   isDirty?: boolean;
+  // 文件类型路由扩展字段
+  fileType?: FileKind;        // 当前文件形态
+  dataUrl?: string;           // 二进制文件用 base64 dataUrl
+  fileSize?: number;          // 文件大小(byte)
+  fileMtime?: string;         // 修改时间
+  fileMime?: string;          // MIME 类型
+  isReadonly?: boolean;       // 非 markdown 文件一律只读
 }
 
 export interface Config {

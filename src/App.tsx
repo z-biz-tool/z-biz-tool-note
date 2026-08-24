@@ -5,6 +5,16 @@ import { electronAPI } from './lib/electronAPI';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
+import { ImageViewer } from './components/Viewers/ImageViewer';
+import { VideoPlayer } from './components/Viewers/VideoPlayer';
+import { AudioPlayer } from './components/Viewers/AudioPlayer';
+import { CodeViewer } from './components/Viewers/CodeViewer';
+import { CsvViewer } from './components/Viewers/CsvViewer';
+import { PdfViewer } from './components/Viewers/PdfViewer';
+import { DocxViewer } from './components/Viewers/DocxViewer';
+import { XlsxViewer } from './components/Viewers/XlsxViewer';
+import { BinaryViewer } from './components/Viewers/BinaryViewer';
+import type { FileKind } from './lib/fileTypes';
 import { StatusBar } from './components/StatusBar';
 import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
@@ -118,7 +128,7 @@ function createNote(title: string): Note {
 *Start writing your notes now!*`;
 
 const App = () => {
-  const { writeFile, showSaveDialog, exportHtml, exportPdf, createNewNote, readFile } = useFileOperations();
+  const { writeFile, showSaveDialog, exportHtml, exportPdf, createNewNote, readFile, readFileBinary, getFileMeta } = useFileOperations();
 
   // 多标签 + 分屏：openTabs 为所有打开的笔记，activeTabId 为左窗格当前笔记，
   // splitNote 为右窗格笔记（null 表示无分屏）。currentNote 由 activeTabId 派生，
@@ -797,26 +807,61 @@ const App = () => {
     }
     setIsLoading(true);
     try {
-      const result = await readFile(filePath);
-      if (result.success && result.content !== undefined) {
-        openNote({
-          id: filePath,
-          title: filePath.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || 'Untitled',
-          content: result.content,
-          filePath,
-          lastModified: new Date().toISOString(),
-          isDirty: false,
-        });
-        // 记录文件修改时间（用于外部修改检测）
-        try {
-          const mtime = await invoke('get_file_modified', { path: filePath }) as string;
-          setLastSaved(mtime);
-        } catch {}
+      // 通用打开:按文件类型路由,生成对应 Note
+      const { kindOf, baseName, mimeOf, isEditable } = await import('./lib/fileTypes');
+      const kind = kindOf(filePath);
+      const title = baseName(filePath);
+      const mime = mimeOf(filePath);
+
+      // 拿文件元信息
+      let size = 0;
+      let mtime = '';
+      try {
+        const meta = await getFileMeta(filePath);
+        if (meta.success) { size = meta.size; mtime = meta.modified; }
+      } catch {}
+
+      // 根据类型决定读取方式
+      let content = '';
+      let dataUrl: string | undefined;
+
+      if (kind === 'markdown' || kind === 'code' || kind === 'csv') {
+        const result = await readFile(filePath);
+        if (result.success && result.content !== undefined) {
+          content = result.content;
+        } else {
+          return; // 读失败
+        }
+      } else {
+        // 二进制:读 base64 + 拼 dataUrl
+        const result = await readFileBinary(filePath);
+        if (result.success && result.base64) {
+          dataUrl = `data:${mime};base64,${result.base64}`;
+        } else {
+          return;
+        }
       }
+
+      openNote({
+        id: filePath,
+        title,
+        content,
+        filePath,
+        lastModified: new Date().toISOString(),
+        isDirty: false,
+        fileType: kind,
+        dataUrl,
+        fileSize: size,
+        fileMtime: mtime,
+        fileMime: mime,
+        isReadonly: !isEditable(kind),
+      });
+
+      if (mtime) setLastSaved(mtime);
     } finally {
       setIsLoading(false);
     }
-  }, [readFile, openNote]);
+  }, [readFile, readFileBinary, getFileMeta, openNote]);
 
   const handleOpenFolder = useCallback((dirPath: string) => {
     if (dirPath) {
@@ -836,6 +881,114 @@ const App = () => {
       refreshKnowledgeIndex(result.filePath);
     }
   }, [refreshFileList, refreshKnowledgeIndex]);
+
+  // 根据文件类型路由渲染:markdown → tiptap 编辑器,其他 → 专用 viewer
+  const renderFileContent = (note: Note, isSplit = false) => {
+    const kind = note.fileType || 'markdown';
+    const fp = note.filePath || '';
+    const mime = note.fileMime || 'application/octet-stream';
+    const dataUrl = note.dataUrl;
+
+    // markdown 走原 tiptap 编辑器(主/分屏参数不同)
+    if (kind === 'markdown') {
+      if (isSplit) {
+        return (
+          <Editor
+            content={note.content}
+            onChange={handleSplitContentChange}
+            title={note.title}
+            onTitleChange={handleSplitTitleChange}
+            editorMode={editorMode}
+            focusMode={focusMode}
+            typewriterMode={typewriterMode}
+            showFindReplace={false}
+            onToggleFindReplace={() => {}}
+            onStatsChange={setSplitStats}
+            onHeadingsChange={setSplitHeadings}
+            onWikiLinksChange={() => {}}
+            currentFilePath={fp}
+            editorRef={editorRefSplit}
+            onActiveHeadingChange={handleSplitActiveHeadingChange}
+            scrollSyncTarget={mainScrollRef}
+            onWikiLinkClick={(href: string) => {
+              const t = href.replace(/#.*$/, '').trim();
+              const existing = openTabsRef.current.find(x => x.title === t);
+              if (existing) { setActiveTabId(existing.id); return; }
+              const m = allFiles.find(f => {
+                const fn = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
+                return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
+              });
+              if (m) handleOpenFile(m.path);
+              else showToast(`未找到笔记: ${t}`);
+            }}
+            onTagClick={(tag: string) => handleTagClick(tag)}
+          />
+        );
+      }
+      return (
+        <Editor
+          content={note.content}
+          onChange={handleContentChange}
+          title={note.title}
+          onTitleChange={handleTitleChange}
+          editorMode={editorMode}
+          focusMode={focusMode}
+          typewriterMode={typewriterMode}
+          showFindReplace={showFindReplace}
+          onToggleFindReplace={() => setShowFindReplace(false)}
+          onStatsChange={setStats}
+          onHeadingsChange={setHeadings}
+          onWikiLinksChange={handleWikiLinksChange}
+          currentFilePath={fp}
+          editorRef={editorRef}
+          onActiveHeadingChange={handleActiveHeadingChange}
+          scrollSyncTarget={splitScrollRef}
+          onWikiLinkClick={(href: string) => {
+            const t = href.replace(/#.*$/, '').trim();
+            const existing = openTabsRef.current.find(x => x.title === t);
+            if (existing) { setActiveTabId(existing.id); return; }
+            const m = allFiles.find(f => {
+              const fn = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
+              return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
+            });
+            if (m) handleOpenFile(m.path);
+            else showToast(`未找到笔记: ${t}`);
+          }}
+          onTagClick={(tag: string) => handleTagClick(tag)}
+        />
+      );
+    }
+
+    // 其他类型 viewer
+    switch (kind) {
+      case 'image':
+        return <ImageViewer filePath={fp} dataUrl={dataUrl || ''} mime={mime} />;
+      case 'video':
+        return <VideoPlayer filePath={fp} dataUrl={dataUrl || ''} mime={mime} />;
+      case 'audio':
+        return <AudioPlayer filePath={fp} dataUrl={dataUrl || ''} mime={mime} />;
+      case 'code':
+        return <CodeViewer filePath={fp} content={note.content} />;
+      case 'csv':
+        return <CsvViewer filePath={fp} content={note.content} />;
+      case 'pdf':
+        return <PdfViewer filePath={fp} dataUrl={dataUrl || ''} mime={mime} />;
+      case 'docx':
+        return <DocxViewer filePath={fp} dataUrl={dataUrl || ''} mime={mime} />;
+      case 'xlsx':
+        return <XlsxViewer filePath={fp} dataUrl={dataUrl || ''} mime={mime} />;
+      case 'binary':
+      default:
+        return (
+          <BinaryViewer
+            filePath={fp}
+            size={note.fileSize || 0}
+            modified={note.fileMtime || ''}
+            mime={mime}
+          />
+        );
+    }
+  };
 
   const handleSave = useCallback(async () => {
     if (!currentNote || !currentNote.isDirty) return;
@@ -1106,6 +1259,7 @@ const App = () => {
         isOpen={sidebarOpen}
         currentNote={currentNote}
         onSelectNote={handleSelectNote}
+        onOpenFile={handleOpenFile}
         onNewNote={handleNewNote}
         onOpenFolder={handleOpenFolder}
         tags={tags}
@@ -1180,64 +1334,22 @@ const App = () => {
                     activeHeadingId={activeHeading}
                     onHeadingClick={handleJumpToHeading}
                   />
-                  <Editor
-                    content={currentNote.content}
-                    onChange={handleContentChange}
-                    title={currentNote.title}
-                    onTitleChange={handleTitleChange}
-                    editorMode={editorMode}
-                    focusMode={focusMode}
-                    typewriterMode={typewriterMode}
-                    showFindReplace={showFindReplace}
-                    onToggleFindReplace={() => setShowFindReplace(false)}
-                    onStatsChange={setStats}
-                    onHeadingsChange={setHeadings}
-                    onWikiLinksChange={handleWikiLinksChange}
-                    currentFilePath={currentNote.filePath}
-                    editorRef={editorRef}
-                    onActiveHeadingChange={handleActiveHeadingChange}
-                    scrollSyncTarget={splitScrollRef}
-                    onWikiLinkClick={(href: string) => {
-                      // 解析 WikiLink：提取笔记名和可选的标题锚点
-                      const title = href.replace(/#.*$/, '').trim();
-
-                      // 先在已打开的标签中查找
-                      const existingTab = openTabsRef.current.find(t => t.title === title);
-                      if (existingTab) {
-                        setActiveTabId(existingTab.id);
-                        return;
-                      }
-
-                      // 在文件列表中查找匹配的文件
-                      const matchedFile = allFiles.find(f => {
-                        const fileName = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
-                        return fileName === title || f.path?.endsWith(`/${title}.md`) || f.path?.endsWith(`/${title}.markdown`);
-                      });
-
-                      if (matchedFile) {
-                        handleOpenFile(matchedFile.path);
-                      } else {
-                        // 未找到，提示用户
-                        showToast(`未找到笔记: ${title}`);
-                      }
-                    }}
-                    onTagClick={(tag: string) => {
-                      handleTagClick(tag);
-                    }}
-                  />
-                  <StatusBar
-                    theme={theme}
-                    onCycleTheme={cycleTheme}
-                    isDirty={currentNote.isDirty}
-                    lastSaved={lastSaved}
-                    stats={stats}
-                    editorMode={editorMode}
-                    focusMode={focusMode}
-                    typewriterMode={typewriterMode}
-                    onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
-                    onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
-                    onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
-                  />
+                  {renderFileContent(currentNote)}
+                  {currentNote.fileType === 'markdown' && (
+                    <StatusBar
+                      theme={theme}
+                      onCycleTheme={cycleTheme}
+                      isDirty={currentNote.isDirty}
+                      lastSaved={lastSaved}
+                      stats={stats}
+                      editorMode={editorMode}
+                      focusMode={focusMode}
+                      typewriterMode={typewriterMode}
+                      onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
+                      onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
+                      onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -1250,64 +1362,22 @@ const App = () => {
                   activeHeadingId={splitActiveHeading}
                   onHeadingClick={handleJumpToHeadingSplit}
                 />
-                <Editor
-                  content={splitNote.content}
-                  onChange={handleSplitContentChange}
-                  title={splitNote.title}
-                  onTitleChange={handleSplitTitleChange}
-                  editorMode={editorMode}
-                  focusMode={focusMode}
-                  typewriterMode={typewriterMode}
-                  showFindReplace={false}
-                  onToggleFindReplace={() => {}}
-                  onStatsChange={setSplitStats}
-                  onHeadingsChange={setSplitHeadings}
-                  onWikiLinksChange={() => {}}
-                  currentFilePath={splitNote.filePath || ''}
-                  editorRef={editorRefSplit}
-                  onActiveHeadingChange={handleSplitActiveHeadingChange}
-                  scrollSyncTarget={mainScrollRef}
-                  onWikiLinkClick={(href: string) => {
-                    // 解析 WikiLink：提取笔记名和可选的标题锚点
-                    const title = href.replace(/#.*$/, '').trim();
-
-                    // 先在已打开的标签中查找
-                    const existingTab = openTabsRef.current.find(t => t.title === title);
-                    if (existingTab) {
-                      setActiveTabId(existingTab.id);
-                      return;
-                    }
-
-                    // 在文件列表中查找匹配的文件
-                    const matchedFile = allFiles.find(f => {
-                      const fileName = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
-                      return fileName === title || f.path?.endsWith(`/${title}.md`) || f.path?.endsWith(`/${title}.markdown`);
-                    });
-
-                    if (matchedFile) {
-                      handleOpenFile(matchedFile.path);
-                    } else {
-                      // 未找到，提示用户
-                      showToast(`未找到笔记: ${title}`);
-                    }
-                  }}
-                  onTagClick={(tag: string) => {
-                    handleTagClick(tag);
-                  }}
-                />
-                <StatusBar
-                  theme={theme}
-                  onCycleTheme={cycleTheme}
-                  isDirty={splitNote.isDirty}
-                  lastSaved={lastSavedSplit}
-                  stats={splitStats}
-                  editorMode={editorMode}
-                  focusMode={focusMode}
-                  typewriterMode={typewriterMode}
-                  onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
-                  onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
-                  onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
-                />
+                {renderFileContent(splitNote, /* split */ true)}
+                {splitNote.fileType === 'markdown' && (
+                  <StatusBar
+                    theme={theme}
+                    onCycleTheme={cycleTheme}
+                    isDirty={splitNote.isDirty}
+                    lastSaved={lastSavedSplit}
+                    stats={splitStats}
+                    editorMode={editorMode}
+                    focusMode={focusMode}
+                    typewriterMode={typewriterMode}
+                    onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
+                    onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
+                    onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
+                  />
+                )}
               </div>
             )}
           </div>

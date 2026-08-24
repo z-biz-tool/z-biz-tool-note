@@ -1027,3 +1027,99 @@ pub async fn get_file_modified(path: String) -> Result<String, String> {
         .map_err(|e| format!("获取修改时间失败: {}", e))?;
     Ok(modified)
 }
+
+/// 读取任意文件并以 Base64 字符串返回（用于图片/PDF/视频/Office 等二进制文件）
+#[tauri::command]
+pub async fn read_file_binary(path: String) -> Result<String, String> {
+    validate_path(&path)?;
+    let bytes = fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    Ok(STANDARD.encode(&bytes))
+}
+
+/// 读取任意文件的基础元信息（大小、修改时间、MIME 推断）
+#[derive(Serialize)]
+pub struct FileMeta {
+    pub size: u64,
+    pub modified: String,
+    pub mime: String,
+}
+
+#[tauri::command]
+pub async fn get_file_meta(path: String) -> Result<FileMeta, String> {
+    use std::path::Path;
+    validate_path(&path)?;
+    let metadata = fs::metadata(&path).map_err(|e| format!("获取文件信息失败: {}", e))?;
+    let modified = metadata.modified()
+        .map(|t| {
+            let dt: DateTime<Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|_| "未知".to_string());
+    let mime = guess_mime_from_ext(Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or(""));
+    Ok(FileMeta { size: metadata.len(), modified, mime })
+}
+
+/// 根据扩展名猜 MIME（覆盖常见图片/音视频/PDF/Office/文本类型）
+fn guess_mime_from_ext(ext: &str) -> String {
+    let ext = ext.to_lowercase();
+    let mime = match ext.as_str() {
+        // 图片
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "heic" | "heif" => "image/heic",
+        // 音视频
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "m4a" => "audio/mp4",
+        "aac" => "audio/aac",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "avi" => "video/x-msvideo",
+        // 文档
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        // 文本
+        "md" | "markdown" => "text/markdown",
+        "txt" | "log" => "text/plain",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "yaml" | "yml" => "application/yaml",
+        "toml" => "application/toml",
+        "ini" | "conf" => "text/plain",
+        "csv" | "tsv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" | "mjs" => "application/javascript",
+        "ts" | "tsx" => "application/typescript",
+        "jsx" => "application/jsx",
+        // 代码
+        "py" => "text/x-python",
+        "rs" => "text/x-rust",
+        "go" => "text/x-go",
+        "java" => "text/x-java",
+        "kt" | "kts" => "text/x-kotlin",
+        "swift" => "text/x-swift",
+        "c" | "h" => "text/x-c",
+        "cpp" | "cc" | "cxx" | "hpp" => "text/x-c++",
+        "cs" => "text/x-csharp",
+        "rb" => "text/x-ruby",
+        "php" => "text/x-php",
+        "sh" | "bash" | "zsh" => "text/x-shellscript",
+        "sql" => "text/x-sql",
+        "scss" | "less" => "text/x-scss",
+        "vue" | "svelte" => "text/x-vue",
+        _ => "application/octet-stream",
+    };
+    mime.to_string()
+}

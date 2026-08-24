@@ -14,6 +14,7 @@ interface SidebarProps {
   isOpen: boolean;
   currentNote: Note | null;
   onSelectNote: (note: Note) => void;
+  onOpenFile?: (path: string) => void;
   onNewNote: () => void;
   onOpenFolder: (dirPath: string) => void;
   onRefresh?: () => void;
@@ -31,7 +32,7 @@ interface SidebarProps {
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
-  isOpen, currentNote, onSelectNote, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
+  isOpen, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
@@ -108,18 +109,27 @@ export const Sidebar = ({
           setFileTree(prev => [...prev]);
         }
       }
-    } else if (file.isFile && (file.name.endsWith('.md') || file.name.endsWith('.markdown'))) {
-      const result = await readFile(file.path);
-      if (result.success && result.content !== undefined) {
-        addRecentFile(file.path, file.name.replace(/\.md$|\.markdown$/, ''));
-        onSelectNote({
-          id: file.path,
-          title: file.name.replace(/\.md$|\.markdown$/, ''),
-          content: result.content,
-          filePath: file.path,
-          lastModified: new Date().toISOString(),
-          isDirty: false,
-        });
+    } else if (file.isFile) {
+      // 任意文件类型都走 App 的统一打开逻辑(按 fileTypes 路由分发)
+      if (onOpenFile) {
+        addRecentFile(file.path, file.name);
+        onOpenFile(file.path);
+      } else {
+        // 回退:仅处理 .md
+        if (file.name.endsWith('.md') || file.name.endsWith('.markdown')) {
+          const result = await readFile(file.path);
+          if (result.success && result.content !== undefined) {
+            addRecentFile(file.path, file.name.replace(/\.md$|\.markdown$/, ''));
+            onSelectNote({
+              id: file.path,
+              title: file.name.replace(/\.md$|\.markdown$/, ''),
+              content: result.content,
+              filePath: file.path,
+              lastModified: new Date().toISOString(),
+              isDirty: false,
+            });
+          }
+        }
       }
     }
   };

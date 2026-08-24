@@ -5319,6 +5319,7 @@ dependencies = [
 name = "z-biz-tool-note"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "dirs",
  "reqwest 0.12.28",
