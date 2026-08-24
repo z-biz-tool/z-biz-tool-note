@@ -2,6 +2,14 @@
 
 > 本地优先的跨平台 WYSIWYG Markdown 笔记应用，融合知识图谱与 AI 助手
 
+![tech](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri)
+![tech](https://img.shields.io/badge/React-19-61DAFB?logo=react)
+![tech](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
+![tech](https://img.shields.io/badge/Tiptap-v3-9B59B6?logo=tiptap)
+![tech](https://img.shields.io/badge/Mermaid-blue?logo=mermaid)
+![tech](https://img.shields.io/badge/KaTeX-blue?logo=katex)
+![tech](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust)
+
 ZenNote 是一款本地优先的 Markdown 笔记工具，融合了 Typora 的所见即所得体验、Obsidian 的知识图谱与双向链接能力、思源笔记的块级引用、Sublime/VSCode 的多光标与 Minimap、Bear 的嵌套标签，以及 Notion 的现代交互界面。所有笔记以纯 Markdown 文件形式保存在你的本地磁盘，无需账号、无需联网，可完全离线使用。内置 AI 助手可对接任意 OpenAI 兼容大模型，帮助整理知识、提取标签、生成大纲。
 
 ---
