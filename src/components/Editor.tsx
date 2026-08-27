@@ -102,6 +102,8 @@ interface EditorProps {
   onTagClick?: (tag: string) => void;
   // 滚动同步目标
   scrollSyncTarget?: React.RefObject<HTMLElement>;
+  // 文章宽屏：true 时文档撑满整个编辑区（去掉 max-width 限制）
+  documentWide?: boolean;
 }
 
 export const Editor = ({
@@ -123,6 +125,7 @@ export const Editor = ({
   onWikiLinkClick,
   onTagClick,
   scrollSyncTarget,
+  documentWide = false,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -175,6 +178,8 @@ export const Editor = ({
   }, [scrollSyncTarget]);
 
   const editor = useEditor({
+    // @tiptap/markdown v3: 告诉 useEditor 传入的 content 字符串是 markdown 而非 HTML/JSON
+    contentType: 'markdown',
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4, 5, 6] },
@@ -266,22 +271,23 @@ export const Editor = ({
       }
     }
 
-    // 切换到新笔记：尝试恢复缓存的状态
+    // 切换到新笔记：直接替换 doc
+    // 注：之前用 rAF + opacity 0 做切换过渡，macOS 失焦时 rAF 被节流会导致容器
+    // 永久 opacity 0（"白屏，要切到其他 app 再回来才恢复"）。已撤掉，简单 setContent
+    // 反而不会卡住——marked.parse + ProseMirror 重建是同步的，浏览器下一帧就 paint 新内容。
     if (currentFilePath !== noteIdRef.current) {
       const cached = stateCacheRef.current.get(currentFilePath);
       if (cached) {
         // 恢复缓存的状态（保留 undo 历史）
         editor.view.updateState(cached);
       } else {
-        // 新笔记：强制 setContent（useEditor 不会把 content 字段当 markdown 解析，
-        // 会作为 HTML 处理，markdown 字符被保留为纯文本节点，导致 getMarkdown()
-        // 返回值与原始 content 字符串相等而跳过 setContent，markdown 永不渲染）
-        editor.commands.setContent(content);
+        // 新笔记：解析 markdown 并替换 doc
+        editor.commands.setContent(content, { contentType: 'markdown' });
       }
       noteIdRef.current = currentFilePath;
     } else if (content !== editor.getMarkdown()) {
       // 同一笔记内容外部更新（罕见）
-      editor.commands.setContent(content);
+      editor.commands.setContent(content, { contentType: 'markdown' });
     }
   }, [content, editor, currentFilePath]);
 
@@ -449,7 +455,7 @@ export const Editor = ({
       const text = event.clipboardData?.getData('text/plain');
       if (html && text && /^(\s*#{1,6}\s|>\s|- {1,2}|\d+\.\s|\[.*\]\(|```|\*\*|__|\|)/m.test(text)) {
         event.preventDefault();
-        editor.commands.insertContent(text);
+        editor.commands.insertContent(text, { contentType: 'markdown' });
         return;
       }
 
@@ -540,7 +546,7 @@ export const Editor = ({
   if (!editor) return null;
 
   return (
-    <div className="editor-container" onClick={handleEditorClick}>
+    <div className={`editor-container ${documentWide ? 'is-wide' : ''}`} onClick={handleEditorClick}>
       <Toolbar
         editor={editor}
         onEmojiClick={() => setShowEmojiPicker(!showEmojiPicker)}

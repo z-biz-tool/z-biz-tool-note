@@ -139,7 +139,8 @@ const App = () => {
   const currentNote = openTabs.find(t => t.id === activeTabId) || null;
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  // TOC（Outline）默认打开：notes app 的大纲是核心导航体验
+  const [outlineOpen, setOutlineOpen] = useState(true);
   const [theme, setTheme] = useState<ThemeName>('light');
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg');
   const [focusMode, setFocusMode] = useState(false);
@@ -198,7 +199,7 @@ const App = () => {
   // Resizable side panels (persisted in localStorage)
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
-    return Number.isFinite(v) && v >= 160 && v <= 600 ? v : 260;
+    return Number.isFinite(v) && v >= 160 && v <= 600 ? v : 280;
   });
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('rightPanelWidth') || '', 10);
@@ -207,8 +208,10 @@ const App = () => {
   // 右侧面板"窄/宽"两种展示形态（类似语雀）：
   //   窄 = 当前固定宽度（300px），可拖拽 Resizer 微调
   //   宽 = 占满除侧边栏外的全部右侧空间，编辑器隐藏
+  // 默认 wide，README/H1 那种"打开就看大纲"是 notes app 的主场景
   const [rightPanelWide, setRightPanelWide] = useState<boolean>(() => {
-    return localStorage.getItem('rightPanelWide') === '1';
+    const v = localStorage.getItem('rightPanelWide');
+    return v === null ? true : v === '1';
   });
   const RIGHT_PANEL_NARROW = 300;
 
@@ -922,6 +925,7 @@ const App = () => {
               else showToast(`未找到笔记: ${t}`);
             }}
             onTagClick={(tag: string) => handleTagClick(tag)}
+            documentWide={rightPanelWide}
           />
         );
       }
@@ -938,6 +942,7 @@ const App = () => {
           onToggleFindReplace={() => setShowFindReplace(false)}
           onStatsChange={setStats}
           onHeadingsChange={setHeadings}
+          documentWide={rightPanelWide}
           onWikiLinksChange={handleWikiLinksChange}
           currentFilePath={fp}
           editorRef={editorRef}
@@ -1283,7 +1288,7 @@ const App = () => {
         />
       )}
 
-      <div style={{ flex: 1, flexDirection: 'column', overflow: 'hidden', display: rightPanelWide ? 'none' : 'flex' }}>
+      <div style={{ flex: 1, flexDirection: 'column', overflow: 'hidden', display: 'flex' }}>
         <TabsBar
           tabs={openTabs}
           activeId={activeTabId}
@@ -1345,9 +1350,11 @@ const App = () => {
                       editorMode={editorMode}
                       focusMode={focusMode}
                       typewriterMode={typewriterMode}
+                      documentWide={rightPanelWide}
                       onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
                       onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
                       onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
+                      onToggleDocumentWide={toggleRightPanelWide}
                     />
                   )}
                 </>
@@ -1373,9 +1380,11 @@ const App = () => {
                     editorMode={editorMode}
                     focusMode={focusMode}
                     typewriterMode={typewriterMode}
+                    documentWide={rightPanelWide}
                     onToggleEditorMode={() => setEditorMode((prev: EditorMode) => prev === 'wysiwyg' ? 'source' : 'wysiwyg')}
                     onToggleFocusMode={() => setFocusMode((prev: boolean) => !prev)}
                     onToggleTypewriterMode={() => setTypewriterMode((prev: boolean) => !prev)}
+                    onToggleDocumentWide={toggleRightPanelWide}
                   />
                 )}
               </div>
@@ -1402,7 +1411,7 @@ const App = () => {
         />
       )}
 
-      {outlineOpen && currentNote && (
+      {!rightPanelWide && outlineOpen && currentNote && (
         <>
           {!rightPanelWide && (
             <Resizer

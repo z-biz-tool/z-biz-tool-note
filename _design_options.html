@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>ZenNote UI 现代化方向</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f5f4;
+    --surface: #ffffff;
+    --line: #e7e5e4;
+    --line-soft: #f0eeec;
+    --text: #1c1917;
+    --muted: #78716c;
+    --accent: #6366f1;
+    --accent-soft: #eef2ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); font-family: 'Outfit', 'Inter', -apple-system, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+
+  /* Hero */
+  .hero { max-width: 1100px; margin: 0 auto; padding: 64px 32px 32px; }
+  .hero h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 12px; }
+  .hero p { color: var(--muted); font-size: 16px; line-height: 1.6; margin: 0; max-width: 720px; }
+
+  /* Grid of 3 directions */
+  .grid { max-width: 1100px; margin: 32px auto 80px; padding: 0 32px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .card-head { padding: 20px 24px 16px; border-bottom: 1px solid var(--line-soft); }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .card h2 { font-size: 18px; font-weight: 600; margin: 12px 0 4px; letter-spacing: -0.01em; }
+  .card .desc { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0; }
+  .mockup { height: 280px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .mockup .panel { background: #fafaf9; border: 1px solid var(--line-soft); border-radius: 10px; }
+  .mockup .row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; color: var(--text); }
+  .mockup .row .ico { width: 14px; height: 14px; opacity: 0.6; }
+  .card-foot { padding: 14px 24px; border-top: 1px solid var(--line-soft); display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: #f5f5f4; color: #57534e; }
+
+  /* A: Linear-like */
+  .a .sidebar-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; }
+  .a .sidebar-head .name { font-size:13px; font-weight:600; letter-spacing:-0.01em; }
+  .a .sidebar-head .btn { width:22px; height:22px; border-radius:6px; background:#f5f5f4; display:grid; place-items:center; }
+  .a .tabs { display:flex; gap:2px; padding:4px 8px; background:#fafaf9; border-radius:6px; }
+  .a .tab { flex:1; text-align:center; font-size:11px; padding:4px 0; border-radius:4px; color:var(--muted); }
+  .a .tab.active { background:white; color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+  .a .file { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12px; border-radius:5px; }
+  .a .file.active { background:var(--accent); color:white; }
+  .a .file .arrow { opacity: 0.5; }
+  .a .toolbar { display:flex; align-items:center; gap:4px; padding:4px 8px; }
+  .a .toolbar .group { display:flex; gap:2px; padding:0 6px; border-right:1px solid var(--line-soft); }
+  .a .toolbar .group:last-child { border:0; }
+  .a .toolbar .tb { width:24px; height:24px; border-radius:5px; display:grid; place-items:center; font-size:11px; color:var(--muted); }
+  .a .toolbar .tb.on { background:var(--accent-soft); color:var(--accent); }
+
+  /* B: Obsidian-like document feel */
+  .b { background: #fbfaf7; }
+  .b .panel { background: white; }
+  .b .sidebar-head { padding: 12px; border-bottom: 1px solid #efebe0; }
+  .b .sidebar-head .name { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; color: #57534e; text-transform: uppercase; letter-spacing: 0.08em; }
+  .b .tabs { display: flex; border-bottom: 1px solid #efebe0; }
+  .b .tab { flex: 1; padding: 8px 0; text-align: center; font-size: 11px; color: #a8a29e; border-bottom: 2px solid transparent; }
+  .b .tab.active { color: #44403c; border-color: #44403c; }
+  .b .file { display:flex; align-items:center; gap:8px; padding:4px 12px; font-size:12.5px; color: #44403c; }
+  .b .file.active { background: #f5efe0; }
+  .b .file .arrow { color: #a8a29e; }
+  .b .toolbar { display:flex; align-items:center; gap:2px; padding:6px 8px; background: #fbfaf7; }
+  .b .toolbar .tb { font-size: 12px; padding: 3px 8px; color: #57534e; border-radius: 4px; }
+  .b .toolbar .tb.on { background: #e7e5e4; color: #1c1917; }
+  .b .toolbar .sep { color: #d6d3d1; padding: 0 2px; }
+
+  /* C: Cursor-like dark */
+  .c { background: #0e0f12; }
+  .c .panel { background: #16181d; border-color: #232529; }
+  .c .sidebar-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; }
+  .c .sidebar-head .name { font-size:12px; font-weight:600; color:#e7e5e4; letter-spacing: 0.02em; }
+  .c .sidebar-head .name span { color: #6366f1; }
+  .c .sidebar-head .btn { width:22px; height:22px; border-radius:5px; background:#232529; color:#a8a29e; display:grid; place-items:center; }
+  .c .tabs { display:flex; gap:1px; padding:3px; background:#0e0f12; border-radius:7px; margin:6px 8px; }
+  .c .tab { flex:1; text-align:center; font-size:11px; padding:5px 0; border-radius:5px; color:#78716c; }
+  .c .tab.active { background:#232529; color:#e7e5e4; }
+  .c .file { display:flex; align-items:center; gap:8px; padding:5px 12px; font-size:12px; color:#d6d3d1; border-radius:5px; margin: 0 4px; }
+  .c .file.active { background:#6366f1; color:white; }
+  .c .file .arrow { color: #57534e; }
+  .c .toolbar { display:flex; align-items:center; gap:2px; padding:6px 10px; background:#0e0f12; }
+  .c .toolbar .tb { width:26px; height:26px; border-radius:5px; display:grid; place-items:center; color:#a8a29e; font-size:11px; }
+  .c .toolbar .tb.on { background:#232529; color:#a5b4fc; }
+
+  /* Detail contrast: "the bad" */
+  .before-after { max-width: 1100px; margin: 0 auto 80px; padding: 0 32px; }
+  .before-after h3 { font-size: 22px; font-weight: 600; margin: 0 0 16px; letter-spacing: -0.01em; }
+  .ba-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .ba-grid { grid-template-columns: 1fr; } }
+  .ba { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .ba .label { padding: 8px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: #fafaf9; border-bottom: 1px solid var(--line-soft); }
+  .ba .body { padding: 16px; }
+  .old { background: #fafaf9; }
+  .old .tb-row { display:flex; gap:2px; padding:6px; background:#e7e5e4; border-radius:6px; }
+  .old .tb-row .btn { width:24px; height:24px; border-radius:4px; background:white; color:#57534e; display:grid; place-items:center; font-size:10px; border:1px solid #d6d3d1; }
+  .new { background: #fafaf9; }
+  .new .tb-row { display:flex; align-items:center; gap:4px; padding:6px; }
+  .new .tb-row .group { display:flex; gap:1px; padding-right:6px; margin-right:4px; border-right:1px solid #e7e5e4; }
+  .new .tb-row .group:last-child { border:0; }
+  .new .tb-row .btn { width:26px; height:26px; border-radius:5px; color:#57534e; display:grid; place-items:center; font-size:11px; }
+  .new .tb-row .btn.on { background:#eef2ff; color:#6366f1; }
+  .old .side-head { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:#f5f5f4; border-radius:6px; }
+  .old .side-head .name { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#1c1917; }
+  .new .side-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; }
+  .new .side-head .name { font-size:13px; font-weight:600; color:#1c1917; letter-spacing:-0.01em; }
+  .new .side-head .name span { color:#6366f1; }
+
+  .old .file-row { display:flex; align-items:center; gap:6px; padding:4px 10px; font-size:12px; color:#1c1917; }
+  .old .file-row.active { background:#6366f1; color:white; }
+  .old .file-row .arrow { color: #a8a29e; }
+
+  .new .file-row { display:flex; align-items:center; gap:8px; padding:5px 8px; font-size:12.5px; color:#44403c; border-radius:5px; }
+  .new .file-row.active { background:#eef2ff; color:#4338ca; font-weight:500; }
+  .new .file-row .arrow { color: #a8a29e; }
+  .new .file-row.active .arrow { color: #6366f1; }
+
+  /* SVG icons via inline */
+  .ico { display:inline-block; vertical-align:middle; }
+  .ti { font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  /* Footer */
+  .foot { max-width:1100px; margin: 0 auto 60px; padding: 0 32px; color: var(--muted); font-size: 13px; line-height:1.6; }
+  .foot code { background: #f5f5f4; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <h1>ZenNote UI 现代化方向</h1>
+    <p>3 种方向。你挑一个我直接改成组件 CSS（sidebar / 工具栏 / 文件树 / tab 标签全部一起改），不喜欢就再切另一个。所有方案都保留 <code>document.title</code> 那种 macOS 平台感、保留紫蓝主色、保留可访问性。</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- A: Modern minimal (Linear / Things 风格) -->
+    <div class="card a">
+      <div class="card-head">
+        <span class="tag">A · 极简</span>
+        <h2>Modern Minimal</h2>
+        <p class="desc">Linear / Things / Bear 风。留白多、字重对比强、阴影克制、active 状态用柔和底色不刺眼。</p>
+      </div>
+      <div class="mockup">
+        <div class="panel" style="flex:1; display:flex; flex-direction:column;">
+          <div class="sidebar-head">
+            <div class="name">ZenNote</div>
+            <div class="btn">+</div>
+          </div>
+          <div class="tabs">
+            <div class="tab active">Files</div>
+            <div class="tab">Recent</div>
+            <div class="tab">Search</div>
+            <div class="tab">Tags</div>
+          </div>
+          <div style="padding:4px 8px; display:flex; flex-direction:column; gap:1px; font-size:12px;">
+            <div class="file"><span class="arrow">▸</span>📁 Daily</div>
+            <div class="file"><span class="arrow">▾</span>📁 yuque</div>
+            <div class="file" style="padding-left:24px;"><span class="arrow"></span>📄 001_commons-…</div>
+            <div class="file active" style="padding-left:24px;"><span class="arrow"></span>📄 003_commons-…</div>
+            <div class="file" style="padding-left:24px;"><span class="arrow"></span>📄 005_commons-…</div>
+          </div>
+        </div>
+        <div class="panel" style="padding:6px 8px; display:flex; align-items:center;">
+          <div class="toolbar">
+            <div class="group">
+              <div class="tb">T</div>
+              <div class="tb">H1</div>
+            </div>
+            <div class="group">
+              <div class="tb on"><b>B</b></div>
+              <div class="tb on"><i>I</i></div>
+              <div class="tb"><u>U</u></div>
+            </div>
+            <div class="group">
+              <div class="tb">&lt;/&gt;</div>
+              <div class="tb">🔗</div>
+            </div>
+            <div class="group">
+              <div class="tb">≡</div>
+              <div class="tb">⋯</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-foot">
+        <span class="pill">间距统一 4/8/12/16</span>
+        <span class="pill">active 用浅底色</span>
+        <span class="pill">hover 微抬</span>
+        <span class="pill">浅色为主</span>
+      </div>
+    </div>
+
+    <!-- B: Obsidian-like document -->
+    <div class="card b">
+      <div class="card-head">
+        <span class="tag">B · 文档感</span>
+        <h2>Obsidian / Logseq 风</h2>
+        <p class="desc">暖色文档底、JetBrains Mono 标题、首字下沉、tab 下划线指示。适合长文阅读。</p>
+      </div>
+      <div class="mockup b">
+        <div class="panel" style="flex:1; display:flex; flex-direction:column; border-color:#efebe0;">
+          <div class="sidebar-head">
+            <div class="name">z-biz / notes</div>
+          </div>
+          <div class="tabs">
+            <div class="tab active">files</div>
+            <div class="tab">recent</div>
+            <div class="tab">search</div>
+            <div class="tab">tags</div>
+          </div>
+          <div style="padding:6px 0; display:flex; flex-direction:column; gap:1px; font-size:12.5px; color:#44403c;">
+            <div class="file"><span class="arrow">▸</span>📁 Daily</div>
+            <div class="file"><span class="arrow">▾</span>📁 yuque</div>
+            <div class="file" style="padding-left:24px;"><span class="arrow"></span>📄 001_commons-…</div>
+            <div class="file active" style="padding-left:24px;"><span class="arrow"></span>📄 003_commons-…</div>
+            <div class="file" style="padding-left:24px;"><span class="arrow"></span>📄 005_commons-…</div>
+          </div>
+        </div>
+        <div class="panel" style="padding:0; background:#fbfaf7;">
+          <div class="toolbar">
+            <div class="tb on">B</div>
+            <div class="tb on">I</div>
+            <div class="tb">U</div>
+            <div class="sep">|</div>
+            <div class="tb">H1</div>
+            <div class="tb">H2</div>
+            <div class="sep">|</div>
+            <div class="tb">&lt;/&gt;</div>
+            <div class="tb">🔗</div>
+            <div class="sep">|</div>
+            <div class="tb">≡</div>
+          </div>
+        </div>
+      </div>
+      <div class="card-foot">
+        <span class="pill">暖白底</span>
+        <span class="pill">Mono 标题</span>
+        <span class="pill">下划线 tab</span>
+        <span class="pill">平铺文字</span>
+      </div>
+    </div>
+
+    <!-- C: Cursor-like dark -->
+    <div class="card c">
+      <div class="card-head" style="background:#0e0f12; color:white; border-bottom-color:#232529;">
+        <span class="tag" style="background:rgba(99,102,241,0.15);">C · 暗色</span>
+        <h2 style="color:#fafaf9;">Cursor / Warp 风</h2>
+        <p class="desc" style="color:#a8a29e;">深色专业感、高对比、霓虹紫 accent、IDE 化工具栏。适合长时间盯屏。</p>
+      </div>
+      <div class="mockup c">
+        <div class="panel" style="flex:1; display:flex; flex-direction:column; border-color:#232529;">
+          <div class="sidebar-head">
+            <div class="name">Zen<span>Note</span></div>
+            <div class="btn">+</div>
+          </div>
+          <div class="tabs">
+            <div class="tab active">⌂</div>
+            <div class="tab">⏱</div>
+            <div class="tab">⌕</div>
+            <div class="tab">#</div>
+          </div>
+          <div style="padding:6px 4px; display:flex; flex-direction:column; gap:1px; font-size:12px;">
+            <div class="file"><span class="arrow">▸</span>📁 Daily</div>
+            <div class="file"><span class="arrow">▾</span>📁 yuque</div>
+            <div class="file" style="padding-left:24px;"><span class="arrow"></span>📄 001_commons-…</div>
+            <div class="file active" style="padding-left:24px;"><span class="arrow"></span>📄 003_commons-…</div>
+            <div class="file" style="padding-left:24px;"><span class="arrow"></span>📄 005_commons-…</div>
+          </div>
+        </div>
+        <div class="panel" style="padding:0; background:#0e0f12;">
+          <div class="toolbar">
+            <div class="tb on"><b>B</b></div>
+            <div class="tb on"><i>I</i></div>
+            <div class="tb"><u>U</u></div>
+            <div class="tb">&lt;/&gt;</div>
+            <div class="tb">🔗</div>
+            <div class="tb">≡</div>
+          </div>
+        </div>
+      </div>
+      <div class="card-foot" style="background:#0e0f12; border-top-color:#232529;">
+        <span class="pill" style="background:#232529; color:#d6d3d1;">#0e0f12 底</span>
+        <span class="pill" style="background:#232529; color:#d6d3d1;">#6366f1 accent</span>
+        <span class="pill" style="background:#232529; color:#d6d3d1;">高对比文字</span>
+        <span class="pill" style="background:#232529; color:#d6d3d1;">霓虹感</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- before/after detail -->
+  <div class="before-after">
+    <h3>几个最"丑"的位置 · before vs after（以方案 A 为例）</h3>
+    <div class="ba-grid">
+      <div class="ba old">
+        <div class="label">Before · 现在</div>
+        <div class="body" style="display:flex; flex-direction:column; gap:12px;">
+          <div class="side-head">
+            <div class="name">ZENNOTE</div>
+            <div style="width:18px; height:18px; background:#e7e5e4; border-radius:3px; color:#57534e; display:grid; place-items:center; font-size:11px;">+</div>
+          </div>
+          <div class="tb-row">
+            <div class="btn">T</div><div class="btn"><b>B</b></div><div class="btn"><i>I</i></div><div class="btn"><u>U</u></div><div class="btn">S</div><div class="btn">&lt;/&gt;</div><div class="btn">🔗</div><div class="btn">≡</div><div class="btn">⋯</div>
+          </div>
+          <div class="file-row"><span class="arrow">▸</span>📁 Daily</div>
+          <div class="file-row active"><span class="arrow">▾</span>📁 yuque</div>
+          <div class="file-row" style="padding-left:32px;"><span class="arrow"></span>📄 003_commons-email_核心算法</div>
+        </div>
+      </div>
+      <div class="ba new">
+        <div class="label">After · 方案 A</div>
+        <div class="body" style="display:flex; flex-direction:column; gap:12px;">
+          <div class="side-head">
+            <div class="name">Zen<span style="color:#6366f1">Note</span></div>
+            <div style="width:22px; height:22px; background:#f5f5f4; border-radius:5px; color:#57534e; display:grid; place-items:center; font-size:12px;">+</div>
+          </div>
+          <div class="tb-row">
+            <div class="group">
+              <div class="btn">T</div>
+              <div class="btn">H1</div>
+            </div>
+            <div class="group">
+              <div class="btn on"><b>B</b></div>
+              <div class="btn on"><i>I</i></div>
+              <div class="btn"><u>U</u></div>
+            </div>
+            <div class="group">
+              <div class="btn">&lt;/&gt;</div>
+              <div class="btn">🔗</div>
+            </div>
+            <div class="group">
+              <div class="btn">≡</div>
+              <div class="btn">⋯</div>
+            </div>
+          </div>
+          <div class="file-row"><span class="arrow">▸</span>📁 Daily</div>
+          <div class="file-row"><span class="arrow">▾</span>📁 yuque</div>
+          <div class="file-row active"><span class="arrow"></span>📄 003_commons-email_核心算法</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p>挑一个我直接改 <code>src/index.css</code> + 涉及的 <code>*.tsx</code> 组件，全套 sidebar / 工具栏 / 文件树 / tab 标签一起换。建议是 A：</p>
+    <ul>
+      <li>和 macOS / 你现有的紫蓝主色最搭，不激进</li>
+      <li>暗色（C）的话后面所有 popup / 弹窗 / 选中状态都要重新调，工作量翻倍</li>
+      <li>文档感（B）适合 Notion-like 重度阅读型，但你的 app 还有大量工具栏交互，B 反而显得"花"</li>
+    </ul>
+  </div>
+</body>
+</html>

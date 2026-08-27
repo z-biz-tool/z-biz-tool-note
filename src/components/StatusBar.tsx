@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode } from 'lucide-react';
+import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode, Maximize2, Minimize2 } from 'lucide-react';
 import type { ThemeName } from '../types';
 
 interface StatusBarProps {
@@ -11,9 +11,11 @@ interface StatusBarProps {
   editorMode: 'wysiwyg' | 'source';
   focusMode: boolean;
   typewriterMode: boolean;
+  documentWide: boolean;
   onToggleEditorMode: () => void;
   onToggleFocusMode: () => void;
   onToggleTypewriterMode: () => void;
+  onToggleDocumentWide: () => void;
 }
 
 export const StatusBar = React.memo(({
@@ -25,9 +27,11 @@ export const StatusBar = React.memo(({
   editorMode,
   focusMode,
   typewriterMode,
+  documentWide,
   onToggleEditorMode,
   onToggleFocusMode,
   onToggleTypewriterMode,
+  onToggleDocumentWide,
 }: StatusBarProps) => {
   // 格式化保存时间：显示 "已保存 HH:MM"
   const formatSaveTime = (timeStr: string | null) => {
@@ -68,6 +72,9 @@ export const StatusBar = React.memo(({
         </button>
         <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="Toggle Source Mode">
           <FileCode size={14} /> {editorMode === 'wysiwyg' ? 'WYSIWYG' : 'Source'}
+        </button>
+        <button className={`status-bar-btn ${documentWide ? 'active' : ''}`} onClick={onToggleDocumentWide} title={documentWide ? '切回标准视图（显示侧边 TOC）' : '宽屏（隐藏右侧 TOC，文档占满中间）'}>
+          {documentWide ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {documentWide ? '标准' : '宽屏'}
         </button>
 
         <div className="status-bar-divider" />

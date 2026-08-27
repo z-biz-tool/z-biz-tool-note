@@ -1,4 +1,4 @@
-import { X, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { X, Maximize2, Minimize2 } from 'lucide-react';
 
 interface PanelHeaderProps {
   icon?: React.ReactNode;
@@ -21,14 +21,15 @@ export const PanelHeader = ({ icon, title, badge, wide, onToggleWide, onClose }:
       <span>{title}</span>
       {badge}
       <button
-        className="toolbar-btn"
+        className="panel-wide-toggle"
         onClick={onToggleWide}
-        title={wide ? 'Switch to narrow view' : 'Switch to wide view'}
-        aria-label={wide ? 'Switch to narrow view' : 'Switch to wide view'}
+        title={wide ? '切换为标准视图' : '切换为宽屏视图（占满右侧，编辑器隐藏）'}
+        aria-label={wide ? '切换为标准视图' : '切换为宽屏视图'}
       >
-        {wide ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+        {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+        <span className="panel-wide-label">{wide ? '标准' : '宽屏'}</span>
       </button>
-      <button className="toolbar-btn" onClick={onClose} title="Close" aria-label="Close panel">
+      <button className="toolbar-btn" onClick={onClose} title="关闭面板" aria-label="Close panel">
         <X size={14} />
       </button>
     </div>
