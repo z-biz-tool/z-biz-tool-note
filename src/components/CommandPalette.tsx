@@ -10,42 +10,58 @@ interface CommandPaletteProps {
 export const CommandPalette = ({ commands, onClose }: CommandPaletteProps) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [filteredCommands, setFilteredCommands] = useState<Command[]>(commands);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  
+  // 支持命令分类过滤
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-
-  const filtered = commands.filter(
-    (c) =>
-      c.title.toLowerCase().includes(query.toLowerCase()) ||
-      c.category.toLowerCase().includes(query.toLowerCase())
-  );
+  
+  // 过滤命令
+  useEffect(() => {
+    let filtered = commands.filter(
+      (c) =>
+        c.title.toLowerCase().includes(query.toLowerCase()) ||
+        c.category.toLowerCase().includes(query.toLowerCase())
+    );
+    
+    if (activeCategory) {
+      filtered = filtered.filter(c => c.category === activeCategory);
+    }
+    
+    setFilteredCommands(filtered);
+  }, [query, activeCategory, commands]);
 
   useEffect(() => {
     setSelectedIndex(0);
     if (listRef.current) {
       listRef.current.scrollTop = 0;
     }
-  }, [query]);
+  }, [query, activeCategory]);
 
   useEffect(() => {
     const el = listRef.current?.querySelector('.selected');
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
+  
+  // 获取唯一的分类列表
+  const categories = [...new Set(commands.map(c => c.category))];
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
+      setSelectedIndex((i) => Math.min(i + 1, Math.max(filteredCommands.length - 1, 0)));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (filtered[selectedIndex]) {
-        filtered[selectedIndex].action();
+      if (filteredCommands[selectedIndex]) {
+        filteredCommands[selectedIndex].action();
         onClose();
       }
     } else if (e.key === 'Escape') {

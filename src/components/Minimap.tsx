@@ -52,13 +52,19 @@ export const Minimap = React.memo(({ editor, scrollContainer }: MinimapProps) =>
     };
   }, [scrollContainer, recomputeViewport]);
 
-  // 内容变更时重建文本（200ms 防抖）
+  // 内容变更时重建文本（200ms 防抖，大文件优化）
   useEffect(() => {
     if (!editor) return;
     const rebuild = () => {
       if (textTimer.current) clearTimeout(textTimer.current);
       textTimer.current = setTimeout(() => {
-        setText(editor.getText() || '');
+        // 大文件优化：限制文本长度，避免渲染过多内容
+        const fullText = editor.getText() || '';
+        const MAX_TEXT_LENGTH = 5000; // 限制最大显示字符数
+        const textToShow = fullText.length > MAX_TEXT_LENGTH 
+          ? fullText.slice(0, MAX_TEXT_LENGTH) + '\n...[内容已截断]'
+          : fullText;
+        setText(textToShow);
         recomputeViewport();
       }, 200);
     };
