@@ -367,6 +367,27 @@ export const Editor = ({
     }
   }, [typewriterMode, editor]);
 
+  // 快捷键支持：Ctrl/Cmd+Home/End 跳转到文档开头/结尾
+  useEffect(() => {
+    if (!editor) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && e.key === 'Home') {
+        e.preventDefault();
+        editor.commands.setTextSelection(0);
+        editor.commands.scrollIntoView();
+      } else if (cmd && e.key === 'End') {
+        e.preventDefault();
+        const endPos = editor.state.doc.content.size;
+        editor.commands.setTextSelection(endPos);
+        editor.commands.scrollIntoView();
+      }
+    };
+    const element = editor.view.dom;
+    element.addEventListener('keydown', handleKeyDown);
+    return () => element.removeEventListener('keydown', handleKeyDown);
+  }, [editor]);
+
   const updateStats = useCallback(() => {
     if (!editor) return;
     const text = editor.getText();
@@ -492,6 +513,10 @@ export const Editor = ({
   // 拖拽图片处理 - 尝试保存到磁盘（与粘贴逻辑一致的磁盘路径
   useEffect(() => {
     if (!editor || !editorScrollRef.current) return;
+    const handleDragOver = (event: DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer?.dropEffect = 'copy';
+    };
     const handleDrop = async (event: DragEvent) => {
       const files = event.dataTransfer?.files;
       if (!files || files.length === 0) return;
@@ -526,8 +551,12 @@ export const Editor = ({
       reader.readAsDataURL(imageFile);
     };
     const element = editorScrollRef.current;
+    element.addEventListener('dragover', handleDragOver);
     element.addEventListener('drop', handleDrop);
-    return () => element.removeEventListener('drop', handleDrop);
+    return () => {
+      element.removeEventListener('dragover', handleDragOver);
+      element.removeEventListener('drop', handleDrop);
+    };
   }, [editor, currentFilePath]);
 
   const jumpToHeading = useCallback((pos: number) => {

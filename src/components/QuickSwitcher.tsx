@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface QuickSwitcherProps {
   files: Array<{ path: string; name: string; lastModified?: number }>;
@@ -16,6 +16,9 @@ export const QuickSwitcher = ({ files, onSelect, onClose }: QuickSwitcherProps) 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+  
+  // 阻止向下滚动到列表底部后继续滚动时触发滚动事件
+  const preventScroll = useRef(false);
 
   const sortedFiles = [...files].sort((a, b) => {
     if (a.lastModified && b.lastModified) {
@@ -45,10 +48,30 @@ export const QuickSwitcher = ({ files, onSelect, onClose }: QuickSwitcherProps) 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      if (preventScroll.current) {
+        preventScroll.current = false;
+        return;
+      }
       setSelectedIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      if (preventScroll.current) {
+        preventScroll.current = false;
+        return;
+      }
       setSelectedIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'PageDown') {
+      e.preventDefault();
+      if (listRef.current) {
+        listRef.current.scrollTop += listRef.current.clientHeight - 40;
+        preventScroll.current = true;
+      }
+    } else if (e.key === 'PageUp') {
+      e.preventDefault();
+      if (listRef.current) {
+        listRef.current.scrollTop -= listRef.current.clientHeight - 40;
+        preventScroll.current = true;
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (filtered[selectedIndex]) {

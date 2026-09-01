@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, SplitSquareHorizontal, FileText } from 'lucide-react';
+import { X, SplitSquareHorizontal, FileText, MoreHorizontal } from 'lucide-react';
 import type { Note } from '../types';
 
 interface TabsBarProps {
@@ -32,6 +32,7 @@ export const TabsBar = React.memo(({
 }: TabsBarProps) => {
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
 
   // 键盘导航：左右箭头切换标签
@@ -45,6 +46,17 @@ export const TabsBar = React.memo(({
       onSelect(tabs[nextIndex].id);
     }
   }, [tabs, onSelect]);
+  
+  // 鼠标滚轮切换标签
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const direction = e.deltaY > 0 ? 1 : -1;
+      const idx = tabs.findIndex(t => t.id === activeId);
+      const newIdx = (idx + direction + tabs.length) % tabs.length;
+      onSelect(tabs[newIdx].id);
+    }
+  }, [tabs, activeId, onSelect]);
   // 拖拽排序状态
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -92,21 +104,24 @@ export const TabsBar = React.memo(({
   if (tabs.length === 0) return null;
 
   return (
-    <div className="tabs-bar">
+    <div className="tabs-bar" onWheel={handleWheel}>
       <div className="tabs-list" role="tablist" ref={tabListRef}>
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeId;
           const isSplitTab = tab.id === splitId;
+          const isHovered = hoveredTab === tab.id;
           return (
             <div
               key={tab.id}
-              className={`tab-item ${isActive ? 'active' : ''} ${isSplitTab ? 'split' : ''} ${dragIndex === index ? 'dragging' : ''} ${dragOverIndex === index && dragIndex !== null && dragIndex < index ? 'drag-over-right' : ''} ${dragOverIndex === index && dragIndex !== null && dragIndex > index ? 'drag-over-left' : ''}`}
+              className={`tab-item ${isActive ? 'active' : ''} ${isSplitTab ? 'split' : ''} ${dragIndex === index ? 'dragging' : ''} ${dragOverIndex === index && dragIndex !== null && dragIndex < index ? 'drag-over-right' : ''} ${dragOverIndex === index && dragIndex !== null && dragIndex > index ? 'drag-over-left' : ''} ${isHovered ? 'hovered' : ''}`}
               role="tab"
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
               onClick={() => onSelect(tab.id)}
               onKeyDown={(e) => handleTabKeyDown(e, index)}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
+              onMouseEnter={() => setHoveredTab(tab.id)}
+              onMouseLeave={() => setHoveredTab(null)}
               onAuxClick={(e) => {
                 // 中键点击：在分屏中打开
                 if (e.button === 1) {

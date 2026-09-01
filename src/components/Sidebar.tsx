@@ -57,6 +57,23 @@ export const Sidebar = ({
       loadFileTree(savedDir);
     }
   }, []);
+  
+  // 快速搜索：支持在文件树中快速定位
+  const [searchFocus, setSearchFocus] = useState(false);
+  
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl+K 快速搜索文件
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !searchFocus) {
+        e.preventDefault();
+        const searchInput = document.querySelector('.sidebar-search input');
+        searchInput?.focus();
+        setSearchFocus(true);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [searchFocus]);
 
   // 当 refreshKey 变化时重新加载文件树
   useEffect(() => {
@@ -90,6 +107,7 @@ export const Sidebar = ({
       localStorage.setItem('currentDir', result.filePath);
       onOpenFolder(result.filePath);
       loadFileTree(result.filePath);
+      setSearchFocus(false); // 重置快速搜索状态
     }
   };
 
