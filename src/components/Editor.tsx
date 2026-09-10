@@ -515,7 +515,7 @@ export const Editor = ({
     if (!editor || !editorScrollRef.current) return;
     const handleDragOver = (event: DragEvent) => {
       event.preventDefault();
-      event.dataTransfer?.dropEffect = 'copy';
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     };
     const handleDrop = async (event: DragEvent) => {
       const files = event.dataTransfer?.files;
