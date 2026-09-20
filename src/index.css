@@ -2064,34 +2064,51 @@ body {
 .welcome-page {
   flex: 1;
   overflow: auto;
-  background: var(--bg-primary);
+  background: linear-gradient(135deg, #f8fafd 0%, #eef2f7 100%);
 }
 .welcome-container {
-  max-width: 860px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 48px 40px 32px;
+  padding: 64px 40px 32px;
 }
 .welcome-header {
-  margin-bottom: 36px;
+  margin-bottom: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
 }
-.welcome-logo {
-  font-size: 52px;
-  line-height: 1;
+.welcome-logo-glow {
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.35), 0 4px 12px rgba(118, 75, 162, 0.25);
+  animation: logoFloat 3s ease-in-out infinite;
 }
-.welcome-header h1 {
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(1.05); }
+}
+.welcome-title {
   margin: 0;
-  font-size: 26px;
-  color: var(--text-primary);
-  letter-spacing: 0.5px;
+  font-size: 36px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
 }
 .welcome-subtitle {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-muted);
+  text-align: center;
 }
 .welcome-body {
   display: flex;
@@ -2103,31 +2120,56 @@ body {
   min-width: 0;
 }
 .welcome-section h2 {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 14px;
-  padding-bottom: 8px;
+  margin: 0 0 16px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .welcome-action {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 12px 14px;
   border: none;
   background: transparent;
   color: var(--accent-color, #4a7fd4);
   font-size: 13px;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
   text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.welcome-action::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 .welcome-action:hover {
   background: var(--bg-tertiary);
+  transform: translateX(4px);
 }
-.welcome-action svg {
+.welcome-action:hover::before {
+  opacity: 1;
+}
+.welcome-action svg:not(:last-child) {
   flex-shrink: 0;
 }
 .welcome-current-dir {
@@ -2137,30 +2179,49 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
 }
 .welcome-recent-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   color: var(--text-primary);
   font-size: 13px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   text-align: left;
   min-width: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .welcome-recent-item:hover {
   background: var(--bg-tertiary);
+  transform: translateX(4px);
 }
-.welcome-recent-item svg {
+.welcome-recent-item svg:first-child {
   flex-shrink: 0;
   color: var(--text-muted);
 }
+.recent-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
 .welcome-recent-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
   flex-shrink: 0;
   font-weight: 500;
 }
@@ -2172,9 +2233,25 @@ body {
   white-space: nowrap;
 }
 .welcome-hint {
-  font-size: 13px;
+  padding: 24px;
+  text-align: center;
   color: var(--text-muted);
-  line-height: 1.6;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px dashed var(--border-color);
+}
+.hint-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  opacity: 0.6;
+}
+.welcome-hint p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+.hint-sub {
+  font-size: 12px !important;
+  opacity: 0.8;
 }
 .welcome-footer {
   display: flex;

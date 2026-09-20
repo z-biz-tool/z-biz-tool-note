@@ -2,6 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { Command as CommandIcon } from 'lucide-react';
 import type { Command } from '../types';
 
+// 渐变色主题常量
+const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
+
 interface CommandPaletteProps {
   commands: Command[];
   onClose: () => void;
@@ -78,7 +82,20 @@ export const CommandPalette = ({ commands, onClose }: CommandPaletteProps) => {
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="命令面板" onClick={handleOverlayClick}>
-      <div className="modal-box">
+      <div 
+        className="modal-box"
+        style={{
+          background: cardBgGradient,
+          borderRadius: 16,
+          boxShadow: "0 8px 24px rgba(102,126,234,0.3)",
+          overflow: "hidden",
+          width: "90%",
+          maxWidth: 500,
+          maxHeight: "80vh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <input
           ref={inputRef}
           className="modal-input"
@@ -87,12 +104,20 @@ export const CommandPalette = ({ commands, onClose }: CommandPaletteProps) => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
+          style={{
+            padding: "16px 20px",
+            fontSize: 15,
+            border: "none",
+            outline: "none",
+            background: "transparent",
+            borderBottom: `1px solid rgba(102,126,234,0.1)`,
+          }}
         />
-        <div className="modal-list" ref={listRef}>
+        <div className="modal-list" ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
           {filtered.length === 0 ? (
             <div className="modal-list-item">No commands found</div>
           ) : (
-            filtered.map((cmd) => (
+            filtered.map((cmd, index) => (
               <button
                 key={cmd.id}
                 className={`modal-list-item${
@@ -101,6 +126,14 @@ export const CommandPalette = ({ commands, onClose }: CommandPaletteProps) => {
                 onClick={() => {
                   cmd.action();
                   onClose();
+                }}
+                style={{
+                  margin: "2px 8px",
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  background: filtered[selectedIndex]?.id === cmd.id ? brandGradient : 'transparent',
+                  boxShadow: filtered[selectedIndex]?.id === cmd.id ? "0 4px 12px rgba(102,126,234,0.3)" : "none",
                 }}
               >
                 <span className="modal-list-item-icon">

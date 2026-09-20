@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, FolderOpen, Calendar, BookOpen, Clock } from 'lucide-react';
+import { Plus, FolderOpen, Calendar, BookOpen, Clock, Sparkles, FileText, ArrowRight } from 'lucide-react';
 import type { RecentFile } from '../types';
 
 interface WelcomeProps {
@@ -29,50 +29,66 @@ export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, o
     <div className="welcome-page">
       <div className="welcome-container">
         <div className="welcome-header">
-          <div className="welcome-logo">📝</div>
-          <h1>ZenNote</h1>
+          <div className="welcome-logo-glow">
+            <span className="welcome-logo">📝</span>
+          </div>
+          <h1 className="welcome-title">ZenNote</h1>
           <p className="welcome-subtitle">A beautiful Markdown note-taking app, inspired by Typora, Obsidian, and Notion.</p>
         </div>
 
         <div className="welcome-body">
           <div className="welcome-section">
-            <h2>Start</h2>
+            <h2 className="section-title">
+              <Sparkles size={16} />
+              <span>Start</span>
+            </h2>
             <button className="welcome-action" onClick={onNewNote}>
-              <Plus size={16} />
+              <Plus size={18} />
               <span>New Note</span>
+              <ArrowRight size={14} />
             </button>
             <button className="welcome-action" onClick={onOpenFolder}>
-              <FolderOpen size={16} />
+              <FolderOpen size={18} />
               <span>Open Folder…</span>
+              <ArrowRight size={14} />
             </button>
             <button className="welcome-action" onClick={onCreateDaily}>
-              <Calendar size={16} />
+              <Calendar size={18} />
               <span>Today's Daily Note</span>
+              <ArrowRight size={14} />
             </button>
             <button className="welcome-action" onClick={onOpenGuide}>
-              <BookOpen size={16} />
+              <BookOpen size={18} />
               <span>Welcome Guide</span>
+              <ArrowRight size={14} />
             </button>
             {currentDir && (
               <div className="welcome-current-dir" title={currentDir}>
+                <FileText size={14} />
                 Current folder: {currentDir.split('/').pop() || currentDir}
               </div>
             )}
           </div>
 
           <div className="welcome-section">
-            <h2>Recent</h2>
+            <h2 className="section-title">
+              <Clock size={16} />
+              <span>Recent</span>
+            </h2>
             {recentFiles.length === 0 ? (
               <div className="welcome-hint">
-                No recent files yet.<br />
-                Open a folder to get started.
+                <div className="hint-icon">📂</div>
+                <p>No recent files yet</p>
+                <p className="hint-sub">Open a folder to get started</p>
               </div>
             ) : (
               recentFiles.slice(0, 10).map(f => (
                 <button key={f.path} className="welcome-recent-item" onClick={() => onOpenFile(f.path)} title={f.path}>
                   <Clock size={14} />
-                  <span className="welcome-recent-name">{f.name}</span>
-                  <span className="welcome-recent-path">{f.path.substring(0, f.path.lastIndexOf('/'))}</span>
+                  <div className="recent-content">
+                    <span className="welcome-recent-name">{f.name}</span>
+                    <span className="welcome-recent-path">{f.path.substring(0, f.path.lastIndexOf('/'))}</span>
+                  </div>
                 </button>
               ))
             )}

@@ -10,6 +10,10 @@ import { FolderContextMenu } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { invoke } from '@tauri-apps/api/core';
 
+// 渐变色主题常量
+const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
+
 interface SidebarProps {
   isOpen: boolean;
   currentNote: Note | null;
@@ -335,14 +339,39 @@ export const Sidebar = ({
 
   return (
     <div className="sidebar" role="navigation" aria-label="笔记导航" style={width ? { width: `${width}px` } : undefined}>
-      <div className="sidebar-header">
-        <span className="sidebar-title">ZenNote</span>
+      <div 
+        className="sidebar-header"
+        style={{
+          background: cardBgGradient,
+          borderRadius: 12,
+          padding: "12px 16px",
+          marginBottom: 12,
+        }}
+      >
+        <span 
+          className="sidebar-title"
+          style={{ 
+            fontWeight: 600, 
+            background: brandGradient,
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundImage: brandGradient,
+          }}
+        >ZenNote</span>
         <button className="toolbar-btn" onClick={onNewNote} title="New Note">
           <Plus size={16} />
         </button>
       </div>
 
-      <div className="sidebar-tabs">
+      <div 
+        className="sidebar-tabs"
+        style={{
+          background: cardBgGradient,
+          borderRadius: 10,
+          padding: 4,
+          marginBottom: 12,
+        }}
+      >
         <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="Files">
           <Files size={14} />
         </button>
@@ -359,7 +388,18 @@ export const Sidebar = ({
 
       {activeTab === 'files' && (
         <>
-          <div className="sidebar-search">
+          <div 
+            className="sidebar-search"
+            style={{
+              background: cardBgGradient,
+              borderRadius: 10,
+              padding: "8px 12px",
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             <button className="toolbar-btn" onClick={handleFolderSelect} title="Open Folder" style={{ width: 28, height: 28 }}>
               <Folder size={14} />
             </button>
@@ -367,7 +407,16 @@ export const Sidebar = ({
               {currentDir ? currentDir.split('/').pop() : 'No folder'}
             </span>
           </div>
-          <div className="sidebar-file-list" role="tree" onContextMenu={(e) => handleContextMenu(e)}>
+          <div 
+            className="sidebar-file-list" 
+            role="tree" 
+            onContextMenu={(e) => handleContextMenu(e)}
+            style={{
+              background: cardBgGradient,
+              borderRadius: 10,
+              padding: 8,
+            }}
+          >
             {loading ? (
               <div className="sidebar-empty">Loading...</div>
             ) : fileTree.length === 0 ? (
@@ -385,7 +434,14 @@ export const Sidebar = ({
       )}
 
       {activeTab === 'recent' && (
-        <div className="sidebar-file-list">
+        <div 
+          className="sidebar-file-list"
+          style={{
+            background: cardBgGradient,
+            borderRadius: 10,
+            padding: 8,
+          }}
+        >
           {recentFiles.length === 0 ? (
             <div className="sidebar-empty">No recent files</div>
           ) : (
@@ -395,6 +451,18 @@ export const Sidebar = ({
                 className="sidebar-file-item"
                 onClick={() => handleRecentClick(file)}
                 title={file.path}
+                style={{
+                  margin: 2,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(102,126,234,0.1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
               >
                 <Clock size={14} />
                 <span>{file.name}</span>
@@ -406,7 +474,18 @@ export const Sidebar = ({
 
       {activeTab === 'search' && (
         <>
-          <div className="sidebar-search">
+          <div 
+            className="sidebar-search"
+            style={{
+              background: cardBgGradient,
+              borderRadius: 10,
+              padding: "8px 12px",
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             <Search size={14} style={{ color: 'var(--text-muted)' }} />
             <input
               type="text"
@@ -414,9 +493,23 @@ export const Sidebar = ({
               value={searchQuery}
               onChange={(e) => handleGlobalSearch(e.target.value)}
               autoFocus
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                fontSize: 13,
+                background: 'transparent',
+              }}
             />
           </div>
-          <div className="sidebar-file-list">
+          <div 
+            className="sidebar-file-list"
+            style={{
+              background: cardBgGradient,
+              borderRadius: 10,
+              padding: 8,
+            }}
+          >
             {!searchQuery.trim() ? (
               <div className="sidebar-empty">Type to search across all notes</div>
             ) : searchResults.length === 0 ? (
@@ -458,7 +551,14 @@ export const Sidebar = ({
       )}
 
       {activeTab === 'tags' && (
-        <div className="sidebar-file-list">
+        <div 
+          className="sidebar-file-list"
+          style={{
+            background: cardBgGradient,
+            borderRadius: 10,
+            padding: 8,
+          }}
+        >
           <TagsPanel
             tags={tags}
             onTagClick={(t) => onTagClick?.(t)}
@@ -480,7 +580,14 @@ export const Sidebar = ({
         />
       )}
 
-      <div className="sidebar-footer">
+      <div 
+        className="sidebar-footer"
+        style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: `1px solid var(--ant-color-border-secondary)`,
+        }}
+      >
         {onCreateDaily && (
           <button className="toolbar-btn" onClick={onCreateDaily} title="Today's Daily Note">
             <Calendar size={16} />

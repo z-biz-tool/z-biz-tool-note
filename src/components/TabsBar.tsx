@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, SplitSquareHorizontal, FileText, MoreHorizontal } from 'lucide-react';
 import type { Note } from '../types';
 
+// 渐变色主题常量
+const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
+
 interface TabsBarProps {
   tabs: Note[];
   activeId: string | null;
@@ -104,7 +108,7 @@ export const TabsBar = React.memo(({
   if (tabs.length === 0) return null;
 
   return (
-    <div className="tabs-bar" onWheel={handleWheel}>
+    <div className="tabs-bar" onWheel={handleWheel} style={{ background: cardBgGradient, borderRadius: 12, padding: "8px 12px", marginBottom: 12 }}>
       <div className="tabs-list" role="tablist" ref={tabListRef}>
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeId;
@@ -135,6 +139,10 @@ export const TabsBar = React.memo(({
               onDragOver={(e) => handleDragOver(e, index)}
               onDrop={(e) => handleDrop(e, index)}
               onDragEnd={handleDragEnd}
+              style={{
+                background: isActive ? brandGradient : 'transparent',
+                boxShadow: isActive ? "0 4px 12px rgba(102,126,234,0.3)" : "none",
+              }}
             >
               <FileText size={12} className="tab-icon" />
               <span className="tab-title">{tab.title || 'Untitled'}</span>
@@ -157,6 +165,10 @@ export const TabsBar = React.memo(({
         className={`tab-split-btn ${isSplit ? 'active' : ''}`}
         onClick={onToggleSplit}
         title={isSplit ? '关闭分屏 (Cmd+\\)' : '水平分屏 (Cmd+\\)'}
+        style={{
+          background: isSplit ? brandGradient : 'transparent',
+          color: isSplit ? 'white' : undefined,
+        }}
       >
         <SplitSquareHorizontal size={14} />
       </button>

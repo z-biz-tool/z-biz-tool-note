@@ -12,6 +12,10 @@ import type { Editor } from '@tiptap/react';
 import type { EditorMode as _EditorMode } from '../types';
 import { useI18n } from '../lib/i18n';
 
+// 渐变色主题常量
+const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
+
 interface ToolbarProps {
   editor: Editor | null;
   onEmojiClick: () => void;
@@ -75,7 +79,19 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
   const MenuDivider = () => <div className="tb-menu-divider" />;
 
   return (
-    <div className="toolbar">
+    <div 
+      className="toolbar"
+      style={{
+        background: cardBgGradient,
+        borderRadius: 12,
+        padding: "8px 12px",
+        marginBottom: 12,
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        flexWrap: "wrap",
+      }}
+    >
       {/* Text Style dropdown */}
       <MenuButton id="style" icon={<Type size={15} />} label={t('toolbar', 'textStyle')}>
         <MenuItem onClick={() => editor.chain().focus().setParagraph().run()} icon={<span style={{ fontSize: 13 }}>¶</span>} label={t('toolbar', 'paragraph')} shortcut="Ctrl+Alt+0" />
@@ -133,6 +149,10 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
         className="tb-btn tb-lang-btn"
         onClick={toggleLang}
         title={t('toolbar', 'toggleLang')}
+        style={{
+          background: lang === 'zh' ? brandGradient : 'transparent',
+          color: lang === 'zh' ? 'white' : undefined,
+        }}
       >
         <Globe size={15} />
         <span className="tb-lang-label">{lang === 'zh' ? '中' : 'EN'}</span>
