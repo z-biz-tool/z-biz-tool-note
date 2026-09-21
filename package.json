@@ -60,7 +60,8 @@
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.29.1",
     "tippy.js": "^6.3.7",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "z-biz-tool-shared": "file:../z-biz-tool-shared"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
