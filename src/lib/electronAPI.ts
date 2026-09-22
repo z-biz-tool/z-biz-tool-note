@@ -37,6 +37,63 @@ const demoFiles = [
   },
 ];
 
+/**
+ * 浏览器演示工作区：没有 Tauri 后端时也能把整棵 App 跑起来
+ * （文件树 / 编辑器 / 标签页 / 搜索 / 弹窗都能在浏览器里实测）
+ */
+const DEMO_DIR = 'demo';
+const demoContents: Record<string, string> = {
+  'demo/Welcome.md': '# Welcome\n\n这是浏览器演示区，用于在没有 Tauri 后端时验证界面与交互。\n\n## 目录\n\n- [[Getting Started]]\n- [[Code]]\n- [[Tables]]\n\n## 待办\n\n- [ ] 试试 Cmd+K 跳到搜索框\n- [ ] 试试 Cmd+, 打开设置\n',
+  'demo/Getting Started.md': '# Getting Started\n\n按 Cmd+Shift+P 打开命令面板，输入「设置」可以直接进设置页。\n\n正文里可以引用 [[Welcome]]，反链面板会把它认出来。\n\n标签：demo\n',
+  'demo/Examples/Code.md': '# Code\n\n行内代码用反引号包裹即可，代码块三反引号起头。\n\n    export const greet = (name: string) => `你好，${name}`;\n',
+  'demo/Examples/Tables.md': '# Tables\n\n| 场景 | 命令 | 说明 |\n| --- | --- | --- |\n| 搜索 | Cmd+K | 跳到侧栏搜索框 |\n| 设置 | Cmd+, | 打开设置弹窗 |\n',
+};
+
+
+/** 演示工作区的列目录：根目录给全部，子目录只给自己的 children */
+function demoFilesIn(dir: unknown) {
+  const folder = demoFiles.find(f => f.path === dir);
+  if (folder?.children) return folder.children;
+  return !dir || dir === DEMO_DIR ? demoFiles : [];
+}
+
+/** 与 Rust read_all_notes 同构的摘要，让标签 / 图谱 / 反链在浏览器里也能验证 */
+function demoNoteSummaries() {
+  return Object.entries(demoContents).map(([filePath, content]) => ({
+    filePath,
+    content,
+    title: content.match(/^#\s+(.+)$/m)?.[1] ?? filePath.split('/').pop()?.replace(/\.md$/, '') ?? filePath,
+    tags: (content.match(/^tags:\s*\[(.*?)\]/m)?.[1] ?? '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean),
+    links: [...content.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].trim()),
+  }));
+}
+
+/** 演示工作区的暴力搜索，产出与 Rust 一致的结构（preview 里用 <mark> 包命中词） */
+function demoSearch(query: unknown) {
+  const q = String(query ?? '').trim().toLowerCase();
+  if (!q) return [];
+  const out: { filePath: string; line: number; preview: string }[] = [];
+  for (const [filePath, content] of Object.entries(demoContents)) {
+    content.split('\n').forEach((line, i) => {
+      if (out.length >= 50) return;
+      const at = line.toLowerCase().indexOf(q);
+      if (at < 0) return;
+      const from = Math.max(0, at - 20);
+      out.push({
+        filePath,
+        line: i + 1,
+        preview: escapeHtml(line.slice(from, at))
+          + `<mark>${escapeHtml(line.slice(at, at + q.length))}</mark>`
+          + escapeHtml(line.slice(at + q.length, at + q.length + 40)),
+      });
+    });
+  }
+  return out;
+}
+
 // HTML 特殊字符转义（防止 XSS）
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -89,7 +146,11 @@ export const electronAPI = {
       // 浏览器回退
       switch (channel) {
         case 'read-file':
-          return { success: true, content: localStorage.getItem(`note-${args[0]}`) || '', filePath: args[0] };
+          return {
+            success: true,
+            content: localStorage.getItem(`note-${args[0]}`) ?? demoContents[args[0] as string] ?? '',
+            filePath: args[0],
+          };
         case 'read-file-binary':
           return { success: false, error: '浏览器模式不可用' };
         case 'get-file-meta':
@@ -102,10 +163,11 @@ export const electronAPI = {
           return name ? { canceled: false, filePath: name } : { canceled: true };
         }
         case 'show-open-dialog':
-          return { canceled: true };
+          // 浏览器没有原生目录选择器，直接给出演示工作区
+          return { canceled: false, filePath: DEMO_DIR };
         case 'list-files':
         case 'list-files-recursive':
-          return { success: true, files: demoFiles };
+          return { success: true, files: demoFilesIn(args[0]) };
         case 'export-html': {
           const content = args[0] as string;
           const fullHtml = generateHtmlFromContent(content);
@@ -123,7 +185,7 @@ export const electronAPI = {
           return { success: true, filePath: '' };
         }
         case 'search-in-files':
-          return { success: true, matches: [] };
+          return { success: true, matches: demoSearch(args[1]) };
         case 'read-file-stats':
           return { success: true, stats: { size: 0, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), isFile: true, isDirectory: false } };
         case 'open-file-in-finder':
@@ -131,7 +193,7 @@ export const electronAPI = {
         case 'save-image':
           return { success: false, error: '浏览器模式不可用' };
         case 'read-all-notes':
-          return { success: true, notes: [] };
+          return { success: true, notes: demoNoteSummaries() };
         case 'find-backlinks':
           return { success: true, backlinks: [] };
         case 'ai-chat':
