@@ -2,6 +2,8 @@
 // 在 Tauri 环境中使用 invoke 调用 Rust 命令，浏览器中使用 localStorage 回退
 
 import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { sanitizeExport } from './sanitize';
 
 // 检测是否运行在 Tauri 环境
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -147,8 +149,25 @@ export const electronAPI = {
           return { success: true, content, filePath: args[0] };
         }
         case 'read-file-binary': {
-          const base64 = await invoke<string>('read_file_binary', { path: args[0] });
-          return { success: true, base64, filePath: args[0] };
+          // 大文件（>5MB）改用 asset:// 协议流式加载，避免 base64 内存爆炸
+          const filePath = args[0] as string;
+          let size = 0;
+          try {
+            const meta = await invoke<{ size: number }>('get_file_meta', { path: filePath });
+            size = meta.size;
+          } catch {}
+          if (size > 5 * 1024 * 1024) {
+            // 大文件：返回 asset URL，前端用 <video>/<img>/<embed> 直接加载
+            return {
+              success: true,
+              base64: '',
+              filePath,
+              assetUrl: convertFileSrc(filePath),
+              streamed: true,
+            };
+          }
+          const base64 = await invoke<string>('read_file_binary', { path: filePath });
+          return { success: true, base64, filePath };
         }
         case 'get-file-meta': {
           const meta = await invoke<{ size: number; modified: string; mime: string }>('get_file_meta', { path: args[0] });
@@ -186,10 +205,11 @@ export const electronAPI = {
           return { success: true, files: (files || []).map(normalizeFileEntry) };
         }
         case 'export-html': {
-          // 直接将内容导出为 HTML 文件
+          // 直接将内容导出为 HTML 文件；默认脱敏（移除 API Key、用户名等敏感信息）
           const content = args[0] as string;
           const filePath = args[1] as string;
-          const fullHtml = generateHtmlFromContent(content);
+          const safeContent = sanitizeExport(content);
+          const fullHtml = generateHtmlFromContent(safeContent);
           if (filePath) {
             await invoke('write_file', { path: filePath, content: fullHtml });
             return { success: true, filePath };
@@ -197,9 +217,10 @@ export const electronAPI = {
           return { success: true, html: fullHtml };
         }
         case 'export-pdf': {
-          // PDF 导出通过浏览器打印
+          // PDF 导出通过浏览器打印；同样走脱敏
           const content = args[0] as string;
-          const fullHtml = generateHtmlFromContent(content);
+          const safeContent = sanitizeExport(content);
+          const fullHtml = generateHtmlFromContent(safeContent);
           const printWindow = window.open('', '_blank');
           if (printWindow) {
             printWindow.document.write(fullHtml);

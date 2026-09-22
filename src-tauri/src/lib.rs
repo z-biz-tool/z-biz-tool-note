@@ -1,8 +1,14 @@
 mod commands;
+mod atomic_write;
+mod extract;
+mod index;
+mod watcher;
+#[cfg(test)]
+mod integration_tests;
 
 use tauri::{
     menu::{MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder},
-    Emitter, Runtime,
+    Emitter, Manager, Runtime,
 };
 
 /// 构建带 id 的自定义菜单项（可选快捷键）
@@ -48,7 +54,7 @@ pub fn run() {
             commands::read_file_binary,
             commands::get_file_meta,
             commands::write_file,
-            commands::delete_file,
+            // commands::delete_file 已移除：永久删除风险高，统一通过 move_to_trash 处理
             commands::move_to_trash,
             commands::rename_file,
             commands::file_exists,
@@ -58,12 +64,25 @@ pub fn run() {
             commands::read_all_notes,
             commands::find_backlinks,
             commands::ai_chat,
+            commands::ai_chat_stream,
             commands::create_backup,
             commands::list_backups,
             commands::restore_backup,
             commands::get_file_modified,
+            // === Phase 2 新增命令 ===
+            commands::search_notes,
+            commands::rebuild_index,
+            commands::index_status,
+            commands::index_upsert_note,
+            commands::index_delete_note,
+            commands::start_watch,
+            commands::stop_watch,
         ])
         .setup(|app| {
+            // 初始化索引与 watcher 状态
+            app.manage(index::IndexStore::open().expect("初始化搜索索引失败"));
+            app.manage(watcher::WatcherState::new());
+
             let handle = app.handle();
 
             // ===== ZenNote 应用菜单（macOS 第一个子菜单）=====

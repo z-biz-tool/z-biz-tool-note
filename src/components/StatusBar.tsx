@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode, Maximize2, Minimize2 } from 'lucide-react';
+import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode, Maximize2, Minimize2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import type { ThemeName } from '../types';
 
 interface StatusBarProps {
@@ -7,6 +7,7 @@ interface StatusBarProps {
   onCycleTheme: () => void;
   isDirty: boolean;
   lastSaved: string | null;
+  saveState?: 'idle' | 'dirty' | 'saving' | 'saved' | 'error'; // 保存状态机（P0 优化）
   stats: { words: number; characters: number; lines: number; readingTime: number };
   editorMode: 'wysiwyg' | 'source';
   focusMode: boolean;
@@ -23,6 +24,7 @@ export const StatusBar = React.memo(({
   onCycleTheme,
   isDirty,
   lastSaved,
+  saveState = 'idle',
   stats,
   editorMode,
   focusMode,
@@ -49,18 +51,43 @@ export const StatusBar = React.memo(({
     return '已保存';
   };
 
+  // 保存状态指示器：saving / saved / error 优先级高于 isDirty
+  const renderSaveIndicator = () => {
+    if (saveState === 'saving') {
+      return (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-color, #3b82f6)' }} title="正在保存">
+          <Loader2 size={13} className="spinning" /> 保存中
+        </span>
+      );
+    }
+    if (saveState === 'error') {
+      return (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--error-color, #ef4444)' }} title="保存失败（内容已暂存到 WAL）">
+          <AlertCircle size={13} /> 保存失败
+        </span>
+      );
+    }
+    if (saveState === 'saved' || (!isDirty && lastSaved)) {
+      return (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--success-color)' }}>
+          <CheckCircle2 size={13} /> {formatSaveTime(lastSaved)}
+        </span>
+      );
+    }
+    if (isDirty) {
+      return (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--warning-color)' }}>
+          <Save size={13} /> 未保存
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="status-bar" role="status" aria-live="polite">
       <div className="status-bar-section">
-        {isDirty ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--warning-color)' }}>
-            <Save size={13} /> 未保存
-          </span>
-        ) : lastSaved ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--success-color)' }}>
-            <Clock size={13} /> {formatSaveTime(lastSaved)}
-          </span>
-        ) : null}
+        {renderSaveIndicator()}
       </div>
 
       <div className="status-bar-section">

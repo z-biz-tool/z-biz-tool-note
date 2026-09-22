@@ -141,7 +141,11 @@ export const Editor = ({
   }, []);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
   const noteIdRef = useRef<string>('');
+  // 编辑器状态 LRU 缓存：上限 30（多标签用户）
+  // Map 保持插入顺序；超出时淘汰最早插入的 key（FIFO，等同 LRU 近似）
+  // 真实 LRU 需记录访问时间，鉴于切换频次不高，FIFO 已足够
   const stateCacheRef = useRef<Map<string, any>>(new Map());
+  const EDITOR_CACHE_LIMIT = 30;
   const mermaidCounterRef = useRef(0);
 
   // 滚动同步
@@ -265,7 +269,7 @@ export const Editor = ({
     if (noteIdRef.current && noteIdRef.current !== currentFilePath) {
       stateCacheRef.current.set(noteIdRef.current, editor.view.state);
       // 限制缓存大小，避免内存泄漏
-      if (stateCacheRef.current.size > 10) {
+      if (stateCacheRef.current.size > EDITOR_CACHE_LIMIT) {
         const firstKey = stateCacheRef.current.keys().next().value;
         if (firstKey) stateCacheRef.current.delete(firstKey);
       }
@@ -297,7 +301,7 @@ export const Editor = ({
       if (editor && noteIdRef.current) {
         stateCacheRef.current.set(noteIdRef.current, editor.view.state);
         // 限制缓存大小，避免内存泄漏
-        if (stateCacheRef.current.size > 10) {
+        if (stateCacheRef.current.size > EDITOR_CACHE_LIMIT) {
           const firstKey = stateCacheRef.current.keys().next().value;
           if (firstKey) stateCacheRef.current.delete(firstKey);
         }

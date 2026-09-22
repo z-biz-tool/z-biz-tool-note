@@ -1,25 +1,168 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use chrono::{DateTime, Local};
 use uuid::Uuid;
 
+use crate::atomic_write::{atomic_write, atomic_write_str};
+
 /// 验证路径是否在允许的目录范围内（防止路径遍历攻击）
-fn validate_path(path: &str) -> Result<PathBuf, String> {
+///
+/// 允许的目录（按优先级）：
+/// 1. 当前打开的笔记库目录（运行时由 caller 注入；这里查不到则用 home）
+/// 2. 用户主目录下允许的子目录：`Documents/`、`Desktop/`、`Downloads/`、`Notes/`
+/// 3. `~/.z-note/`（应用自身数据）
+/// 4. `/tmp/`（导出临时文件）
+///
+/// 设计取舍：
+/// - 仍允许主目录主要是为了兼容"~/Documents/MyNotes" 类典型笔记库位置
+/// - 同时收紧到常见子目录；不允许 ~/.ssh、~/.aws、~/Library 等敏感区域
+pub(crate) fn validate_path(path: &str) -> Result<PathBuf, String> {
     let canonical = std::path::Path::new(path)
         .canonicalize()
         .map_err(|e| format!("路径无效: {}", e))?;
 
-    // 允许访问用户主目录下的所有文件（笔记库通常在主目录下）
-    // 以及 /tmp 目录（用于临时导出）
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-    let tmp = PathBuf::from("/tmp");
+    let home = dirs::home_dir().ok_or_else(|| "无法获取主目录".to_string())?;
+    // canonicalize home 避免 symlink 误判
+    let canonical_home = home.canonicalize().unwrap_or_else(|_| home.clone());
 
-    if canonical.starts_with(&home) || canonical.starts_with(&tmp) {
-        Ok(canonical)
-    } else {
-        Err(format!("路径不在允许范围内: {}", path))
+    // 1. 应用数据目录 ~/.z-note
+    let app_data = canonical_home.join(".z-note");
+    if canonical.starts_with(&app_data) {
+        return Ok(canonical);
     }
+
+    // 2. /tmp（macOS 下 canonicalize 后变 /private/tmp，必须 canonical 比较）
+    let tmp = std::path::Path::new("/tmp")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("/tmp"));
+    if canonical.starts_with(&tmp) {
+        return Ok(canonical);
+    }
+
+    // 3. 常见笔记存放位置
+    const ALLOWED_SUBDIRS: &[&str] = &["Documents", "Desktop", "Downloads", "Notes", "notes", "Documents/Notes"];
+    for sub in ALLOWED_SUBDIRS {
+        let dir = canonical_home.join(sub);
+        if canonical.starts_with(&dir) {
+            return Ok(canonical);
+        }
+    }
+
+    // 4. 兜底：主目录直接子目录（一级），允许 ~/MyNotes、~/workspace 这种
+    if let Some(parent) = canonical.parent() {
+        if parent == canonical_home.as_path() {
+            return Ok(canonical);
+        }
+    }
+
+    Err(format!("路径不在允许范围内: {}", path))
+}
+
+/// 安全文件名清洗：仅保留字母数字与 `-_`，截断至 64 字符。
+/// 防止 `save_image` / `read_image` 等命令被 `../../../tmp/xxx` 注入。
+pub(crate) fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+        .take(64)
+        .collect()
+}
+
+/// 校验目标路径是否在允许范围内（适用于文件/目录可能尚不存在的场景）。
+/// 策略：canonicalize 父目录 + 拼接 basename，等价于"未来创建后"的位置判断。
+/// 用于 `ensure_dir`（创建新目录）、`write_text_file`（写入新文件）等命令。
+pub(crate) fn validate_path_allow_nonexistent(path: &str) -> Result<PathBuf, String> {
+    let candidate = std::path::Path::new(path);
+    let candidate_canonical = if candidate.exists() {
+        candidate
+            .canonicalize()
+            .map_err(|e| format!("路径解析失败: {}", e))?
+    } else {
+        let parent = candidate
+            .parent()
+            .ok_or_else(|| format!("路径无父目录: {}", path))?;
+        let file_name = candidate
+            .file_name()
+            .ok_or_else(|| format!("路径无文件名: {}", path))?;
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|e| format!("父目录解析失败: {}", e))?;
+        canonical_parent.join(file_name)
+    };
+
+    // 复用 validate_path 的内部逻辑（先校验 canonical 路径）
+    // 由于 candidate_canonical 已经是 canonical，可以直接比较
+    let home = dirs::home_dir().ok_or_else(|| "无法获取主目录".to_string())?;
+    let canonical_home = home.canonicalize().unwrap_or_else(|_| home.clone());
+
+    let app_data = canonical_home.join(".z-note");
+    if candidate_canonical.starts_with(&app_data) {
+        return Ok(candidate_canonical);
+    }
+
+    let tmp = std::path::Path::new("/tmp")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("/tmp"));
+    if candidate_canonical.starts_with(&tmp) {
+        return Ok(candidate_canonical);
+    }
+
+    const ALLOWED_SUBDIRS: &[&str] = &[
+        "Documents",
+        "Desktop",
+        "Downloads",
+        "Notes",
+        "notes",
+        "Documents/Notes",
+    ];
+    for sub in ALLOWED_SUBDIRS {
+        let dir = canonical_home.join(sub);
+        if candidate_canonical.starts_with(&dir) {
+            return Ok(candidate_canonical);
+        }
+    }
+
+    // 兜底：父目录为主目录直接子目录（一级）
+    if let Some(parent) = candidate_canonical.parent() {
+        if parent == canonical_home.as_path() {
+            return Ok(candidate_canonical);
+        }
+    }
+
+    Err(format!("路径不在允许范围内: {}", path))
+}
+
+/// 校验目标路径必须落在指定目录内（canonicalize 后做前缀判断）。
+/// 用于 `read_image` 这类 "path 在某容器内" 的命令，避免 `..` 跳出。
+pub(crate) fn ensure_path_within(base: &Path, candidate: &Path) -> Result<PathBuf, String> {
+    // 文件不存在时，canonicalize 会失败；改用父目录 canonicalize + 文件名拼接
+    let resolved = if candidate.exists() {
+        candidate
+            .canonicalize()
+            .map_err(|e| format!("路径解析失败: {}", e))?
+    } else {
+        let parent = candidate
+            .parent()
+            .ok_or_else(|| format!("路径无父目录: {}", candidate.display()))?;
+        let file_name = candidate
+            .file_name()
+            .ok_or_else(|| format!("路径无文件名: {}", candidate.display()))?;
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|e| format!("父目录解析失败: {}", e))?;
+        canonical_parent.join(file_name)
+    };
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| format!("基准目录解析失败: {}", e))?;
+    if !resolved.starts_with(&canonical_base) {
+        return Err(format!(
+            "路径越界: {} 不在 {} 内",
+            resolved.display(),
+            canonical_base.display()
+        ));
+    }
+    Ok(resolved)
 }
 
 /// 笔记元数据
@@ -186,11 +329,11 @@ pub fn read_note(id: String) -> String {
     fs::read_to_string(&path).unwrap_or_default()
 }
 
-/// 保存笔记
+/// 保存笔记（写入失败必须显式返回错误，前端不允许静默吞错）
 #[tauri::command]
-pub fn save_note(id: String, content: String) {
+pub fn save_note(id: String, content: String) -> Result<(), String> {
     let path = notes_dir().join(format!("{}.md", id));
-    fs::write(&path, &content).ok();
+    atomic_write_str(&path, &content)
 }
 
 /// 删除笔记（移到回收站）
@@ -205,13 +348,13 @@ pub fn delete_note(id: String) {
 
 /// 创建新笔记，返回id
 #[tauri::command]
-pub fn create_note(title: String) -> String {
+pub fn create_note(title: String) -> Result<String, String> {
     let uuid = Uuid::new_v4().to_string();
     let id = &uuid[..8];
     let content = format!("# {}\n\n", title);
     let path = notes_dir().join(format!("{}.md", id));
-    fs::write(&path, &content).ok();
-    id.to_string()
+    atomic_write_str(&path, &content)?;
+    Ok(id.to_string())
 }
 
 /// 读取配置
@@ -225,23 +368,24 @@ pub fn get_config() -> Config {
             .unwrap_or_default()
     } else {
         let config = Config::default();
-        save_config(config.clone());
+        let _ = save_config(config.clone());
         config
     }
 }
 
 /// 保存配置
 #[tauri::command]
-pub fn save_config(config: Config) {
+pub fn save_config(config: Config) -> Result<(), String> {
     let path = config_path();
-    if let Ok(json) = serde_json::to_string_pretty(&config) {
-        fs::write(&path, &json).ok();
-    }
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("序列化配置失败: {}", e))?;
+    atomic_write_str(&path, &json)
 }
 
-/// 导出笔记
+/// 导出笔记（写入用户指定路径，必须校验防越界覆盖）
 #[tauri::command]
-pub fn export_note(id: String, format: String, path: String) -> String {
+pub fn export_note(id: String, format: String, path: String) -> Result<String, String> {
+    validate_path(&path)?;
     let note_path = notes_dir().join(format!("{}.md", id));
     let content = fs::read_to_string(&note_path).unwrap_or_default();
 
@@ -274,26 +418,26 @@ pub fn export_note(id: String, format: String, path: String) -> String {
         content
     };
 
-    match fs::write(&path, &output) {
-        Ok(_) => "导出成功".to_string(),
-        Err(e) => format!("导出失败: {}", e),
-    }
+    atomic_write_str(std::path::Path::new(&path), &output)?;
+    Ok("导出成功".to_string())
 }
 
-/// 导入笔记
+/// 导入笔记（从任意 .md 读取到 ~/.z-note/notes/）
+/// 必须校验源路径防越界读取（如 /etc/passwd）
 #[tauri::command]
-pub fn import_note(path: String) -> String {
-    let content = fs::read_to_string(&path).unwrap_or_default();
+pub fn import_note(path: String) -> Result<String, String> {
+    validate_path(&path)?;
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))?;
     if content.is_empty() {
-        return "导入失败: 文件为空".to_string();
+        return Err("导入失败: 文件为空".to_string());
     }
 
-    let title = extract_title(&content);
+    let _title = extract_title(&content);
     let uuid = Uuid::new_v4().to_string();
     let id = &uuid[..8];
     let note_path = notes_dir().join(format!("{}.md", id));
-    fs::write(&note_path, &content).ok();
-    id.to_string()
+    atomic_write_str(&note_path, &content)?;
+    Ok(id.to_string())
 }
 
 /// 列出回收站笔记
@@ -399,17 +543,25 @@ pub fn save_image(note_id: String, data: String) -> Result<String, String> {
     } else {
         "png"
     };
-    let filename = format!("{}-{}.{}", note_id, Uuid::new_v4().to_string()[..8].to_string(), ext);
+    // note_id 必须经 sanitize_filename 清洗，避免 `../../tmp/evil` 注入
+    let safe_id = sanitize_filename(&note_id);
+    if safe_id.is_empty() {
+        return Err("无效的 note_id".to_string());
+    }
+    let filename = format!("{}-{}.{}", safe_id, &Uuid::new_v4().to_string()[..8], ext);
     let path = images_dir.join(&filename);
     let bytes = base64_decode(&b64)?;
-    fs::write(&path, bytes).map_err(|e| format!("写入图片失败: {}", e))?;
+    atomic_write(&path, &bytes).map_err(|e| format!("写入图片失败: {}", e))?;
     Ok(format!("images/{}", filename))
 }
 
 /// 读取图片文件，返回base64 data URI
 #[tauri::command]
 pub fn read_image(path: String) -> Result<String, String> {
-    let full_path = notes_dir().join(&path);
+    let images_dir = notes_dir().join("images");
+    let full_path = images_dir.join(&path);
+    // 防止 path 中含 `../` 跳出 images 目录
+    ensure_path_within(&images_dir, &full_path).map_err(|e| format!("图片路径越界: {}", e))?;
     if !full_path.exists() {
         return Err(format!("图片不存在: {}", path));
     }
@@ -428,7 +580,6 @@ pub fn read_image(path: String) -> Result<String, String> {
 }
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    use std::fmt::Write;
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let input = input.trim_end_matches('=');
     let mut result = Vec::with_capacity(input.len() * 3 / 4);
@@ -462,16 +613,18 @@ fn base64_encode(input: &[u8]) -> String {
     result
 }
 
-/// 确保目录存在
+/// 确保目录存在（路径校验防越界创建）
 #[tauri::command]
 pub fn ensure_dir(path: String) -> Result<(), String> {
+    validate_path_allow_nonexistent(&path)?;
     std::fs::create_dir_all(&path).map_err(|e| format!("创建目录失败: {}", e))
 }
 
-/// 写入文本文件
+/// 写入文本文件（前端编辑笔记 / 通用文本写入的统一入口）
 #[tauri::command]
 pub fn write_text_file(path: String, content: String) -> Result<(), String> {
-    std::fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
+    validate_path_allow_nonexistent(&path)?;
+    atomic_write_str(std::path::Path::new(&path), &content)
 }
 
 // ==================== 新增结构体 ====================
@@ -545,15 +698,50 @@ pub async fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))
 }
 
-/// 写入内容到任意文件
+/// 写入内容到任意文件（应用层接口；底层走原子写防止断电损坏笔记）。
+/// 写入成功后自动 emit `note-updated` 事件，前端增量更新知识图谱。
 #[tauri::command]
-pub async fn write_file(path: String, content: String) -> Result<(), String> {
+pub async fn write_file(
+    path: String,
+    content: String,
+    app: tauri::AppHandle,
+    index: tauri::State<'_, IndexStore>,
+) -> Result<(), String> {
     validate_path(&path)?;
-    fs::write(&path, &content).map_err(|e| format!("写入文件失败: {}", e))
+    atomic_write_str(std::path::Path::new(&path), &content)?;
+
+    // 写入成功后：解析摘要 → emit 增量事件 → upsert 索引
+    let title = ext::extract_title(&content);
+    let tags = ext::extract_tags(&content).join(",");
+    let links = ext::extract_links(&content).join(",");
+
+    let _ = app.emit(
+        "note-updated",
+        serde_json::json!({
+            "file_path": path,
+            "title": title,
+            "tags": tags,
+            "links": links,
+        }),
+    );
+
+    // upsert 到 FTS5 索引（失败不阻塞主流程）
+    if let Ok(meta) = fs::metadata(&path) {
+        let mtime = meta
+            .modified()
+            .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+            .unwrap_or(0);
+        let size = meta.len() as i64;
+        let _ = index.upsert_note(&path, &title, &content, mtime, size, &tags, &links);
+    }
+
+    Ok(())
 }
 
-/// 删除文件或目录
-#[tauri::command]
+/// 删除文件或目录（已从 invoke_handler 移除，统一改走 `move_to_trash` 走废纸篓）。
+///
+/// 保留函数仅为方便内部调用与单测；前端不可直接通过 invoke 触发永久删除。
+#[allow(dead_code)]
 pub async fn delete_file(path: String) -> Result<(), String> {
     validate_path(&path)?;
     if std::path::Path::new(&path).is_dir() {
@@ -684,9 +872,10 @@ fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
     Ok(entries)
 }
 
-/// 递归搜索目录中所有.md文件的内容
+/// 递归搜索目录中所有.md文件的内容（旧版暴力搜索，已由 FTS5 替代）
 #[tauri::command]
 pub async fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMatch>, String> {
+    validate_path(&dir)?;
     let query_lower = query.to_lowercase();
     let mut results: Vec<SearchMatch> = Vec::new();
     search_in_files_recursive(&PathBuf::from(&dir), &query_lower, &mut results)?;
@@ -931,11 +1120,94 @@ pub async fn ai_chat(config: AiConfigPayload, messages: Vec<ChatMessage>) -> Res
     Ok(content.to_string())
 }
 
+/// AI 流式聊天：通过 SSE 推送 token，前端 listen('ai-stream://token') 增量显示。
+#[tauri::command]
+pub async fn ai_chat_stream(
+    config: AiConfigPayload,
+    messages: Vec<ChatMessage>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use futures::StreamExt;
+
+    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": config.model,
+        "messages": messages,
+        "stream": true,
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            let _ = app.emit("ai-stream://error", format!("请求失败: {}", e));
+            format!("请求AI服务失败: {}", e)
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let err = format!("AI服务返回错误: {} - {}", status, body);
+        let _ = app.emit("ai-stream://error", &err);
+        return Err(err);
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut full = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => {
+                buffer.push_str(&String::from_utf8_lossy(&bytes));
+                while let Some(idx) = buffer.find("\n\n") {
+                    let event = buffer[..idx].to_string();
+                    buffer = buffer[idx + 2..].to_string();
+                    for line in event.lines() {
+                        if let Some(data) = line.strip_prefix("data: ") {
+                            if data == "[DONE]" {
+                                let _ = app.emit("ai-stream://done", serde_json::json!({ "full": full }));
+                                return Ok(());
+                            }
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                                if let Some(delta) = json
+                                    .get("choices")
+                                    .and_then(|c| c.get(0))
+                                    .and_then(|c| c.get("delta"))
+                                    .and_then(|d| d.get("content"))
+                                    .and_then(|c| c.as_str())
+                                {
+                                    full.push_str(delta);
+                                    let _ = app.emit("ai-stream://token", delta);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let err = format!("流读取失败: {}", e);
+                let _ = app.emit("ai-stream://error", &err);
+                return Err(err);
+            }
+        }
+    }
+    let _ = app.emit("ai-stream://done", serde_json::json!({ "full": full }));
+    Ok(())
+}
+
 /// 创建笔记备份（版本历史）
 /// 备份存储在 ~/.z-note/backups/{note_id}/ 目录下，文件名为 {timestamp}.md
 /// 最多保留 20 个备份版本
 #[tauri::command]
 pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
+    // note_path 来自前端，必须校验防越界备份
+    validate_path(&note_path)?;
     let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let backup_base = base.join(".z-note").join("backups");
 
@@ -944,10 +1216,10 @@ pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
     let backup_dir = backup_base.join(&safe_name);
     fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
 
-    // 写入备份文件
+    // 写入备份文件（原子写，避免备份中途损坏）
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
     let backup_path = backup_dir.join(format!("{}.md", timestamp));
-    fs::write(&backup_path, &content).map_err(|e| format!("写入备份失败: {}", e))?;
+    atomic_write_str(&backup_path, &content).map_err(|e| format!("写入备份失败: {}", e))?;
 
     // 清理旧备份，只保留最近 20 个
     if let Ok(entries) = fs::read_dir(&backup_dir) {
@@ -1004,12 +1276,23 @@ pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
     Ok(entries)
 }
 
-/// 恢复备份版本
+/// 恢复备份版本（安全约束：必须验证 backup_path 与 target_path 都位于允许目录内，
+/// 防止前端被劫持后覆盖任意系统文件，例如 /etc/passwd）
 #[tauri::command]
 pub fn restore_backup(backup_path: String, target_path: String) -> Result<(), String> {
-    let content = fs::read_to_string(&backup_path)
+    // 两个路径都做 canonicalize + 范围校验
+    validate_path(&backup_path).map_err(|e| format!("备份路径非法: {}", e))?;
+    validate_path(&target_path).map_err(|e| format!("目标路径非法: {}", e))?;
+
+    let backup = std::path::Path::new(&backup_path);
+    if !backup.is_file() {
+        return Err(format!("备份文件不存在: {}", backup_path));
+    }
+    let target = std::path::Path::new(&target_path);
+
+    let content = fs::read_to_string(backup)
         .map_err(|e| format!("读取备份失败: {}", e))?;
-    fs::write(&target_path, &content)
+    atomic_write_str(target, &content)
         .map_err(|e| format!("恢复备份失败: {}", e))
 }
 
@@ -1122,4 +1405,169 @@ fn guess_mime_from_ext(ext: &str) -> String {
         _ => "application/octet-stream",
     };
     mime.to_string()
+}
+
+// ==================== Phase 2: 搜索索引 / 文件监听 / 增量图谱 ====================
+
+use crate::extract as ext;
+use crate::index::{IndexStatus, IndexStore, IndexedMatch};
+use crate::watcher::WatcherState;
+use tauri::{Emitter, State};
+
+/// 索引笔记文件：内部命令（前端一般不需要直接调）。
+/// 行为：读取文件、提取 title/tags/links、写入 FTS5 索引。
+#[tauri::command]
+pub fn index_upsert_note(
+    path: String,
+    index: State<'_, IndexStore>,
+) -> Result<(), String> {
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
+    let title = ext::extract_title(&content);
+    let tags = ext::extract_tags(&content).join(",");
+    let links = ext::extract_links(&content).join(",");
+    let meta = fs::metadata(&path).map_err(|e| format!("元信息失败: {}", e))?;
+    let mtime = meta
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    let size = meta.len() as i64;
+    index.upsert_note(&path, &title, &content, mtime, size, &tags, &links)
+}
+
+/// 从索引中删除单条
+#[tauri::command]
+pub fn index_delete_note(
+    path: String,
+    index: State<'_, IndexStore>,
+) -> Result<(), String> {
+    index.delete_note(&path)
+}
+
+/// 全文搜索（FTS5 + BM25 排序）
+#[tauri::command]
+pub fn search_notes(
+    query: String,
+    index: State<'_, IndexStore>,
+    limit: Option<usize>,
+) -> Result<Vec<IndexedMatch>, String> {
+    index.search(&query, limit.unwrap_or(50))
+}
+
+/// 全量重建索引：扫描 dir 下所有 .md，按 mtime 与现有条目对比，仅 upsert 变化项。
+/// 返回最终状态。
+#[tauri::command]
+pub async fn rebuild_index(
+    dir: String,
+    index: State<'_, IndexStore>,
+) -> Result<IndexStatus, String> {
+    validate_path(&dir)?;
+
+    // 1. 取出已有索引
+    let existing = index.list_paths()?;
+    let existing_map: std::collections::HashMap<String, i64> = existing.into_iter().collect();
+
+    // 2. 扫描目录
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut to_upsert: Vec<String> = Vec::new();
+    let mut to_delete: Vec<String> = Vec::new();
+
+    scan_md_recursive(&PathBuf::from(&dir), &mut seen)?;
+    for path in &seen {
+        let meta = match fs::metadata(path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let mtime = meta
+            .modified()
+            .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+            .unwrap_or(0);
+        match existing_map.get(path) {
+            Some(&old_mtime) if old_mtime == mtime => {
+                // 未变化，跳过
+            }
+            _ => to_upsert.push(path.clone()),
+        }
+    }
+    for path in existing_map.keys() {
+        if !seen.contains(path) {
+            to_delete.push(path.clone());
+        }
+    }
+
+    // 3. 应用变更
+    for path in &to_delete {
+        let _ = index.delete_note(path);
+    }
+    for path in &to_upsert {
+        let result: Result<(), String> = (|| {
+            let content = fs::read_to_string(path).map_err(|e| format!("读取失败: {}", e))?;
+            let title = ext::extract_title(&content);
+            let tags = ext::extract_tags(&content).join(",");
+            let links = ext::extract_links(&content).join(",");
+            let meta = fs::metadata(path).map_err(|e| format!("元信息失败: {}", e))?;
+            let mtime = meta
+                .modified()
+                .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+                .unwrap_or(0);
+            let size = meta.len() as i64;
+            index.upsert_note(path, &title, &content, mtime, size, &tags, &links)
+        })();
+        if let Err(e) = result {
+            eprintln!("[rebuild_index] upsert 失败 ({}): {}", path, e);
+        }
+    }
+
+    Ok(index.status())
+}
+
+/// 递归扫描返回所有 .md 文件路径
+fn scan_md_recursive(
+    dir: &std::path::Path,
+    out: &mut std::collections::HashSet<String>,
+) -> Result<(), String> {
+    let entries = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            // 跳过常见排除目录
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if matches!(name, ".git" | "node_modules" | ".z-note" | "images" | ".trash") {
+                continue;
+            }
+            scan_md_recursive(&path, out)?;
+            continue;
+        }
+        if path.extension().map_or(false, |e| e == "md") {
+            out.insert(path.to_string_lossy().to_string());
+        }
+    }
+    Ok(())
+}
+
+/// 索引状态（前端 StatusBar / 调试用）
+#[tauri::command]
+pub fn index_status(index: State<'_, IndexStore>) -> IndexStatus {
+    index.status()
+}
+
+/// 启动对 dir 的文件监听（替换 5 秒轮询）
+#[tauri::command]
+pub fn start_watch(
+    dir: String,
+    watcher: State<'_, WatcherState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    validate_path(&dir)?;
+    watcher.watch(PathBuf::from(dir), app)
+}
+
+/// 停止当前监听
+#[tauri::command]
+pub fn stop_watch(watcher: State<'_, WatcherState>) -> Result<(), String> {
+    watcher.unwatch();
+    Ok(())
 }

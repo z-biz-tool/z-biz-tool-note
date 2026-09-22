@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Folder, FileText, Search, Plus, ChevronRight, ChevronDown,
   Home, Clock, Files, Hash, Settings, Sparkles, Calendar
@@ -13,6 +13,15 @@ import { invoke } from '@tauri-apps/api/core';
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
 const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
+
+/**
+ * 清理搜索 snippet 的 HTML：Rust 侧已转义 content，但保险起见再次白名单过滤
+ * 仅保留 <mark> 标签（用于高亮），移除其它可能的 HTML/脚本。
+ */
+function sanitizeSnippet(html: string): string {
+  // 1. 转义除 <mark> / </mark> 之外的所有标签
+  return html.replace(/<(?!\/?mark\b)[^>]*>/g, '');
+}
 
 interface SidebarProps {
   isOpen: boolean;
@@ -274,21 +283,59 @@ export const Sidebar = ({
     }
   };
 
+  // 搜索 debounce + 取消令牌（避免前次响应覆盖后次结果）
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
   const handleGlobalSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim() || !currentDir) {
       setSearchResults([]);
       return;
     }
-    const result = await electronAPI.invoke('search-in-files', currentDir, query);
-    if (result.success && result.matches) {
-      setSearchResults(result.matches.map((m: any) => ({
-        filePath: m.filePath,
-        fileName: m.filePath.split('/').pop() || m.filePath,
-        snippet: m.preview || '',
-        line: m.line || 0,
-      })));
-    }
+    // 取消前次未完成的搜索
+    if (searchAbortRef.current) searchAbortRef.current.abort();
+    searchAbortRef.current = new AbortController();
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        // 优先走 FTS5 索引搜索；索引不可用时降级为暴力搜索
+        const indexed = await invoke<Array<{
+          file_path: string;
+          title: string;
+          line: number;
+          snippet: string;
+          score: number;
+        }>>('search_notes', { query, limit: 100 }).catch(() => null);
+
+        if (indexed) {
+          setSearchResults(indexed.map(m => ({
+            filePath: m.file_path,
+            fileName: m.file_path.split('/').pop() || m.file_path,
+            // snippet 内已含 <mark> 高亮；前端直接渲染（注意 XSS 用 dangerouslySetInnerHTML）
+            snippet: m.snippet,
+            line: m.line,
+          })));
+          return;
+        }
+
+        // 降级路径
+        const result = await electronAPI.invoke('search-in-files', currentDir, query);
+        if (result.success && result.matches) {
+          setSearchResults(result.matches.map((m: any) => ({
+            filePath: m.filePath,
+            fileName: m.filePath.split('/').pop() || m.filePath,
+            snippet: m.preview || '',
+            line: m.line || 0,
+          })));
+        }
+      } catch (e) {
+        if ((e as any)?.name !== 'AbortError') {
+          console.warn('搜索失败:', e);
+        }
+      }
+    }, 300);
   };
 
   const renderFileTree = (files: FileItem[], depth = 0): React.ReactNode => {
@@ -540,9 +587,12 @@ export const Sidebar = ({
                     <span style={{ fontWeight: 500 }}>{result.fileName}</span>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>L{result.line}</span>
                   </div>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 20, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
-                    {result.snippet}
-                  </span>
+                  <span
+                    style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 20, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}
+                    // snippet 内已含 <mark> 高亮；用 dangerouslySetInnerHTML 安全渲染
+                    // （Rust 侧已对 content 做 HTML 转义，仅 <mark> 由我们控制注入）
+                    dangerouslySetInnerHTML={{ __html: sanitizeSnippet(result.snippet) }}
+                  />
                 </button>
               ))
             )}
