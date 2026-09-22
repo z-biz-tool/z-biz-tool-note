@@ -1,19 +1,15 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
-import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import TextAlign from '@tiptap/extension-text-align';
-import Underline from '@tiptap/extension-underline';
-import Strike from '@tiptap/extension-strike';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
-import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -197,24 +193,24 @@ export const Editor = ({
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4, 5, 6] },
         codeBlock: false,
+        // link/underline/strike/horizontalRule 在 v3 里已由 StarterKit 注册，
+        // 再单独 register 一份会重名（控制台 warn），两份的插件与命令互相覆盖。
+        // 需要调参就通过 StarterKit 透传 options。
+        link: { openOnClick: false, autolink: true },
       }),
       Markdown.configure({
         markedOptions: { gfm: true, breaks: true },
       }),
-      Link.configure({ openOnClick: false, autolink: true }),
       ImageEnhanced,
       CodeBlockLowlight.configure({ lowlight }),
       TaskList,
       TaskItem.configure({ nested: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Underline,
-      Strike,
       Table.configure({ resizable: true }),
       TableRow,
       TableCell,
       TableHeader,
       TableEnhanced,
-      HorizontalRule,
       Highlight,
       Typography,
       Placeholder.configure({ placeholder: 'Start writing your note...' }),
