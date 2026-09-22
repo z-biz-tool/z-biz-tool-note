@@ -639,7 +639,7 @@ const App = () => {
   // Create today's daily note
   const handleCreateDaily = useCallback(async () => {
     if (!currentDir) {
-      showToast('Open a folder first');
+      showToast('请先打开一个文件夹');
       return;
     }
     const filePath = dailyNotePath(currentDir);
@@ -668,7 +668,7 @@ const App = () => {
         const mtime = await invoke('get_file_modified', { path: filePath }) as string;
         setLastSaved(mtime);
       } catch {}
-      showToast('Daily note opened');
+      showToast('已打开今日日记');
     }
     refreshFileList(currentDir);
     refreshKnowledgeIndex(currentDir);
@@ -738,8 +738,8 @@ const App = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const cmd = e.metaKey || e.ctrlKey;
-      // Cmd+S 保存
-      if (cmd && e.key === 's') {
+      // Cmd+S 保存（带 Shift 时留给下面的另存为）
+      if (cmd && e.key === 's' && !e.shiftKey) {
         e.preventDefault();
         if (document.activeElement?.closest('.editor-pane-split')) {
           handleSaveSplitRef.current();
@@ -754,6 +754,19 @@ const App = () => {
       } else if (cmd && e.shiftKey && e.key === 'P') {
         e.preventDefault();
         setShowCommandPalette(true);
+      } else if (cmd && e.key === 'n') {
+        e.preventDefault();
+        menuActionsRef.current['new-note']?.();
+      } else if (cmd && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        menuActionsRef.current['save-as']?.();
+      } else if (cmd && e.key === 'b') {
+        // 编辑器内 Cmd+B 被 Tiptap 的加粗拦走，这里只在编辑器之外生效
+        e.preventDefault();
+        menuActionsRef.current['toggle-sidebar']?.();
+      } else if (cmd && e.shiftKey && e.key === 'I') {
+        e.preventDefault();
+        setShowQuickInsert(true);
       } else if (cmd && e.key === 'f') {
         e.preventDefault();
         setShowFindReplace(true);
@@ -1193,7 +1206,7 @@ const App = () => {
         const mtime = await invoke('get_file_modified', { path: result.filePath }) as string;
         setLastSaved(mtime);
       } catch {}
-      showToast('Saved successfully');
+      showToast('已保存');
     }
   }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab]);
 
@@ -1817,7 +1830,7 @@ const App = () => {
         }}
         onCreateDaily={async (filePath, content) => {
           if (!filePath) {
-            showToast('Open a folder first');
+            showToast('请先打开一个文件夹');
             return;
           }
           const dir = filePath.substring(0, filePath.lastIndexOf('/'));
@@ -1838,7 +1851,7 @@ const App = () => {
               const mtime = await invoke('get_file_modified', { path: filePath }) as string;
               setLastSaved(mtime);
             } catch {}
-            showToast('Daily note created');
+            showToast('今日日记已创建');
           }
           refreshFileList(currentDir);
           refreshKnowledgeIndex(currentDir);
