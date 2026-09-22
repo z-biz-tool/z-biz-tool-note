@@ -65,58 +65,11 @@ export const walStore = {
       return {};
     }
   },
-
-  /** 启动时一次性拉取所有未落盘条目，调用方负责提示用户并写回 */
-  drain(): WalMap {
-    const map = this.readAll();
-    try {
-      localStorage.removeItem(WAL_KEY);
-    } catch (e) {
-      console.warn('[WAL] 清空失败:', e);
-    }
-    return map;
-  },
 };
 
 /**
- * 启动时调用：扫描 WAL，发现有未落盘内容时弹窗让用户决定恢复或丢弃。
- *
- * 使用方式：
- * ```ts
- * useEffect(() => { checkWalOnStartup(showToast, restoreCb, discardCb); }, []);
- * ```
+ * 启动节流：同一笔记短时间内多次触发 create_backup 时，仅保留最长一次间隔
  */
-export function checkWalOnStartup(
-  showToast: (msg: string, action?: { label: string; onClick: () => void }) => void,
-  restore: (entries: WalEntry[]) => void,
-  discard: (entries: WalEntry[]) => void,
-): void {
-  const entries = Object.values(walStore.readAll());
-  if (entries.length === 0) return;
-
-  const summary = entries
-    .slice(0, 3)
-    .map(e => `${e.filePath.split('/').pop() || e.filePath} (${(e.content.length / 1024).toFixed(1)}KB)`)
-    .join(', ');
-  const tail = entries.length > 3 ? ` 等 ${entries.length} 篇` : '';
-
-  showToast(
-    `检测到未保存的内容: ${summary}${tail}`,
-    {
-      label: '恢复',
-      onClick: () => restore(entries),
-    },
-  );
-
-  // 给调用方一个"丢弃"出口：通过 localStorage flag 让用户后续可手动清除
-  setTimeout(() => {
-    if (window.confirm('是否丢弃这些未保存的内容？\n（点"取消"则保留在 WAL 直至下次恢复）')) {
-      discard(entries);
-    }
-  }, 500);
-}
-
-/** 保存节流：同一笔记短时间内多次触发 create_backup 时，仅保留最长一次间隔 */
 export const BACKUP_DEBOUNCE_MS = 5 * 60 * 1000; // 5 分钟
 const lastBackupTs: Map<string, number> = (() => {
   try {

@@ -555,6 +555,59 @@ body {
 .command-palette-box .modal-list-item.selected .modal-list-item-category,
 .command-palette-box .modal-list-item.selected .modal-list-item-shortcut { color: var(--text-primary); opacity: .8; }
 
+/* ===== 未保存内容恢复横幅 ===== */
+.recovery-banner {
+  border-bottom: 1px solid rgba(217, 119, 6, 0.35);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.14) 0%, rgba(245, 158, 11, 0.06) 100%);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+.recovery-banner-head {
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+}
+.recovery-banner-head svg { color: #d97706; flex-shrink: 0; }
+.recovery-banner-actions { margin-left: auto; display: flex; gap: 6px; }
+.recovery-btn {
+  font-size: 12px; padding: 3px 10px; cursor: pointer;
+  color: var(--text-secondary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+.recovery-btn:hover { color: var(--text-primary); }
+.recovery-btn-primary {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+.recovery-list {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  max-height: 96px; overflow-y: auto;
+}
+.recovery-item {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 6px 2px 8px; font-size: 12px;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: 999px;
+}
+.recovery-item-name {
+  border: none; background: transparent; cursor: pointer; padding: 0;
+  color: var(--text-primary); font-size: 12px; font-weight: 500;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recovery-item-name:hover { text-decoration: underline; }
+.recovery-item-meta { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.recovery-item-restore {
+  border: none; background: transparent; cursor: pointer; padding: 0;
+  color: #d97706; font-size: 12px;
+}
+.recovery-item-restore:hover { color: #b45309; }
+.recovery-item-discard {
+  display: inline-flex; align-items: center; border: none; background: transparent;
+  cursor: pointer; color: var(--text-muted); padding: 0;
+}
+.recovery-item-discard:hover { color: var(--text-primary); }
+
 /* ===== Emoji Picker ===== */
 .emoji-picker {
   position: absolute; bottom: 40px; right: 16px; width: 320px; height: 360px;

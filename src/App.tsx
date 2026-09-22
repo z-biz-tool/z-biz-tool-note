@@ -39,7 +39,8 @@ const SettingsDialog = lazy(() => import('./components/SettingsDialog').then(m =
 const AIPanel = lazy(() => import('./components/AIPanel').then(m => ({ default: m.AIPanel })));
 import { useFileOperations } from './hooks/useFileOperations';
 import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
-import { walStore, shouldCreateBackup, markBackedUp } from './hooks/useAutoSave';
+import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hooks/useAutoSave';
+import { RecoveryBanner } from './components/RecoveryBanner';
 import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
 import { parseFrontmatter } from './lib/frontmatter';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
@@ -167,6 +168,8 @@ const App = () => {
   const [allFiles, setAllFiles] = useState<Array<{ path: string; name: string; lastModified: number }>>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [toastExiting, setToastExiting] = useState(false);
+  // 本地暂存（WAL）里待恢复的条目；保存失败或异常退出后在此露出恢复入口
+  const [walEntries, setWalEntries] = useState<WalEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
@@ -1051,6 +1054,61 @@ const App = () => {
     }
   };
 
+  // ---------- WAL 暂存内容的恢复入口 ----------
+  const refreshWal = useCallback(() => {
+    setWalEntries(Object.values(walStore.readAll()).sort((a, b) => b.ts - a.ts));
+  }, []);
+
+  useEffect(() => {
+    refreshWal();
+  }, [refreshWal]);
+
+  // 把暂存内容塞回标签：已打开的原地覆盖并标脏；未打开的直接用暂存内容建标签
+  // （不从磁盘读，避免"读盘失败却已经把 WAL 清掉"造成二次丢失）
+  const restoreWalEntry = useCallback(async (entry: WalEntry) => {
+    if (openTabsRef.current.some(t => t.id === entry.filePath)) {
+      setOpenTabs(prev => prev.map(t =>
+        t.id === entry.filePath ? { ...t, content: entry.content, isDirty: true } : t
+      ));
+    } else {
+      const { kindOf, baseName, isEditable } = await import('./lib/fileTypes');
+      const kind = kindOf(entry.filePath);
+      openNote({
+        id: entry.filePath,
+        filePath: entry.filePath,
+        title: baseName(entry.filePath),
+        content: entry.content,
+        fileType: kind,
+        isReadonly: !isEditable(kind),
+        isDirty: true,
+      });
+    }
+    setActiveTabId(entry.filePath);
+    walStore.clear(entry.filePath);
+    refreshWal();
+    showToast('已恢复暂存内容，请检查后保存');
+  }, [openNote, refreshWal]);
+
+  const restoreAllWal = useCallback(async () => {
+    const pending = Object.values(walStore.readAll());
+    for (const entry of pending) {
+      await restoreWalEntry(entry);
+    }
+  }, [restoreWalEntry]);
+
+  const discardWalEntry = useCallback((filePath: string) => {
+    walStore.clear(filePath);
+    refreshWal();
+  }, [refreshWal]);
+
+  const discardAllWal = useCallback(() => {
+    for (const filePath of Object.keys(walStore.readAll())) {
+      walStore.clear(filePath);
+    }
+    refreshWal();
+    showToast('已丢弃本地暂存内容');
+  }, [refreshWal, showToast]);
+
   const handleSave = useCallback(async () => {
     if (!currentNote || !currentNote.isDirty) return;
     if (currentNote.filePath) {
@@ -1061,7 +1119,8 @@ const App = () => {
         // 写入失败：不更新 isDirty，写 WAL 兜底，toast 告知用户
         walStore.write(currentNote.filePath, currentNote.content);
         setMainSaveState('error');
-        showToast(`保存失败: ${e}（内容已暂存到本地，启动时尝试恢复）`);
+        refreshWal();
+        showToast('保存失败，内容已暂存，可在顶部横幅恢复');
         return;
       }
       // 写入成功后再清理 WAL
@@ -1152,7 +1211,8 @@ const App = () => {
     } catch (e) {
       walStore.write(splitNote.filePath, splitNote.content);
       setSplitSaveState('error');
-      showToast(`分屏保存失败: ${e}（内容已暂存）`);
+      refreshWal();
+      showToast('分屏保存失败，内容已暂存，可在顶部横幅恢复');
       return;
     }
     walStore.clear(splitNote.filePath);
@@ -1382,6 +1442,13 @@ const App = () => {
       )}
 
       <div style={{ flex: 1, flexDirection: 'column', overflow: 'hidden', display: 'flex' }}>
+        <RecoveryBanner
+          entries={walEntries}
+          onRestore={entry => { void restoreWalEntry(entry); }}
+          onRestoreAll={() => { void restoreAllWal(); }}
+          onDiscard={discardWalEntry}
+          onDiscardAll={discardAllWal}
+        />
         <TabsBar
           tabs={openTabs}
           activeId={activeTabId}
