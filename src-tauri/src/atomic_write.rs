@@ -29,8 +29,6 @@ pub fn atomic_write(target: &Path, content: &[u8]) -> Result<(), String> {
         .to_string();
 
     let tmp = dir.join(format!(".{}.{}.tmp", file_name, std::process::id()));
-    // Windows 路径会用到，这里只是声明；Unix 路径下未使用是正常的
-    let _bak = dir.join(format!(".{}.{}.bak", file_name, std::process::id()));
 
     // 1. 写入临时文件
     {
@@ -48,6 +46,7 @@ pub fn atomic_write(target: &Path, content: &[u8]) -> Result<(), String> {
     #[cfg(windows)]
     {
         // Windows 上 std::fs::rename 不允许覆盖，需要迂回实现
+        let bak = dir.join(format!(".{}.{}.bak", file_name, std::process::id()));
         let target_existed = target.exists();
         if target_existed {
             fs::rename(target, &bak)
