@@ -169,6 +169,8 @@ const App = () => {
   const [mainSaveState, setMainSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [splitSaveState, setSplitSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [allFiles, setAllFiles] = useState<Array<{ path: string; name: string; lastModified: number }>>([]);
+  // 侧栏文件树的刷新信号：新建/重命名/删除后 bump，Sidebar 只认它、不自己存目录
+  const [treeVersion, setTreeVersion] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [toastExiting, setToastExiting] = useState(false);
   // 本地暂存（WAL）里待恢复的条目；保存失败或异常退出后在此露出恢复入口
@@ -366,24 +368,6 @@ const App = () => {
     });
   }, []);
 
-  // 文件重命名时更新已打开的标签和分屏
-  const handleFileRenamed = useCallback((oldPath: string, newPath: string, newName: string) => {
-    // 更新已打开的标签
-    setOpenTabs(prev => prev.map(tab => {
-      if (tab.filePath === oldPath) {
-        return { ...tab, id: newPath, filePath: newPath, title: newName.replace(/\.md$/, '') };
-      }
-      return tab;
-    }));
-    // 更新分屏笔记
-    setSplitNote(prev => {
-      if (prev && prev.filePath === oldPath) {
-        return { ...prev, id: newPath, filePath: newPath, title: newName.replace(/\.md$/, '') };
-      }
-      return prev;
-    });
-  }, []);
-
   // Initialize
   useEffect(() => {
     const savedTheme = (localStorage.getItem('theme') as ThemeName) || 'light';
@@ -496,6 +480,41 @@ const App = () => {
     setGraphLinks(links);
   }, []);
 
+  // 侧栏树 + allFiles（双链解析靠它）对齐。read-all-notes 要读全部笔记，只在
+  // 路径真的变了（改名/删除）时才跟着刷，新建文件不必。
+  const refreshFileTree = useCallback(() => {
+    setTreeVersion(v => v + 1);
+    const dir = currentDirRef.current;
+    if (dir) void refreshFileList(dir);
+  }, [refreshFileList]);
+
+  const refreshNoteIndex = useCallback(() => {
+    const dir = currentDirRef.current;
+    if (dir) void refreshKnowledgeIndex(dir);
+  }, [refreshKnowledgeIndex]);
+
+  // 文件重命名时更新已打开的标签和分屏
+  const handleFileRenamed = useCallback((oldPath: string, newPath: string, newName: string) => {
+    // 更新已打开的标签
+    setOpenTabs(prev => prev.map(tab => {
+      if (tab.filePath === oldPath) {
+        return { ...tab, id: newPath, filePath: newPath, title: newName.replace(/\.md$/, '') };
+      }
+      return tab;
+    }));
+    // 更新分屏笔记
+    setSplitNote(prev => {
+      if (prev && prev.filePath === oldPath) {
+        return { ...prev, id: newPath, filePath: newPath, title: newName.replace(/\.md$/, '') };
+      }
+      return prev;
+    });
+    // 标签 id 就是路径：改名后 activeTabId 若还指旧路径，currentNote 查不到 → 编辑区直接空白
+    if (activeTabIdRef.current === oldPath) setActiveTabId(newPath);
+    refreshFileTree();
+    refreshNoteIndex();
+  }, [refreshFileTree, refreshNoteIndex]);
+
   // Find backlinks for the current note
   const refreshBacklinks = useCallback(async () => {
     if (!currentNote || !currentDir) {
@@ -555,6 +574,28 @@ const App = () => {
     setTimeout(() => setToast(null), 2500); // 移除 DOM
   }, []);
 
+  // 文件/文件夹被删掉（侧栏移到废纸篓，或外部删除）：关掉指向它的标签与分屏。
+  // 不关的话标签里的内容还在，2 秒防抖自动保存会按原路径重新写盘，把刚删的文件"复活"回来。
+  const closeTabsForDeletedPath = useCallback((path: string, isDirectory: boolean) => {
+    const hit = (p?: string) => !!p && (p === path || (isDirectory && p.startsWith(`${path}/`)));
+    const gone = new Set(openTabsRef.current.filter(t => hit(t.filePath)).map(t => t.id));
+    if (gone.size === 0) return false;
+    const remaining = openTabsRef.current.filter(t => !gone.has(t.id));
+    setOpenTabs(remaining);
+    const active = activeTabIdRef.current;
+    if (active && gone.has(active)) {
+      setActiveTabId(remaining.length ? remaining[remaining.length - 1].id : null);
+    }
+    setSplitNote(prev => (prev && hit(prev.filePath) ? null : prev));
+    return true;
+  }, []);
+
+  const handleFileDeleted = useCallback((path: string, isDirectory: boolean) => {
+    if (closeTabsForDeletedPath(path, isDirectory)) showToast('已关闭指向被删除文件的标签');
+    refreshFileTree();
+    refreshNoteIndex();
+  }, [closeTabsForDeletedPath, showToast, refreshFileTree, refreshNoteIndex]);
+
   // 文件监听：替换旧的 5s 轮询，notify crate 推送事件
   const handleExternalChange = useCallback(async (filePath: string) => {
     const cur = openTabsRef.current.find(t => t.id === activeTabIdRef.current);
@@ -591,10 +632,9 @@ const App = () => {
       if (isMarkdownPath(filePath)) void indexNote(filePath);
     },
     onRemoved: (filePath: string) => {
-      const cur = openTabsRef.current.find(t => t.id === activeTabIdRef.current);
-      if (cur?.filePath === filePath || splitNoteRef.current?.filePath === filePath) {
-        showToast('文件已被外部删除');
-      }
+      const wasOpen = openTabsRef.current.some(t => t.filePath === filePath);
+      closeTabsForDeletedPath(filePath, false);
+      if (wasOpen) showToast('文件已被外部删除，相关标签已关闭');
       if (isMarkdownPath(filePath)) void unindexNote(filePath);
     },
     onCreated: (filePath: string) => {
@@ -1453,6 +1493,10 @@ const App = () => {
         onOpenFile={handleOpenFile}
         onNewNote={handleNewNote}
         onOpenFolder={handleOpenFolder}
+        refreshKey={treeVersion}
+        onRefresh={refreshFileTree}
+        onRename={handleFileRenamed}
+        onDelete={handleFileDeleted}
         tags={tags}
         onTagClick={handleTagClick}
         activeTag={activeTag}

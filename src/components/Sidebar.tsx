@@ -50,6 +50,8 @@ interface SidebarProps {
   onRefresh?: () => void;
   refreshKey?: number;
   onRename?: (oldPath: string, newPath: string, newName: string) => void;
+  /** 文件/文件夹进了废纸篓：App 要关掉指向它的标签，否则自动保存会把删掉的文件写回来 */
+  onDelete?: (path: string, isDirectory: boolean) => void;
   tags?: Tag[];
   onTagClick?: (tag: string) => void;
   activeTag?: string | null;
@@ -62,7 +64,7 @@ interface SidebarProps {
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
-  isOpen, currentDir, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
+  isOpen, currentDir, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
@@ -131,6 +133,16 @@ export const Sidebar = ({
     setRecentFiles(prev => {
       const filtered = prev.filter(f => f.path !== path);
       const updated = [{ path, name, lastOpened: Date.now() }, ...filtered].slice(0, 20);
+      localStorage.setItem('recentFiles', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  // 重命名/删除后，「最近打开」里指向旧路径的条目必须跟着改：
+  // 否则点下去 readFile 失败、界面上没有任何反馈，看起来像应用坏了。
+  const mutateRecent = useCallback((change: (f: RecentFile) => RecentFile | null) => {
+    setRecentFiles(prev => {
+      const updated = prev.map(change).filter((f): f is RecentFile => f !== null);
       localStorage.setItem('recentFiles', JSON.stringify(updated));
       return updated;
     });
@@ -257,6 +269,16 @@ export const Sidebar = ({
         return;
       }
       await invoke('rename_file', { oldPath: item.path, newPath });
+      const oldPrefix = item.path + '/';
+      const newPrefix = newPath + '/';
+      const renamedPath = item.path;
+      mutateRecent(f => {
+        if (f.path === renamedPath) return { ...f, path: newPath, name: newName };
+        if (item.isDirectory && f.path.startsWith(oldPrefix)) {
+          return { ...f, path: newPrefix + f.path.slice(oldPrefix.length) };
+        }
+        return f;
+      });
       onRename?.(item.path, newPath, newName);
       onRefresh?.();
     } catch (err) {
@@ -280,6 +302,11 @@ export const Sidebar = ({
 
     try {
       await invoke('move_to_trash', { path: item.path });
+      const gone = item.path;
+      const dir = !!item.isDirectory;
+      mutateRecent(f => (f.path === gone || (dir && f.path.startsWith(gone + '/')) ? null : f));
+      // 交给 App 关掉对应标签：标签还活着的话，2 秒防抖自动保存会把刚进废纸篓的文件写回来
+      onDelete?.(gone, dir);
       onRefresh?.();
     } catch (err) {
       console.error('删除失败:', err);
