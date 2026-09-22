@@ -73,23 +73,27 @@ export const Sidebar = ({
   
   // 快速搜索：Cmd/Ctrl+K 切到搜索页并聚焦输入框
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [focusSearch, setFocusSearch] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setActiveTab('search');
-        // 输入框可能在本次渲染里才挂载（从 files 页切过来），等一帧再聚焦
-        requestAnimationFrame(() => {
-          const el = searchInputRef.current;
-          el?.focus();
-          el?.select();
-        });
+        setFocusSearch(true);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // 输入框可能在切到搜索页后才挂载，所以放在渲染提交后聚焦（不依赖 rAF）
+  useEffect(() => {
+    if (!focusSearch) return;
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+    setFocusSearch(false);
+  }, [focusSearch, activeTab]);
 
   // 当 refreshKey 变化时重新加载文件树
   useEffect(() => {
