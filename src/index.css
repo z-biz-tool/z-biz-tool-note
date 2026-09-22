@@ -2283,12 +2283,10 @@ body {
 }
 .welcome-recent-name {
   font-weight: 500;
+  flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-  flex-shrink: 0;
-  font-weight: 500;
 }
 .welcome-recent-path {
   color: var(--text-muted);
