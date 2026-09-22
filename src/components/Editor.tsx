@@ -148,6 +148,15 @@ export const Editor = ({
   const EDITOR_CACHE_LIMIT = 30;
   const mermaidCounterRef = useRef(0);
 
+  // useEditor 的配置只在首次创建时生效，扩展里捕获的回调会一直是第一帧的闭包
+  // （stale closure：onWikiLinkClick 里的 allFiles 永远不会更新，跳转只能找到首帧就存在的笔记）。
+  // 所以 WikiLink/Tag 通过 ref 转发，ref 每次渲染都刷新。
+  const wikiLinkClickRef = useRef(onWikiLinkClick);
+  wikiLinkClickRef.current = onWikiLinkClick;
+  const tagClickRef = useRef(onTagClick);
+  tagClickRef.current = onTagClick;
+
+
   // 滚动同步
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const isScrollSyncing = useRef(false);
@@ -218,13 +227,12 @@ export const Editor = ({
       Mermaid,
       WikiLink.configure({
         onNavigate: (href: string) => {
-          // 查找并打开目标笔记
-          if (onWikiLinkClick) onWikiLinkClick(href);
+          wikiLinkClickRef.current?.(href);
         },
       }),
       Tag.configure({
         onTagClick: (tag: string) => {
-          if (onTagClick) onTagClick(tag);
+          tagClickRef.current?.(tag);
         },
       }),
       BlockReference,
@@ -286,12 +294,14 @@ export const Editor = ({
         editor.view.updateState(cached);
       } else {
         // 新笔记：解析 markdown 并替换 doc
-        editor.commands.setContent(content, { contentType: 'markdown' });
+        // emitUpdate:false —— setContent 默认会触发 onUpdate，会被当成"用户编辑"，
+        // 导致刚打开的笔记立刻标成未保存并 2 秒后自动写盘（把 markdown 往返归一化后覆盖原文件）。
+        editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false });
       }
       noteIdRef.current = currentFilePath;
     } else if (content !== editor.getMarkdown()) {
-      // 同一笔记内容外部更新（罕见）
-      editor.commands.setContent(content, { contentType: 'markdown' });
+      // 同一笔记内容外部更新（罕见）：同上，程序性替换不应产生脏标记/自动保存
+      editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false });
     }
   }, [content, editor, currentFilePath]);
 

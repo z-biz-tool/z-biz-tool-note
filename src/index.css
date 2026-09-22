@@ -746,10 +746,14 @@ body {
   text-decoration: none;
   border-bottom: 1px dashed var(--accent-color);
   padding-bottom: 1px;
-  cursor: pointer;
+  cursor: text;
 }
 .wiki-link:hover {
   border-bottom-style: solid;
+}
+/* 纯文本 [[...]] 形态：普通点击留给定位光标，跳转是 Cmd/Ctrl+点击，所以不显示手型 */
+.wiki-link-plain {
+  cursor: text;
 }
 
 /* ===== Knowledge Graph Panel ===== */

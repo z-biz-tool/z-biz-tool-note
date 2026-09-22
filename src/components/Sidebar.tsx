@@ -40,6 +40,8 @@ function sanitizeSnippet(html: string): string {
 
 interface SidebarProps {
   isOpen: boolean;
+  /** 唯一的目录来源：App 打开/切换文件夹后由这里下发，Sidebar 不再自己存一份 */
+  currentDir: string;
   currentNote: Note | null;
   onSelectNote: (note: Note) => void;
   onOpenFile?: (path: string) => void;
@@ -60,13 +62,12 @@ interface SidebarProps {
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
-  isOpen, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
+  isOpen, currentDir, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
   const { listFiles, readFile, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
-  const [currentDir, setCurrentDir] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
@@ -75,14 +76,12 @@ export const Sidebar = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'file' | 'folder' | 'empty'; item?: FileItem } | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('recentFiles');
-    if (saved) {
-      setRecentFiles(JSON.parse(saved));
-    }
-    const savedDir = localStorage.getItem('currentDir');
-    if (savedDir) {
-      setCurrentDir(savedDir);
-      loadFileTree(savedDir);
+    try {
+      const saved = JSON.parse(localStorage.getItem('recentFiles') || '[]');
+      if (Array.isArray(saved)) setRecentFiles(saved);
+    } catch {
+      // 历史数据坏了就丢掉，不能让侧栏白屏
+      localStorage.removeItem('recentFiles');
     }
   }, []);
   
@@ -110,12 +109,14 @@ export const Sidebar = ({
     setFocusSearch(false);
   }, [focusSearch, activeTab]);
 
-  // 当 refreshKey 变化时重新加载文件树
+  // 换目录、外部刷新（refreshKey）都要重新拉树
   useEffect(() => {
     if (currentDir) {
       loadFileTree(currentDir);
+    } else {
+      setFileTree([]);
     }
-  }, [refreshKey]);
+  }, [currentDir, refreshKey]);
 
   const loadFileTree = async (dir: string) => {
     setLoading(true);
@@ -138,10 +139,8 @@ export const Sidebar = ({
   const handleFolderSelect = async () => {
     const result = await showOpenDialog();
     if (!result.canceled && result.filePath) {
-      setCurrentDir(result.filePath);
-      localStorage.setItem('currentDir', result.filePath);
+      // 只上报给 App，目录状态由 App 统一持有（否则侧栏和主窗口会各说各话）
       onOpenFolder(result.filePath);
-      loadFileTree(result.filePath);
     }
   };
 
@@ -417,7 +416,7 @@ export const Sidebar = ({
   if (!isOpen) {
     return (
       <div className="sidebar-collapsed">
-        <button className="toolbar-btn" onClick={() => onOpenFolder('')} title="打开文件夹（Cmd+Shift+O）">
+        <button className="toolbar-btn" onClick={handleFolderSelect} title="打开文件夹（Cmd+Shift+O）">
           <Home size={18} />
         </button>
         <button className="toolbar-btn" onClick={onNewNote} title="新建笔记">

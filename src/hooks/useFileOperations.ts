@@ -1,4 +1,5 @@
 import { electronAPI } from '../lib/electronAPI';
+import { prepareMarkdownForWrite } from '../lib/markdownWrite';
 import type { Note } from '../types';
 
 export const useFileOperations = () => {
@@ -15,7 +16,7 @@ export const useFileOperations = () => {
   };
 
   const writeFile = async (filePath: string, content: string) => {
-    return electronAPI.invoke('write-file', filePath, content);
+    return electronAPI.invoke('write-file', filePath, prepareMarkdownForWrite(filePath, content));
   };
 
   const showSaveDialog = async (defaultPath: string) => {

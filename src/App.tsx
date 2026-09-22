@@ -16,6 +16,7 @@ import { XlsxViewer } from './components/Viewers/XlsxViewer';
 import { BinaryViewer } from './components/Viewers/BinaryViewer';
 import type { FileKind } from './lib/fileTypes';
 import { isMarkdownPath } from './lib/fileTypes';
+import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { StatusBar } from './components/StatusBar';
 import { Outline } from './components/Outline';
@@ -943,6 +944,20 @@ const App = () => {
     }
   }, [readFile, readFileBinary, getFileMeta, openNote]);
 
+  // 编辑器里 Cmd+点击 [[链接]] → 按标题/文件名解析并打开（主窗格与分屏共用同一份逻辑）
+  const handleWikiLinkNavigate = useCallback((href: string) => {
+    const t = parseWikiLinkTarget(href);
+    if (!t) return;
+    const existing = openTabsRef.current.find(x => x.title === t);
+    if (existing) { setActiveTabId(existing.id); return; }
+    const m = allFiles.find(f => {
+      const fn = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
+      return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
+    });
+    if (m) handleOpenFile(m.path);
+    else showToast(`未找到笔记: ${t}`);
+  }, [allFiles, handleOpenFile, showToast]);
+
   const handleOpenFolder = useCallback((dirPath: string) => {
     if (dirPath) {
       setCurrentDir(dirPath);
@@ -1005,17 +1020,7 @@ const App = () => {
             editorRef={editorRefSplit}
             onActiveHeadingChange={handleSplitActiveHeadingChange}
             scrollSyncTarget={mainScrollRef}
-            onWikiLinkClick={(href: string) => {
-              const t = href.replace(/#.*$/, '').trim();
-              const existing = openTabsRef.current.find(x => x.title === t);
-              if (existing) { setActiveTabId(existing.id); return; }
-              const m = allFiles.find(f => {
-                const fn = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
-                return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
-              });
-              if (m) handleOpenFile(m.path);
-              else showToast(`未找到笔记: ${t}`);
-            }}
+            onWikiLinkClick={handleWikiLinkNavigate}
             onTagClick={(tag: string) => handleTagClick(tag)}
             documentWide={rightPanelWide}
           />
@@ -1043,17 +1048,7 @@ const App = () => {
             editorRef={editorRef}
             onActiveHeadingChange={handleActiveHeadingChange}
             scrollSyncTarget={splitScrollRef}
-            onWikiLinkClick={(href: string) => {
-              const t = href.replace(/#.*$/, '').trim();
-              const existing = openTabsRef.current.find(x => x.title === t);
-              if (existing) { setActiveTabId(existing.id); return; }
-              const m = allFiles.find(f => {
-                const fn = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
-                return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
-              });
-              if (m) handleOpenFile(m.path);
-              else showToast(`未找到笔记: ${t}`);
-            }}
+            onWikiLinkClick={handleWikiLinkNavigate}
             onTagClick={(tag: string) => handleTagClick(tag)}
           />
         </>
@@ -1452,6 +1447,7 @@ const App = () => {
     <div style={{ display: 'flex', height: '100vh', width: '100%', overflow: 'hidden' }}>
       <Sidebar
         isOpen={sidebarOpen}
+        currentDir={currentDir}
         currentNote={currentNote}
         onSelectNote={handleSelectNote}
         onOpenFile={handleOpenFile}
