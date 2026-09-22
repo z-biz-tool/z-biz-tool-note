@@ -71,22 +71,25 @@ export const Sidebar = ({
     }
   }, []);
   
-  // 快速搜索：支持在文件树中快速定位
-  const [searchFocus, setSearchFocus] = useState(false);
-  
+  // 快速搜索：Cmd/Ctrl+K 切到搜索页并聚焦输入框
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl+K 快速搜索文件
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !searchFocus) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        const searchInput = document.querySelector('.sidebar-search input');
-        searchInput?.focus();
-        setSearchFocus(true);
+        setActiveTab('search');
+        // 输入框可能在本次渲染里才挂载（从 files 页切过来），等一帧再聚焦
+        requestAnimationFrame(() => {
+          const el = searchInputRef.current;
+          el?.focus();
+          el?.select();
+        });
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [searchFocus]);
+  }, []);
 
   // 当 refreshKey 变化时重新加载文件树
   useEffect(() => {
@@ -120,7 +123,6 @@ export const Sidebar = ({
       localStorage.setItem('currentDir', result.filePath);
       onOpenFolder(result.filePath);
       loadFileTree(result.filePath);
-      setSearchFocus(false); // 重置快速搜索状态
     }
   };
 
@@ -535,6 +537,7 @@ export const Sidebar = ({
           >
             <Search size={14} style={{ color: 'var(--text-muted)' }} />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search in all notes..."
               value={searchQuery}
