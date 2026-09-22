@@ -15,6 +15,20 @@ import { invoke } from '@tauri-apps/api/core';
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
 const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
 
+const SEARCH_HISTORY_KEY = 'searchHistory';
+const SEARCH_HISTORY_MAX = 8;
+
+/** 历史来自 localStorage，任何脏数据（非数组、非字符串项）都在这里挡掉 */
+function readSearchHistory(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, SEARCH_HISTORY_MAX);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * 清理搜索 snippet 的 HTML：Rust 侧已转义 content，但保险起见再次白名单过滤
  * 仅保留 <mark> 标签（用于高亮），移除其它可能的 HTML/脚本。
@@ -295,6 +309,28 @@ export const Sidebar = ({
   /** 只认最后一次发出的搜索结果，避免慢的旧响应盖掉新结果 */
   const searchSeqRef = useRef(0);
 
+  // 最近搜索：只在搜到结果时记录，避免历史里全是打错词或无意义的前缀
+  const [searchHistory, setSearchHistory] = useState<string[]>(readSearchHistory);
+
+  const pushSearchHistory = useCallback((q: string) => {
+    const query = q.trim();
+    if (!query) return;
+    setSearchHistory(prev => {
+      const next = [query, ...prev.filter(x => x !== query)].slice(0, SEARCH_HISTORY_MAX);
+      try {
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        // 存储写满时只丢历史，不影响搜索
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSearchHistory = useCallback(() => {
+    setSearchHistory([]);
+    localStorage.removeItem(SEARCH_HISTORY_KEY);
+  }, []);
+
   const handleGlobalSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim() || !currentDir) {
@@ -319,6 +355,7 @@ export const Sidebar = ({
             snippet: m.snippet,
             line: m.line,
           })));
+          pushSearchHistory(query);
           return;
         }
 
@@ -332,6 +369,7 @@ export const Sidebar = ({
             snippet: m.preview || '',
             line: m.line || 0,
           })));
+          if (result.matches.length > 0) pushSearchHistory(query);
         } else {
           setSearchResults([]);
         }
@@ -379,10 +417,10 @@ export const Sidebar = ({
   if (!isOpen) {
     return (
       <div className="sidebar-collapsed">
-        <button className="toolbar-btn" onClick={() => onOpenFolder('')} title="Open Folder">
+        <button className="toolbar-btn" onClick={() => onOpenFolder('')} title="打开文件夹（Cmd+Shift+O）">
           <Home size={18} />
         </button>
-        <button className="toolbar-btn" onClick={onNewNote} title="New Note">
+        <button className="toolbar-btn" onClick={onNewNote} title="新建笔记">
           <Plus size={18} />
         </button>
       </div>
@@ -424,16 +462,16 @@ export const Sidebar = ({
           marginBottom: 12,
         }}
       >
-        <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="Files">
+        <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="文件树" aria-label="文件树">
           <Files size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} onClick={() => setActiveTab('recent')} title="Recent">
+        <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} onClick={() => setActiveTab('recent')} title="最近打开" aria-label="最近打开">
           <Clock size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')} title="Search">
+        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')} title="全文搜索（Cmd+K）" aria-label="全文搜索">
           <Search size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'tags' ? 'active' : ''}`} onClick={() => setActiveTab('tags')} title="Tags">
+        <button className={`sidebar-tab ${activeTab === 'tags' ? 'active' : ''}`} onClick={() => setActiveTab('tags')} title="标签" aria-label="标签">
           <Hash size={14} />
         </button>
       </div>
@@ -452,11 +490,11 @@ export const Sidebar = ({
               gap: 8,
             }}
           >
-            <button className="toolbar-btn" onClick={handleFolderSelect} title="Open Folder" style={{ width: 28, height: 28 }}>
+            <button className="toolbar-btn" onClick={handleFolderSelect} title="打开文件夹（Cmd+Shift+O）" style={{ width: 28, height: 28 }}>
               <Folder size={14} />
             </button>
             <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-              {currentDir ? currentDir.split('/').pop() : 'No folder'}
+              {currentDir ? currentDir.split('/').pop() : '未打开文件夹'}
             </span>
           </div>
           <div 
@@ -470,12 +508,12 @@ export const Sidebar = ({
             }}
           >
             {loading ? (
-              <div className="sidebar-empty">Loading...</div>
+              <div className="sidebar-empty">正在读取目录…</div>
             ) : fileTree.length === 0 ? (
               <div className="sidebar-empty">
-                <p>No files found</p>
+                <p>这个文件夹里还没有笔记</p>
                 <button className="toolbar-btn" onClick={handleFolderSelect} style={{ marginTop: 8, padding: '4px 12px', width: 'auto', fontSize: 13 }}>
-                  Open Folder
+                  打开文件夹
                 </button>
               </div>
             ) : (
@@ -495,7 +533,7 @@ export const Sidebar = ({
           }}
         >
           {recentFiles.length === 0 ? (
-            <div className="sidebar-empty">No recent files</div>
+            <div className="sidebar-empty">还没有最近打开的笔记</div>
           ) : (
             recentFiles.map(file => (
               <button
@@ -542,7 +580,7 @@ export const Sidebar = ({
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search in all notes..."
+              placeholder="搜索全部笔记…"
               value={searchQuery}
               onChange={(e) => handleGlobalSearch(e.target.value)}
               autoFocus
@@ -564,9 +602,35 @@ export const Sidebar = ({
             }}
           >
             {!searchQuery.trim() ? (
-              <div className="sidebar-empty">Type to search across all notes</div>
+              <div className="sidebar-empty">
+                <p>输入关键词搜索全部笔记</p>
+                {searchHistory.length > 0 && (
+                  <div className="search-history">
+                    <div className="search-history-head">
+                      <span>最近搜索</span>
+                      <button className="search-history-clear" onClick={clearSearchHistory}>清空</button>
+                    </div>
+                    <div className="search-history-chips">
+                      {searchHistory.map(h => (
+                        <button
+                          key={h}
+                          className="search-history-chip"
+                          onClick={() => handleGlobalSearch(h)}
+                          title={`再次搜索 ${h}`}
+                        >
+                          {h}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="sidebar-empty-hint"><kbd>Cmd</kbd><kbd>K</kbd> 直接跳到搜索框</p>
+              </div>
             ) : searchResults.length === 0 ? (
-              <div className="sidebar-empty">No results found</div>
+              <div className="sidebar-empty">
+                <p>没有匹配「{searchQuery.trim()}」的笔记</p>
+                <p className="sidebar-empty-hint">换个更短的关键词，或在 设置 → 搜索 里对齐一次索引</p>
+              </div>
             ) : (
               searchResults.map((result, i) => (
                 <button
