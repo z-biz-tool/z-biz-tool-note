@@ -24,51 +24,124 @@ async function loadDialog() {
   }
 }
 
-// 浏览器模式下的演示文件
-const demoFiles = [
-  { name: 'Welcome.md', isDirectory: false, isFile: true, path: 'demo/Welcome.md' },
-  { name: 'Getting Started.md', isDirectory: false, isFile: true, path: 'demo/Getting Started.md' },
-  {
-    name: 'Examples', isDirectory: true, isFile: false, path: 'demo/Examples',
-    children: [
-      { name: 'Code.md', isDirectory: false, isFile: true, path: 'demo/Examples/Code.md' },
-      { name: 'Tables.md', isDirectory: false, isFile: true, path: 'demo/Examples/Tables.md' },
-    ],
-  },
-];
-
 /**
  * 浏览器演示工作区：没有 Tauri 后端时也能把整棵 App 跑起来
- * （文件树 / 编辑器 / 标签页 / 搜索 / 弹窗都能在浏览器里实测）
+ * （文件树 / 编辑器 / 标签页 / 搜索 / 弹窗 / 重命名 / 删除都能在浏览器里实测）
+ *
+ * 路径表存在 demoFs、正文存在 note-<path>，这样"新建/改名/删除"才真的改变工作区形态；
+ * 之前是一份写死的文件清单，Sidebar 的这几个命令在浏览器里既跑不了也没法验证。
  */
 const DEMO_DIR = 'demo';
-const demoContents: Record<string, string> = {
+const DEMO_FS_KEY = 'demoFs';
+
+interface DemoFs { files: string[]; dirs: string[] }
+
+const demoSeedContents: Record<string, string> = {
   'demo/Welcome.md': '# Welcome\n\n这是浏览器演示区，用于在没有 Tauri 后端时验证界面与交互。\n\n## 目录\n\n- [[Getting Started]]\n- [[Code]]\n- [[Tables]]\n\n## 待办\n\n- [ ] 试试 Cmd+K 跳到搜索框\n- [ ] 试试 Cmd+, 打开设置\n',
   'demo/Getting Started.md': '# Getting Started\n\n按 Cmd+Shift+P 打开命令面板，输入「设置」可以直接进设置页。\n\n正文里可以引用 [[Welcome]]，反链面板会把它认出来。\n\n标签：demo\n',
   'demo/Examples/Code.md': '# Code\n\n行内代码用反引号包裹即可，代码块三反引号起头。\n\n    export const greet = (name: string) => `你好，${name}`;\n',
   'demo/Examples/Tables.md': '# Tables\n\n| 场景 | 命令 | 说明 |\n| --- | --- | --- |\n| 搜索 | Cmd+K | 跳到侧栏搜索框 |\n| 设置 | Cmd+, | 打开设置弹窗 |\n',
 };
 
+function demoFs(): DemoFs {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEMO_FS_KEY) || 'null');
+    if (saved && Array.isArray(saved.files) && Array.isArray(saved.dirs)) return saved as DemoFs;
+  } catch {}
+  const seed: DemoFs = { files: Object.keys(demoSeedContents), dirs: [`${DEMO_DIR}/Examples`] };
+  localStorage.setItem(DEMO_FS_KEY, JSON.stringify(seed));
+  return seed;
+}
 
-/** 演示工作区的列目录：根目录给全部，子目录只给自己的 children */
-function demoFilesIn(dir: unknown) {
-  const folder = demoFiles.find(f => f.path === dir);
-  if (folder?.children) return folder.children;
-  return !dir || dir === DEMO_DIR ? demoFiles : [];
+function saveDemoFs(fs: DemoFs) {
+  localStorage.setItem(DEMO_FS_KEY, JSON.stringify(fs));
+}
+
+const demoContentOf = (path: string) =>
+  localStorage.getItem(`note-${path}`) ?? demoSeedContents[path] ?? '';
+
+const demoIsDir = (path: string) => {
+  const fs = demoFs();
+  return fs.dirs.includes(path) || fs.files.some(f => f.startsWith(`${path}/`));
+};
+
+/** 单层列目录：目录不带 children，与 Rust list_dir 一致（Sidebar 展开时按需再拉） */
+function demoFilesIn(dir: unknown): any[] {
+  const root = !dir || dir === DEMO_DIR ? DEMO_DIR : String(dir);
+  const prefix = `${root}/`;
+  const out = new Map<string, any>();
+  const fs = demoFs();
+  for (const p of fs.files) {
+    if (!p.startsWith(prefix)) continue;
+    const rest = p.slice(prefix.length);
+    if (!rest) continue;
+    const slash = rest.indexOf('/');
+    if (slash < 0) out.set(rest, { name: rest, path: p, isDirectory: false, isFile: true });
+    else {
+      const name = rest.slice(0, slash);
+      if (!out.has(name)) out.set(name, { name, path: `${prefix}${name}`, isDirectory: true, isFile: false });
+    }
+  }
+  for (const d of fs.dirs) {
+    if (!d.startsWith(prefix)) continue;
+    const name = d.slice(prefix.length).split('/')[0];
+    if (name && !out.has(name)) out.set(name, { name, path: `${prefix}${name}`, isDirectory: true, isFile: false });
+  }
+  return [...out.values()];
+}
+
+/** 递归列目录：App 的 allFiles（双链解析靠它）会顺着 children 走到底 */
+function demoFilesRecursive(dir: unknown): any[] {
+  return demoFilesIn(dir).map(item =>
+    item.isDirectory ? { ...item, children: demoFilesRecursive(item.path) } : item
+  );
+}
+
+/** 改名：路径表和正文都要跟着搬，否则点开改名后的笔记是空的 */
+function demoRename(oldPath: string, newPath: string) {
+  const fs = demoFs();
+  if (demoIsDir(oldPath)) {
+    const re = (p: string) => (p === oldPath ? newPath : p.startsWith(`${oldPath}/`) ? newPath + p.slice(oldPath.length) : p);
+    // 子文件的正文可能只挂在种子表的老路径上，改名后必须先按老路径读出来再挂到新路径
+    for (const p of fs.files.filter(p => p.startsWith(`${oldPath}/`))) {
+      localStorage.setItem(`note-${re(p)}`, demoContentOf(p));
+      localStorage.removeItem(`note-${p}`);
+    }
+    fs.files = fs.files.map(re);
+    fs.dirs = fs.dirs.map(re);
+  } else {
+    fs.files = fs.files.map(p => (p === oldPath ? newPath : p));
+    localStorage.setItem(`note-${newPath}`, demoContentOf(oldPath));
+    localStorage.removeItem(`note-${oldPath}`);
+  }
+  saveDemoFs(fs);
+}
+
+/** 移到废纸篓：路径表和正文一起摘掉，之后在同一位置新建笔记才不会被旧正文污染 */
+function demoTrash(path: string) {
+  const fs = demoFs();
+  const gone = (p: string) => !(p === path || p.startsWith(`${path}/`));
+  for (const p of fs.files.filter(p => !gone(p))) localStorage.removeItem(`note-${p}`);
+  fs.files = fs.files.filter(gone);
+  fs.dirs = fs.dirs.filter(gone);
+  saveDemoFs(fs);
 }
 
 /** 与 Rust read_all_notes 同构的摘要，让标签 / 图谱 / 反链在浏览器里也能验证 */
 function demoNoteSummaries() {
-  return Object.entries(demoContents).map(([filePath, content]) => ({
-    filePath,
-    content,
-    title: content.match(/^#\s+(.+)$/m)?.[1] ?? filePath.split('/').pop()?.replace(/\.md$/, '') ?? filePath,
-    tags: (content.match(/^tags:\s*\[(.*?)\]/m)?.[1] ?? '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean),
-    links: [...content.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].trim()),
-  }));
+  return demoFs().files.map(filePath => {
+    const content = demoContentOf(filePath);
+    return {
+      filePath,
+      content,
+      title: content.match(/^#\s+(.+)$/m)?.[1] ?? filePath.split('/').pop()?.replace(/\.md$/, '') ?? filePath,
+      tags: (content.match(/^tags:\s*\[(.*?)\]/m)?.[1] ?? '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean),
+      links: [...content.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].trim()),
+    };
+  });
 }
 
 /** 演示工作区的暴力搜索，产出与 Rust 一致的结构（preview 里用 <mark> 包命中词） */
@@ -76,7 +149,8 @@ function demoSearch(query: unknown) {
   const q = String(query ?? '').trim().toLowerCase();
   if (!q) return [];
   const out: { filePath: string; line: number; preview: string }[] = [];
-  for (const [filePath, content] of Object.entries(demoContents)) {
+  for (const filePath of demoFs().files) {
+    const content = demoContentOf(filePath);
     content.split('\n').forEach((line, i) => {
       if (out.length >= 50) return;
       const at = line.toLowerCase().indexOf(q);
@@ -141,22 +215,54 @@ export const electronAPI = {
   isTauri,
   isElectron: false, // 向后兼容
 
-  invoke: async (channel: string, ...args: any[]) => {
+  // 返回类型显式写成 Promise<any>：各通道返回结构不同（file-exists 甚至是裸 boolean），
+  // 让 TS 推导出联合类型会让每个调用点都要重新收窄，反而丢掉检查能力。
+  invoke: async (channel: string, ...args: any[]): Promise<any> => {
     if (!isTauri) {
       // 浏览器回退
       switch (channel) {
         case 'read-file':
-          return {
-            success: true,
-            content: localStorage.getItem(`note-${args[0]}`) ?? demoContents[args[0] as string] ?? '',
-            filePath: args[0],
-          };
+          return { success: true, content: demoContentOf(String(args[0])), filePath: args[0] };
         case 'read-file-binary':
           return { success: false, error: '浏览器模式不可用' };
         case 'get-file-meta':
           return { success: true, size: 0, modified: new Date().toISOString(), mime: 'application/octet-stream', filePath: args[0] };
-        case 'write-file':
-          localStorage.setItem(`note-${args[0]}`, args[1]);
+        case 'write-file': {
+          const path = String(args[0]);
+          localStorage.setItem(`note-${path}`, args[1]);
+          // 另存为/新建走的就是这条路径，路径表里没有的话树上看不到
+          const fs = demoFs();
+          if (!fs.files.includes(path)) {
+            fs.files.push(path);
+            saveDemoFs(fs);
+          }
+          return { success: true };
+        }
+        case 'file-exists': {
+          const p = String(args[0]);
+          const fs = demoFs();
+          return fs.files.includes(p) || fs.dirs.includes(p);
+        }
+        case 'ensure-dir': {
+          const fs = demoFs();
+          const dir = String(args[0]);
+          if (!fs.dirs.includes(dir)) fs.dirs.push(dir);
+          saveDemoFs(fs);
+          return { success: true };
+        }
+        case 'write-text-file': {
+          const fs = demoFs();
+          const path = String(args[0]);
+          if (!fs.files.includes(path)) fs.files.push(path);
+          saveDemoFs(fs);
+          localStorage.setItem(`note-${path}`, args[1]);
+          return { success: true };
+        }
+        case 'rename-file':
+          demoRename(String(args[0]), String(args[1]));
+          return { success: true };
+        case 'move-to-trash':
+          demoTrash(String(args[0]));
           return { success: true };
         case 'show-save-dialog': {
           const name = prompt('Save as (filename):', args[0]?.split('/').pop() || 'untitled.md');
@@ -166,8 +272,9 @@ export const electronAPI = {
           // 浏览器没有原生目录选择器，直接给出演示工作区
           return { canceled: false, filePath: DEMO_DIR };
         case 'list-files':
-        case 'list-files-recursive':
           return { success: true, files: demoFilesIn(args[0]) };
+        case 'list-files-recursive':
+          return { success: true, files: demoFilesRecursive(args[0]) };
         case 'export-html': {
           const content = args[0] as string;
           const fullHtml = generateHtmlFromContent(content);
@@ -324,6 +431,25 @@ export const electronAPI = {
             preview: bl.preview,
           }));
           return { success: true, backlinks };
+        }
+        // 文件树mutations：走桥层而不是组件里裸调 invoke，浏览器模式才有同一条链路可测
+        case 'file-exists':
+          return await invoke<boolean>('file_exists', { path: args[0] });
+        case 'rename-file': {
+          await invoke('rename_file', { oldPath: args[0], newPath: args[1] });
+          return { success: true };
+        }
+        case 'move-to-trash': {
+          await invoke('move_to_trash', { path: args[0] });
+          return { success: true };
+        }
+        case 'ensure-dir': {
+          await invoke('ensure_dir', { path: args[0] });
+          return { success: true };
+        }
+        case 'write-text-file': {
+          await invoke('write_text_file', { path: args[0], content: args[1] });
+          return { success: true };
         }
         default:
           return { success: false, error: `未知通道: ${channel}` };

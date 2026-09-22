@@ -493,24 +493,32 @@ const App = () => {
     if (dir) void refreshKnowledgeIndex(dir);
   }, [refreshKnowledgeIndex]);
 
-  // 文件重命名时更新已打开的标签和分屏
-  const handleFileRenamed = useCallback((oldPath: string, newPath: string, newName: string) => {
-    // 更新已打开的标签
+  // 重命名后要把所有指向旧路径的状态一起搬走：标签、分屏、激活标签。
+  // 目录改名必须连带里面的文件（含正在编辑的那篇）——否则自动保存按老路径写盘，
+  // 会把刚改掉的目录和文件重新造出来，磁盘上变成"改名没生效 + 多出一份副本"。
+  const handleFileRenamed = useCallback((oldPath: string, newPath: string, newName: string, isDirectory: boolean) => {
+    const reroot = (p?: string) => {
+      if (!p) return p;
+      if (p === oldPath) return newPath;
+      return isDirectory && p.startsWith(`${oldPath}/`) ? newPath + p.slice(oldPath.length) : p;
+    };
+    // 标签标题按 file.name 原样带扩展名（Sidebar 开标签就是这样），改名后同理，
+    // 不能再剥掉 .md，否则同一个标签会和其余标签长得不一样
+    const titleOf = (p: string, fallback: string) => p.split('/').pop() || fallback;
     setOpenTabs(prev => prev.map(tab => {
-      if (tab.filePath === oldPath) {
-        return { ...tab, id: newPath, filePath: newPath, title: newName.replace(/\.md$/, '') };
-      }
-      return tab;
+      const filePath = reroot(tab.filePath);
+      if (!filePath || filePath === tab.filePath) return tab;
+      return { ...tab, id: filePath, filePath, title: titleOf(filePath, filePath === newPath ? newName : tab.title) };
     }));
-    // 更新分屏笔记
     setSplitNote(prev => {
-      if (prev && prev.filePath === oldPath) {
-        return { ...prev, id: newPath, filePath: newPath, title: newName.replace(/\.md$/, '') };
-      }
-      return prev;
+      const filePath = reroot(prev?.filePath);
+      if (!prev || !filePath || filePath === prev.filePath) return prev;
+      return { ...prev, id: filePath, filePath, title: titleOf(filePath, filePath === newPath ? newName : prev.title) };
     });
     // 标签 id 就是路径：改名后 activeTabId 若还指旧路径，currentNote 查不到 → 编辑区直接空白
-    if (activeTabIdRef.current === oldPath) setActiveTabId(newPath);
+    const active = activeTabIdRef.current;
+    const nextActive = reroot(active ?? undefined);
+    if (nextActive && active && nextActive !== active) setActiveTabId(nextActive);
     refreshFileTree();
     refreshNoteIndex();
   }, [refreshFileTree, refreshNoteIndex]);

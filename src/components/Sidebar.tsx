@@ -9,11 +9,17 @@ import { electronAPI } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { FolderContextMenu } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
-import { invoke } from '@tauri-apps/api/core';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
 const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
+
+// 桥层把 Rust 报错包成 {success:false,error} 而不是抛异常，这里还原成异常，
+// 好让调用点的 try/catch 仍能给出「重命名失败 / 删除失败」的提示。
+function must(r: any) {
+  if (r && r.success === false) throw new Error(r.error || '操作失败');
+  return r;
+}
 
 const SEARCH_HISTORY_KEY = 'searchHistory';
 const SEARCH_HISTORY_MAX = 8;
@@ -49,7 +55,7 @@ interface SidebarProps {
   onOpenFolder: (dirPath: string) => void;
   onRefresh?: () => void;
   refreshKey?: number;
-  onRename?: (oldPath: string, newPath: string, newName: string) => void;
+  onRename?: (oldPath: string, newPath: string, newName: string, isDirectory: boolean) => void;
   /** 文件/文件夹进了废纸篓：App 要关掉指向它的标签，否则自动保存会把删掉的文件写回来 */
   onDelete?: (path: string, isDirectory: boolean) => void;
   tags?: Tag[];
@@ -222,11 +228,11 @@ export const Sidebar = ({
     if (!parentDir) return;
     let fileName = 'Untitled.md';
     let counter = 1;
-    while (await invoke<boolean>('file_exists', { path: pathJoin(parentDir, fileName) })) {
+    while (await electronAPI.invoke('file-exists', pathJoin(parentDir, fileName))) {
       fileName = `Untitled ${counter++}.md`;
     }
     const filePath = pathJoin(parentDir, fileName);
-    await invoke('write_text_file', { path: filePath, content: '# Untitled\n\nStart writing...' });
+    must(await electronAPI.invoke('write-text-file', filePath, '# Untitled\n\nStart writing...'));
     loadFileTree(currentDir);
     onRefresh?.();
     setContextMenu(null);
@@ -243,11 +249,11 @@ export const Sidebar = ({
     if (!parentDir) return;
     let folderName = 'New Folder';
     let counter = 1;
-    while (await invoke<boolean>('file_exists', { path: pathJoin(parentDir, folderName) })) {
+    while (await electronAPI.invoke('file-exists', pathJoin(parentDir, folderName))) {
       folderName = `New Folder ${counter++}`;
     }
     const folderPath = pathJoin(parentDir, folderName);
-    await invoke('ensure_dir', { path: folderPath });
+    must(await electronAPI.invoke('ensure-dir', folderPath));
     loadFileTree(currentDir);
     onRefresh?.();
     setContextMenu(null);
@@ -257,18 +263,29 @@ export const Sidebar = ({
     const item = contextMenu?.item;
     if (!item) return;
     
-    const newName = prompt('输入新名称:', item.name);
+    const input = prompt('输入新名称:', item.name);
+    if (input === null) return;
+    let newName = input.trim();
     if (!newName || newName === item.name) return;
-    
+    if (/[/\\]/.test(newName) || /^\.+$/.test(newName)) {
+      alert('名称不能包含 / 或 \\，也不能只有点');
+      return;
+    }
+    // 树里展示的是去掉扩展名的名字，用户照着输入 "Guide" 时要把原扩展名补回来，
+    // 否则落盘成无扩展名文件、被笔记列表过滤掉，看起来就像数据丢了
+    const ext = pathExtname(item.path);
+    if (ext && !pathExtname(newName)) newName += ext;
+    if (newName === item.name) return;
+
     const parentDir = pathDirname(item.path);
     const newPath = pathJoin(parentDir, newName);
     
     try {
-      if (await invoke('file_exists', { path: newPath })) {
+      if (await electronAPI.invoke('file-exists', newPath)) {
         alert('该名称已存在');
         return;
       }
-      await invoke('rename_file', { oldPath: item.path, newPath });
+      must(await electronAPI.invoke('rename-file', item.path, newPath));
       const oldPrefix = item.path + '/';
       const newPrefix = newPath + '/';
       const renamedPath = item.path;
@@ -279,7 +296,7 @@ export const Sidebar = ({
         }
         return f;
       });
-      onRename?.(item.path, newPath, newName);
+      onRename?.(item.path, newPath, newName, !!item.isDirectory);
       onRefresh?.();
     } catch (err) {
       console.error('重命名失败:', err);
@@ -301,7 +318,7 @@ export const Sidebar = ({
     if (!window.confirm(msg)) return;
 
     try {
-      await invoke('move_to_trash', { path: item.path });
+      must(await electronAPI.invoke('move-to-trash', item.path));
       const gone = item.path;
       const dir = !!item.isDirectory;
       mutateRecent(f => (f.path === gone || (dir && f.path.startsWith(gone + '/')) ? null : f));
