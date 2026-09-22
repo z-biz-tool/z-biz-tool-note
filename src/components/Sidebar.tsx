@@ -645,17 +645,17 @@ export const Sidebar = ({
         }}
       >
         {onCreateDaily && (
-          <button className="toolbar-btn" onClick={onCreateDaily} title="Today's Daily Note">
+          <button className="toolbar-btn" onClick={onCreateDaily} title="今日日记（Cmd+Shift+D）">
             <Calendar size={16} />
           </button>
         )}
         {onOpenAI && (
-          <button className="toolbar-btn" onClick={onOpenAI} title="AI Assistant">
+          <button className="toolbar-btn" onClick={onOpenAI} title="AI 助手（Cmd+J）">
             <Sparkles size={16} />
           </button>
         )}
         {onOpenSettings && (
-          <button className="toolbar-btn" onClick={onOpenSettings} title="Settings">
+          <button className="toolbar-btn" onClick={onOpenSettings} title="设置（Cmd+,）">
             <Settings size={16} />
           </button>
         )}

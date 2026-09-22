@@ -3,43 +3,43 @@ import type { Template } from '../types';
 export const BUILTIN_TEMPLATES: Template[] = [
   {
     id: 'tpl-daily',
-    name: 'Daily Journal',
+    name: '日常日志',
     builtin: true,
     content: `# {{date}}
 
-## Plan
+## 今日计划
 - [ ]
 
-## Notes
+## 随手记
 
-## Reflection
+## 复盘
 
-## Tomorrow
+## 明天
 - [ ]
 `,
   },
   {
     id: 'tpl-meeting',
-    name: 'Meeting Notes',
+    name: '会议记录',
     builtin: true,
     content: `# {{title}}
 
-**Date:** {{date}}
-**Attendees:**
+**日期：** {{date}} {{time}}
+**参与人：**
 
-## Agenda
+## 议题
 -
 
-## Notes
+## 记录
 -
 
-## Action Items
+## 待办
 - [ ]
 `,
   },
   {
     id: 'tpl-todo',
-    name: 'Task List',
+    name: '任务清单',
     builtin: true,
     content: `# {{title}}
 
@@ -50,25 +50,22 @@ export const BUILTIN_TEMPLATES: Template[] = [
   },
   {
     id: 'tpl-knowledge',
-    name: 'Knowledge Card',
+    name: '知识卡片',
     builtin: true,
     content: `# {{title}}
 
-> One-line summary.
+> 一句话结论。
 
-## Why
-
-## What
-
-## How
-
-## References
-- 
+## 为什么
+## 是什么
+## 怎么用
+## 参考资料
+-
 `,
   },
 ];
 
-export function applyTemplate(content: string, title: string = 'Untitled'): string {
+export function applyTemplate(content: string, title: string = '未命名'): string {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const timeStr = now.toTimeString().slice(0, 5);

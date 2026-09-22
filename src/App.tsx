@@ -766,6 +766,10 @@ const App = () => {
       } else if (cmd && e.key === 'j') {
         e.preventDefault();
         setShowAIPanel(prev => !prev);
+      } else if (cmd && e.key === ',') {
+        // macOS 惯例：Cmd+, 打开设置
+        e.preventDefault();
+        setShowSettings(true);
       } else if (cmd && e.shiftKey && e.key === 'D') {
         // 每日笔记移至 Cmd+Shift+D（Cmd+D 让给多光标）
         e.preventDefault();
@@ -1389,7 +1393,7 @@ const App = () => {
     { id: 'toggle-ai', title: '切换 AI 助手', shortcut: 'Cmd+J', category: 'AI', action: () => setShowAIPanel(prev => !prev) },
     { id: 'toggle-find', title: '查找与替换', shortcut: 'Cmd+F', category: '编辑', action: () => setShowFindReplace(true) },
     { id: 'quick-switch', title: '快速切换文件', shortcut: 'Cmd+P', category: '跳转', action: () => setShowQuickSwitcher(true) },
-    { id: 'open-settings', title: '打开设置', category: '设置', action: () => setShowSettings(true) },
+    { id: 'open-settings', title: '打开设置', shortcut: 'Cmd+,', category: '设置', action: () => setShowSettings(true) },
     { id: 'welcome-guide', title: '打开新手引导', category: '设置', action: openWelcomeGuide },
   ], [handleNewNote, handleSave, handleSaveAs, handleCreateDaily, handleOpenFolderDialog, handleExportHtml, handleExportPdf, cycleTheme, closeTab, switchTab, toggleSplit, openWelcomeGuide]);
 
@@ -1785,10 +1789,11 @@ const App = () => {
           aiConfig={aiConfig}
           templates={templates}
           config={config}
+          currentDir={currentDir}
           onSaveAI={(cfg) => {
             setAIConfig(cfg);
             localStorage.setItem('aiConfig', JSON.stringify(cfg));
-            showToast(cfg.enabled ? 'AI enabled' : 'AI disabled');
+            showToast(cfg.enabled ? 'AI 助手已启用' : 'AI 助手已关闭');
           }}
           onSaveTemplates={(tpls) => {
             setTemplates(tpls);
