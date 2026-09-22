@@ -87,6 +87,11 @@ export function kindOf(filename: string): FileKind {
   return EXT_MAP[ext] ?? 'binary';
 }
 
+/** 是否走 markdown 通道（.md / .markdown）——索引与知识图谱只收这类文件 */
+export function isMarkdownPath(filename: string): boolean {
+  return kindOf(filename) === 'markdown';
+}
+
 export function codeLangOf(filename: string): string {
   const ext = extOf(filename);
   return CODE_LANG_MAP[ext] ?? 'plaintext';

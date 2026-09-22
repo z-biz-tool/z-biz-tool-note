@@ -6,6 +6,7 @@ import {
 import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
+import { searchNotes } from '../lib/searchIndex';
 import { FolderContextMenu } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { invoke } from '@tauri-apps/api/core';
@@ -291,7 +292,8 @@ export const Sidebar = ({
 
   // 搜索 debounce + 取消令牌（避免前次响应覆盖后次结果）
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchAbortRef = useRef<AbortController | null>(null);
+  /** 只认最后一次发出的搜索结果，避免慢的旧响应盖掉新结果 */
+  const searchSeqRef = useRef(0);
 
   const handleGlobalSearch = async (query: string) => {
     setSearchQuery(query);
@@ -300,22 +302,16 @@ export const Sidebar = ({
       return;
     }
     // 取消前次未完成的搜索
-    if (searchAbortRef.current) searchAbortRef.current.abort();
-    searchAbortRef.current = new AbortController();
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
 
     searchDebounceRef.current = setTimeout(async () => {
+      const seq = ++searchSeqRef.current;
       try {
-        // 优先走 FTS5 索引搜索；索引不可用时降级为暴力搜索
-        const indexed = await invoke<Array<{
-          file_path: string;
-          title: string;
-          line: number;
-          snippet: string;
-          score: number;
-        }>>('search_notes', { query, limit: 100 }).catch(() => null);
+        // 优先走 FTS5 索引搜索；索引为空或不可用时降级为全盘扫描
+        const indexed = await searchNotes(query, 100);
 
-        if (indexed) {
+        if (indexed && indexed.length > 0) {
+          if (seq !== searchSeqRef.current) return;
           setSearchResults(indexed.map(m => ({
             filePath: m.file_path,
             fileName: m.file_path.split('/').pop() || m.file_path,
@@ -328,6 +324,7 @@ export const Sidebar = ({
 
         // 降级路径
         const result = await electronAPI.invoke('search-in-files', currentDir, query);
+        if (seq !== searchSeqRef.current) return;
         if (result.success && result.matches) {
           setSearchResults(result.matches.map((m: any) => ({
             filePath: m.filePath,
@@ -335,6 +332,8 @@ export const Sidebar = ({
             snippet: m.preview || '',
             line: m.line || 0,
           })));
+        } else {
+          setSearchResults([]);
         }
       } catch (e) {
         if ((e as any)?.name !== 'AbortError') {

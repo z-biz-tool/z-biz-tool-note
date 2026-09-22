@@ -1421,6 +1421,7 @@ pub fn index_upsert_note(
     path: String,
     index: State<'_, IndexStore>,
 ) -> Result<(), String> {
+    validate_path(&path)?;
     let content = fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
     let title = ext::extract_title(&content);
     let tags = ext::extract_tags(&content).join(",");
@@ -1444,6 +1445,7 @@ pub fn index_delete_note(
     path: String,
     index: State<'_, IndexStore>,
 ) -> Result<(), String> {
+    validate_path(&path)?;
     index.delete_note(&path)
 }
 

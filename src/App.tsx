@@ -15,6 +15,8 @@ import { DocxViewer } from './components/Viewers/DocxViewer';
 import { XlsxViewer } from './components/Viewers/XlsxViewer';
 import { BinaryViewer } from './components/Viewers/BinaryViewer';
 import type { FileKind } from './lib/fileTypes';
+import { isMarkdownPath } from './lib/fileTypes';
+import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { StatusBar } from './components/StatusBar';
 import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
@@ -582,19 +584,37 @@ const App = () => {
   // 启动 notify watcher（监听 currentDir 整个目录树）
   useFileWatcher({
     dir: currentDir || null,
-    onChanged: handleExternalChange,
+    onChanged: (filePath: string) => {
+      handleExternalChange(filePath);
+      // 外部改过的文件内容变了，索引也得跟着重读（后端自己读盘拿 mtime）
+      if (isMarkdownPath(filePath)) void indexNote(filePath);
+    },
     onRemoved: (filePath: string) => {
       const cur = openTabsRef.current.find(t => t.id === activeTabIdRef.current);
       if (cur?.filePath === filePath || splitNoteRef.current?.filePath === filePath) {
         showToast('文件已被外部删除');
       }
+      if (isMarkdownPath(filePath)) void unindexNote(filePath);
     },
-    onCreated: () => {
+    onCreated: (filePath: string) => {
       // 文件创建：触发一次文件树刷新（轻量）
       // 用 currentDirRef 避免闭包旧值（用户切换目录后回调里拿到的应是当前目录）
       refreshFileList(currentDirRef.current);
+      if (isMarkdownPath(filePath)) void indexNote(filePath);
     },
   });
+
+  // 打开目录时对齐 FTS 索引：外部编辑器/云同步写进来的文件不走 write_file，
+  // 不主动扫一遍的话搜索会一直漏掉它们（rebuild 按 mtime 增量，重复调用几乎零成本）
+  useEffect(() => {
+    const dir = currentDir;
+    if (!dir) return;
+    let cancelled = false;
+    void rebuildIndex(dir).then(status => {
+      if (!cancelled && status) console.log(`[index] ${dir}: ${status.indexed}/${status.total} 篇已索引`);
+    });
+    return () => { cancelled = true; };
+  }, [currentDir]);
 
   // 笔记更新事件：增量更新知识图谱（取代每次保存后全量 read-all-notes）
   useNoteUpdated(useCallback((summary) => {
