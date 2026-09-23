@@ -6,7 +6,13 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { sanitizeExport } from './sanitize';
 import { promptDialog } from './dialogs';
 import { isMarkdownPath, kindOf } from './fileTypes';
-import { extractTagsSmart, extractTitle } from './frontmatter';
+import { extractTagsSmart, extractTitle, stripFrontmatter } from './frontmatter';
+import { Marked } from 'marked';
+
+// 不能用全局 marked：@tiptap/markdown 在初始化时对这个共享实例 marked.use(...) 注册了自己的
+// taskList 等 tokenizer，直接 marked.parse('- [x] 完成') 实测抛
+// `Token with "taskList" type was not found`。开一个不受影响的实例。
+const exportMarked = new Marked({ gfm: true, breaks: true });
 
 // 检测是否运行在 Tauri 环境
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -367,25 +373,25 @@ function normalizeFileEntry(entry: any): any {
 
 // 将 Markdown 内容转换为完整 HTML 文档
 function generateHtmlFromContent(content: string): string {
-  const htmlContent = content.split('\n').map(line => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('### ')) return `<h3>${escapeHtml(trimmed.slice(4))}</h3>`;
-    if (trimmed.startsWith('## ')) return `<h2>${escapeHtml(trimmed.slice(3))}</h2>`;
-    if (trimmed.startsWith('# ')) return `<h1>${escapeHtml(trimmed.slice(2))}</h1>`;
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) return `<li>${escapeHtml(trimmed.slice(2))}</li>`;
-    if (trimmed.startsWith('> ')) return `<blockquote><p>${escapeHtml(trimmed.slice(2))}</p></blockquote>`;
-    if (trimmed === '---') return '<hr/>';
-    if (trimmed === '') return '';
-    return `<p>${escapeHtml(trimmed)}</p>`;
-  }).join('\n');
+  // 整篇交给 marked —— 与编辑器同一个 markdown 口径。原来是逐行 if-else 的假转换器：
+  // 代码围栏变成 <p>```</p>、表格变成一摊竖线、列表项是裸 &lt;li&gt;，
+  // 而且 YAML 头也当正文渲染进文档（实测导出件开头就是 <hr/><p>tags:</p><li>reading</li>）。
+  // 说明：正文里的原始 HTML 会原样带过去（marked 默认行为，与 pandoc / Obsidian 导出一致），
+  // 内容本来就是用户自己的笔记文件；敏感信息仍由 sanitizeExport 先抹掉。
+  const body = stripFrontmatter(content || '');
+  const htmlContent = exportMarked.parse(body, { async: false }) as string;
+  const title = extractTitle(content || '') || 'ZenNote 导出';
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>ZenNote Export</title>
+<head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
 <style>body{font-family:system-ui;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}
 h1,h2,h3{margin-top:1.5em}blockquote{border-left:3px solid #ddd;padding-left:1em;color:#666}
 code{background:#f5f5f5;padding:2px 4px;border-radius:3px}hr{border:none;border-top:1px solid #ddd;margin:2em 0}
-li{margin:0.3em 0}</style></head>
+li{margin:0.3em 0}pre{background:#f5f5f5;padding:12px;border-radius:6px;overflow:auto}
+pre code{background:none;padding:0}table{border-collapse:collapse;margin:1em 0}
+th,td{border:1px solid #ddd;padding:6px 10px}th{background:#f5f5f5}
+ul ul,ol ol{margin:0}</style></head>
 <body>${htmlContent}</body></html>`;
 }
 
