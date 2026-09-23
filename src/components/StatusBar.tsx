@@ -61,28 +61,28 @@ export const StatusBar = React.memo(({
   const renderSaveIndicator = () => {
     if (saveState === 'saving') {
       return (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-color, #3b82f6)' }} title={t('status', 'savingTitle')}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'color-mix(in srgb, var(--accent-color, #3b82f6) 55%, var(--text-primary))' }} title={t('status', 'savingTitle')}>
           <Loader2 size={13} className="spinning" /> {t('status', 'saving')}
         </span>
       );
     }
     if (saveState === 'error') {
       return (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--error-color, #ef4444)' }} title={t('status', 'saveFailedTitle')}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'color-mix(in srgb, var(--error-color, #ef4444) 55%, var(--text-primary))' }} title={t('status', 'saveFailedTitle')}>
           <AlertCircle size={13} /> {t('status', 'saveFailed')}
         </span>
       );
     }
     if (saveState === 'saved' || (!isDirty && lastSaved)) {
       return (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--success-color)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'color-mix(in srgb, var(--success-color) 55%, var(--text-primary))' }}>
           <CheckCircle2 size={13} /> {formatSaveTime(lastSaved)}
         </span>
       );
     }
     if (isDirty) {
       return (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--warning-color)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'color-mix(in srgb, var(--warning-color) 55%, var(--text-primary))' }}>
           <Save size={13} /> {t('status', 'unsaved')}
         </span>
       );
