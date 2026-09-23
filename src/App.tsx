@@ -46,6 +46,7 @@ import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hoo
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
 import { parseFrontmatter, setFrontmatterAliases, setFrontmatterTags, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
+import { normalizeEmptyTaskItems } from './lib/markdownWrite';
 import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
@@ -630,11 +631,24 @@ const App = () => {
     return result.content || '（模型没有返回内容）';
   }, [aiConfig, currentNote, allFiles]);
 
-  const handleInsertText = useCallback((text: string) => {
-    if (!editorRef.current) return;
-    editorRef.current.chain().focus().insertContent('\n\n' + text + '\n').run();
-    setShowAIPanel(false);
+  /**
+   * 把一段 markdown 插进当前笔记。
+   *
+   * Why: 之前 QuickInsert 的「从模板插入」和 AI 面板的插入都是 `insertContent(text)`，
+   * 没声明 contentType —— 实测模板整段变成一个段落里的**字面文本**
+   * （"当前正文# 会议记录\n\n**日期：**…"），存一次盘还被转义成 `\*\*日期`。
+   * 空任务项在这里也顺手补上尾空格，否则模板里的裸 `- [ ]` 会退化成普通列表并吞掉下一条。
+   */
+  const insertMarkdown = useCallback((text: string) => {
+    const editor = editorRef.current;
+    if (!editor || !text) return;
+    editor.chain().focus().insertContent('\n\n' + normalizeEmptyTaskItems(text) + '\n', { contentType: 'markdown' }).run();
   }, []);
+
+  const handleInsertText = useCallback((text: string) => {
+    insertMarkdown(text);
+    setShowAIPanel(false);
+  }, [insertMarkdown]);
 
   // Toast helper：实现已挪到 lib/dialogs.tsx 的全局 store，这里保留同名薄封装，
   // 让 App 内 20 多处 showToast 调用和它们的 useCallback 依赖表不用动
@@ -1205,7 +1219,7 @@ const App = () => {
     // 所见即所得只编辑正文：Tiptap 会把 YAML 头当普通段落重排（`tags:` 和 `- 条目`
     // 之间插空行、缩进消失），存一次元数据就走形。回写时再把原块一字不动贴回去，
     // 顶部的元数据卡片显示的还是同一份 frontmatter。
-    const editableBody = stripFrontmatter(note.content);
+    const editableBody = normalizeEmptyTaskItems(stripFrontmatter(note.content));
     const writeBack = (body: string) => withFrontmatter(note.content, body);
     // 元数据卡片读的是**这一格里那篇笔记**：早前它复用一份只跟 currentNote 走的 state，
     // 分屏右窗顶着的其实是左边那篇的标签卡。
@@ -2045,9 +2059,7 @@ const App = () => {
         open={showQuickInsert}
         templates={templates}
         currentDir={currentDir}
-        onInsert={(content) => {
-          editorRef.current?.chain().focus().insertContent(content).run();
-        }}
+        onInsert={insertMarkdown}
         onCreateDaily={async (filePath, content) => {
           if (!filePath) {
             showToast('请先打开一个文件夹');
