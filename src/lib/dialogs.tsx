@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 /**
  * 应用内确认/输入弹窗。
  *
- * Why: 原来 15 处地方直接用 window.confirm/prompt/alert —— 原生对话框不跟主题、
+ * Why: 原来 19 处地方直接用 window.confirm/prompt/alert —— 原生对话框不跟主题、
  * 会阻塞整个窗口（自动保存/文件监听都停在原地），而且 macOS 上标题栏写的是
  * "127.0.0.1:5231 说"，对用户毫无意义。这里给一个 await 形式的替代：
  * confirmDialog() → Promise<boolean>，promptDialog() → Promise<string|null>，
@@ -57,6 +57,14 @@ function show(kind: Dialog['kind'], opts: any): Promise<any> {
 
 export const confirmDialog = (opts: ConfirmOptions) => show('confirm', opts) as Promise<boolean>;
 export const promptDialog = (opts: PromptOptions) => show('prompt', opts) as Promise<string | null>;
+
+/**
+ * 图片/链接地址的把关。
+ * 空值直接拒；含空格会让 markdown 里的链接断掉，但不拦截至把用户打成死胡同，
+ * 所以文案里给出可操作的修法。
+ */
+export const validateUrl = (v: string): string | null =>
+  !v ? '地址不能为空' : /\s/.test(v) ? '地址中不能有空格，请用 %20 代替' : null;
 
 /* ===== 全局 Toast =====
  * Why: 原来 toast 是 App.tsx 里的一个 useState，只有 App 自己能弹，各组件的失败提示
@@ -208,23 +216,27 @@ export function DialogHost() {
 
   useEffect(() => {
     // 挂在 window 上：原生对话框的 Enter/Esc 习惯要保住，而 confirm 弹窗里没有输入框，
-    // 焦点不在容器里就收不到键盘事件
+    // 焦点不在容器里就收不到键盘事件。
+    // 用捕获阶段 + stopPropagation：弹窗是最上层浮层，Esc 只该收掉它自己；
+    // 若在冒泡阶段处理，下层同时打开的设置面板/命令面板会被一起关掉
     const onKey = (e: KeyboardEvent) => {
       // 没有弹窗时一个字符都不能拦：这是 window 级监听，preventDefault 会把编辑器里
       // 打字的 Enter 一起吞掉
       if (!dialogRef.current) return;
       if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         // 破坏性确认把焦点停在「取消」上时，Enter 就该等于取消，否则"回车手滑删文件"
         // 的防护形同虚设
         finish(document.activeElement === cancelRef.current ? 'cancel' : 'submit');
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         finish('cancel');
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [finish]);
 
   if (!dialog) return null;
@@ -260,7 +272,7 @@ export function DialogHost() {
         <div className="modal-footer">
           <button ref={cancelRef} className="btn-secondary" disabled={busy} onClick={cancel}>{opts.cancelText || '取消'}</button>
           <button ref={primaryRef} disabled={busy} className={dialog.kind === 'confirm' && dialog.opts.danger ? 'btn-primary danger' : 'btn-primary'} onClick={submit}>
-            {opts.confirmText || (dialog.kind === 'confirm' ? '确定' : (busy ? '检查中…' : '好'))}
+            {opts.confirmText || (dialog.kind === 'confirm' ? '确定' : (busy ? '检查中…' : '确定'))}
           </button>
         </div>
       </div>

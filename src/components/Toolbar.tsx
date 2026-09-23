@@ -9,6 +9,7 @@ import {
   Globe,
 } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
+import { promptDialog, validateUrl } from '../lib/dialogs';
 import type { EditorMode as _EditorMode } from '../types';
 import { useI18n } from '../lib/i18n';
 
@@ -125,8 +126,8 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
 
       {/* Insert dropdown */}
       <MenuButton id="insert" icon={<Plus size={15} />} label={t('toolbar', 'insert')}>
-        <MenuItem onClick={() => { const url = window.prompt(t('prompt', 'imageUrl')); if (url) editor.chain().focus().setImage({ src: url }).run(); }} icon={<ImageIcon size={15} />} label={t('toolbar', 'insertImage')} />
-        <MenuItem onClick={() => { const url = window.prompt(t('prompt', 'linkUrl')); if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run(); }} active={editor.isActive('link')} icon={<Link size={15} />} label={t('toolbar', 'insertLink')} />
+        <MenuItem onClick={async () => { const url = await promptDialog({ title: t('toolbar', 'insertImage'), placeholder: t('prompt', 'imageUrl'), confirmText: t('toolbar', 'insertImage'), validate: validateUrl }); if (url) editor.chain().focus().setImage({ src: url }).run(); }} icon={<ImageIcon size={15} />} label={t('toolbar', 'insertImage')} />
+        <MenuItem onClick={async () => { const url = await promptDialog({ title: t('toolbar', 'insertLink'), placeholder: t('prompt', 'linkUrl'), confirmText: t('toolbar', 'insertLink'), validate: validateUrl }); if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run(); }} active={editor.isActive('link')} icon={<Link size={15} />} label={t('toolbar', 'insertLink')} />
         <MenuItem onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} icon={<TableIcon size={15} />} label={t('toolbar', 'insertTable')} />
         <MenuItem onClick={() => editor.chain().focus().insertContent('$$\n$$').run()} icon={<Sigma size={15} />} label={t('toolbar', 'mathFormula')} />
         <MenuDivider />

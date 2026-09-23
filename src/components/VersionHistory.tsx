@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Clock, RotateCcw, X, Trash2 } from 'lucide-react';
+import { confirmDialog, notify } from '../lib/dialogs';
 
 interface BackupEntry {
   path: string;
@@ -44,7 +45,13 @@ export default function VersionHistory({ notePath, onRestore, onClose }: Version
   // 恢复备份
   const handleRestore = useCallback(async () => {
     if (!previewPath || !notePath) return;
-    if (!window.confirm('确定恢复此版本？当前内容将被替换。')) return;
+    const ok = await confirmDialog({
+      title: '恢复此版本',
+      message: '当前编辑中的内容会被这个历史版本替换。',
+      confirmText: '恢复',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       // 恢复前先备份当前版本：避免恢复后发现新版本更好，但已经回不去
       // 这里依赖后端 create_backup 已经在 lib.rs 用 atomic_write 写入
@@ -53,16 +60,23 @@ export default function VersionHistory({ notePath, onRestore, onClose }: Version
         const current = await invoke<string>('read_file', { path: notePath });
         await invoke('create_backup', { notePath, content: current });
       } catch (backupErr) {
-        // 备份失败不阻塞恢复，但提示用户
+        // 备份失败不阻塞恢复，但要先问一句：恢复是不可逆覆盖，不能默默丢掉当前版本
         console.warn('恢复前备份当前版本失败:', backupErr);
-        if (!window.confirm('当前版本备份失败，仍要继续恢复吗？')) return;
+        const proceed = await confirmDialog({
+          title: '当前版本备份失败',
+          message: `无法先备份当前版本（${backupErr}）。仍要继续恢复吗？`,
+          confirmText: '仍要恢复',
+          danger: true,
+        });
+        if (!proceed) return;
       }
       await invoke('restore_backup', { backupPath: previewPath, targetPath: notePath });
       if (preview) onRestore(preview);
+      notify('已恢复该版本', 'success');
       onClose();
     } catch (err) {
       console.error('恢复失败:', err);
-      alert('恢复失败: ' + err);
+      notify('恢复失败: ' + err, 'error');
     }
   }, [previewPath, notePath, preview, onRestore, onClose]);
 

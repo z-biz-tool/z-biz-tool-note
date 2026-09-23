@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { sanitizeExport } from './sanitize';
+import { promptDialog } from './dialogs';
 
 // 检测是否运行在 Tauri 环境
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -265,7 +266,12 @@ export const electronAPI = {
           demoTrash(String(args[0]));
           return { success: true };
         case 'show-save-dialog': {
-          const name = prompt('Save as (filename):', args[0]?.split('/').pop() || 'untitled.md');
+          const name = await promptDialog({
+            title: '另存为',
+            defaultValue: args[0]?.split('/').pop() || 'untitled.md',
+            confirmText: '保存',
+            validate: v => (!v ? '文件名不能为空' : /[/\\:*?"<>|]/.test(v) ? '文件名不能包含这些字符' : null),
+          });
           return name ? { canceled: false, filePath: name } : { canceled: true };
         }
         case 'show-open-dialog':
@@ -353,7 +359,12 @@ export const electronAPI = {
             const filePath = Array.isArray(result) ? result[0] : result;
             return filePath ? { canceled: false, filePath } : { canceled: true };
           }
-          const name = prompt('Save as (filename):', args[0]?.split('/').pop() || 'untitled.md');
+          const name = await promptDialog({
+            title: '另存为',
+            defaultValue: args[0]?.split('/').pop() || 'untitled.md',
+            confirmText: '保存',
+            validate: v => (!v ? '文件名不能为空' : /[/\\:*?"<>|]/.test(v) ? '文件名不能包含这些字符' : null),
+          });
           return name ? { canceled: false, filePath: name } : { canceled: true };
         }
         case 'show-open-dialog': {

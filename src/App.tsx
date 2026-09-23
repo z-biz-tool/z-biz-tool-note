@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } fro
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { electronAPI } from './lib/electronAPI';
-import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, type ToastKind } from './lib/dialogs';
+import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, validateUrl, type ToastKind } from './lib/dialogs';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -796,7 +796,7 @@ const App = () => {
           title: '插入图片',
           placeholder: 'https://… 或图片的相对路径',
           confirmText: '插入',
-          validate: v => (!v ? '地址不能为空' : /\s/.test(v) ? '地址不能包含空格' : null),
+          validate: validateUrl,
         });
         if (url) editorRef.current?.chain().focus().setImage({ src: url }).run();
       },
@@ -805,7 +805,7 @@ const App = () => {
           title: '插入链接',
           placeholder: 'https://… 或 [[双链目标]]',
           confirmText: '插入',
-          validate: v => (!v ? '地址不能为空' : /\s/.test(v) ? '地址不能包含空格' : null),
+          validate: validateUrl,
         });
         if (url) editorRef.current?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
       },
