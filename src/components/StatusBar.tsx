@@ -39,7 +39,9 @@ export const StatusBar = React.memo(({
 }: StatusBarProps) => {
   // 格式化保存时间：显示 "已保存 HH:MM"
   const formatSaveTime = (timeStr: string | null) => {
-    if (!timeStr) return '';
+    // 没有时间点也要留下"已保存"三个字：这个函数只在"确实保存过"的分支里被调用，
+    // 返回空串会在状态栏留下一个孤零零的勾（切到未命名标签时会撞上）
+    if (!timeStr) return '已保存';
     // timeStr 可能是 "YYYY-MM-DD HH:MM:SS" 格式（来自 Rust）或 ISO 格式
     const timeOnly = timeStr.split(' ')[1]?.substring(0, 5) || '';
     if (timeOnly) return `已保存 ${timeOnly}`;

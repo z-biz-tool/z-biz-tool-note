@@ -148,6 +148,101 @@ function demoTrash(path: string) {
   saveDemoFs(fs);
 }
 
+/** 演示工作区里的"磁盘时间"与备份库 */
+const DEMO_MTIME_KEY = 'demoMtimes';
+const DEMO_BACKUP_KEY = 'demoBackups';
+const DEMO_BACKUP_HOME = '~/.z-note/backups';
+const BACKUP_KEEP = 20;
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** 与 Rust chrono 的 "%Y-%m-%d %H:%M:%S" 同格式：状态栏「已保存 HH:MM」按空格切第二段取值 */
+function demoStamp(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} `
+    + `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+/** 与 create_backup 的备份文件名 "%Y%m%d_%H%M%S" 同格式 */
+const demoBackupStamp = (d: Date) =>
+  `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`
+  + `_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+
+/**
+ * mtime 字符串的格式真源：Rust 侧 get_file_modified/list_backups 都返回 chrono 的
+ * "%Y-%m-%d %H:%M:%S"，状态栏「已保存 HH:MM」按空格切第二段取值。调用方需要自己
+ * 打一个时间戳（拿不到盘上 mtime 时的兜底）就用它，别再各写一份格式化。
+ */
+export const formatMtime = (d: Date = new Date()): string => demoStamp(d);
+
+function demoMtimeMap(): Record<string, string> {
+  try {
+    const m = JSON.parse(localStorage.getItem(DEMO_MTIME_KEY) || '{}');
+    return m && typeof m === 'object' ? m : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * localStorage 没有 mtime，所以每次写盘自己打一个戳。从没写过的种子文件首次被问到时
+ * 也按"现在"记一笔并固定下来 —— 不记的话每次查都在跳，状态栏和外部修改检测都没法验证。
+ */
+function demoMtimeOf(path: string): string {
+  const m = demoMtimeMap();
+  if (m[path]) return m[path];
+  m[path] = demoStamp(new Date());
+  localStorage.setItem(DEMO_MTIME_KEY, JSON.stringify(m));
+  return m[path];
+}
+
+interface DemoBackup { path: string; notePath: string; content: string; modified: string }
+
+function demoBackupList(): DemoBackup[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(DEMO_BACKUP_KEY) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+const demoBackupPathOf = (notePath: string, stamp: string) =>
+  `${DEMO_BACKUP_HOME}/${notePath.replace(/[\/\\]/g, '_')}/${stamp}.md`;
+
+/** 形状与 Rust 对齐（同一目录名规则、同一时间戳格式、同样只留最近 20 份），否则 UI 两种模式读到的不是同一份契约 */
+function demoCreateBackup(notePath: string, content: string) {
+  const now = new Date();
+  const path = demoBackupPathOf(notePath, demoBackupStamp(now));
+  // 同一秒内的两次保存文件名相同，Rust 那边就是覆盖写，这里也不额外去重
+  const all = [...demoBackupList().filter(b => b.path !== path), { path, notePath, content, modified: demoStamp(now) }];
+  const mine = all.filter(b => b.notePath === notePath).sort((a, b) => a.path.localeCompare(b.path));
+  const drop = new Set(mine.slice(0, Math.max(0, mine.length - BACKUP_KEEP)).map(b => b.path));
+  localStorage.setItem(DEMO_BACKUP_KEY, JSON.stringify(all.filter(b => !drop.has(b.path))));
+}
+
+const demoBackupOf = (path: string) => demoBackupList().find(b => b.path === path) || null;
+
+/** 与 list_backups 同形状同排序（modified 降序） */
+function demoListBackups(notePath: string) {
+  return demoBackupList()
+    .filter(b => b.notePath === notePath)
+    .map(b => ({ path: b.path, timestamp: b.path.split('/').pop()!.replace(/\.md$/, ''), modified: b.modified }))
+    .sort((a, b) => b.modified.localeCompare(a.modified));
+}
+
+/** 写正文 + 保证路径表里有它：write-file / write-text-file / 恢复备份共用一条落盘路径 */
+function demoWrite(path: string, content: string) {
+  localStorage.setItem(`note-${path}`, content);
+  const fs = demoFs();
+  if (!fs.files.includes(path)) {
+    fs.files.push(path);
+    saveDemoFs(fs);
+  }
+  const m = demoMtimeMap();
+  m[path] = demoStamp(new Date());
+  localStorage.setItem(DEMO_MTIME_KEY, JSON.stringify(m));
+}
+
 /** 演示工作区里的"笔记"：与 Rust read_all_notes/search_in_files 同一条口径，非笔记文件不参与索引 */
 const demoNoteFiles = () => demoFs().files.filter(p => isMarkdownPath(p));
 
@@ -250,6 +345,10 @@ export const electronAPI = {
           // （读不到就是空串），于是列表里一条被外部删掉的笔记会凭空开出一篇空白笔记。
           const path = String(args[0]);
           if (!demoFs().files.includes(path)) {
+            // 版本历史的预览读的是 ~/.z-note/backups/ 下的备份文件，它不在工作区路径表里；
+            // 真实后端 read_file 照样能读，演示区不跟着读就等于预览永远报"文件不存在"
+            const backup = demoBackupOf(path);
+            if (backup) return { success: true, content: backup.content, filePath: path };
             return { success: false, error: '文件不存在（浏览器演示区）', filePath: path };
           }
           return { success: true, content: demoContentOf(path), filePath: path };
@@ -259,14 +358,7 @@ export const electronAPI = {
         case 'get-file-meta':
           return { success: true, size: 0, modified: new Date().toISOString(), mime: 'application/octet-stream', filePath: args[0] };
         case 'write-file': {
-          const path = String(args[0]);
-          localStorage.setItem(`note-${path}`, args[1]);
-          // 另存为/新建走的就是这条路径，路径表里没有的话树上看不到
-          const fs = demoFs();
-          if (!fs.files.includes(path)) {
-            fs.files.push(path);
-            saveDemoFs(fs);
-          }
+          demoWrite(String(args[0]), args[1]);
           return { success: true };
         }
         case 'file-exists': {
@@ -281,12 +373,27 @@ export const electronAPI = {
           saveDemoFs(fs);
           return { success: true };
         }
-        case 'write-text-file': {
-          const fs = demoFs();
-          const path = String(args[0]);
-          if (!fs.files.includes(path)) fs.files.push(path);
-          saveDemoFs(fs);
-          localStorage.setItem(`note-${path}`, args[1]);
+        case 'write-text-file':
+          demoWrite(String(args[0]), args[1]);
+          return { success: true };
+        case 'get-file-modified': {
+          const p = String(args[0]);
+          // 与 Rust 一致：文件不存在是错误，不是"空字符串时间"，否则调用方会拿一个假 mtime 去比
+          if (!demoFs().files.includes(p) && !demoBackupOf(p)) {
+            return { success: false, error: `获取文件信息失败: 文件不存在 ${p}` };
+          }
+          return demoMtimeOf(p);
+        }
+        case 'create-backup':
+          demoCreateBackup(String(args[0]), String(args[1]));
+          return { success: true };
+        case 'list-backups':
+          return { success: true, backups: demoListBackups(String(args[0])) };
+        case 'restore-backup': {
+          const backupPath = String(args[0]);
+          const b = demoBackupOf(backupPath);
+          if (!b) return { success: false, error: `备份文件不存在: ${backupPath}` };
+          demoWrite(String(args[1]), b.content);
           return { success: true };
         }
         case 'rename-file':
@@ -490,6 +597,23 @@ export const electronAPI = {
         }
         case 'write-text-file': {
           await invoke('write_text_file', { path: args[0], content: args[1] });
+          return { success: true };
+        }
+        // 时间戳与版本历史：以前是组件里裸调 invoke，浏览器模式直接 TypeError，
+        // 于是保存后既备份不出来也读不到 mtime（状态栏只能停在打开时的那一刻）。
+        // 收进桥层之后两种模式共用同一条链路，UI 也才在浏览器里可验。
+        case 'get-file-modified':
+          return await invoke<string>('get_file_modified', { path: args[0] });
+        case 'create-backup': {
+          await invoke('create_backup', { notePath: args[0], content: args[1] });
+          return { success: true };
+        }
+        case 'list-backups': {
+          const backups = await invoke<any[]>('list_backups', { notePath: args[0] });
+          return { success: true, backups: backups || [] };
+        }
+        case 'restore-backup': {
+          await invoke('restore_backup', { backupPath: args[0], targetPath: args[1] });
           return { success: true };
         }
         default:

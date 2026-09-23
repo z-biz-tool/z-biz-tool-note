@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { electronAPI } from './lib/electronAPI';
+import { electronAPI, mustSucceed, formatMtime } from './lib/electronAPI';
 import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, validateUrl, type ToastKind } from './lib/dialogs';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
@@ -658,12 +657,23 @@ const App = () => {
   // 文件监听：替换旧的 5s 轮询，notify crate 推送事件
   // 状态栏那句「已保存 HH:MM」读的是 lastSaved，处理完事件顺手把 mtime 对上，
   // 免得同一次修改被重复处理时又弹一遍
-  const syncMtime = useCallback(async (filePath: string, isCurrent: boolean, isSplit: boolean) => {
+  /**
+   * 把盘上 mtime 对进状态栏要读的那份 state。afterSave 只给"刚刚保存成功"的场合：
+   * lastSaved 是「已保存 HH:MM」唯一的数据来源，读不到盘上时间时也要把这一笔记下来，
+   * 否则会一直挂着上一次保存（甚至打开）的那一刻（实测 13:57 保存后仍显示 13:47）。
+   */
+  const syncMtime = useCallback(async (filePath: string, opts: {
+    isCurrent?: boolean; isSplit?: boolean; afterSave?: boolean;
+  } = {}) => {
+    const { isCurrent = true, isSplit = false, afterSave = false } = opts;
+    let mtime: string | null = null;
     try {
-      const mtime = await invoke<string>('get_file_modified', { path: filePath });
-      if (isCurrent) setLastSaved(mtime);
-      if (isSplit) setLastSavedSplit(mtime);
+      mtime = mustSucceed(await electronAPI.invoke('get-file-modified', filePath)) as string;
     } catch {}
+    if (!mtime && !afterSave) return;
+    const stamp = mtime || formatMtime();
+    if (isCurrent) setLastSaved(stamp);
+    if (isSplit) setLastSavedSplit(stamp);
   }, []);
 
   const handleExternalChange = useCallback(async (filePath: string) => {
@@ -707,7 +717,7 @@ const App = () => {
       });
       if (!ok) {
         // 用户选择保留本地内容：仍要同步 mtime，否则下一次改动又会再弹一遍
-        await syncMtime(filePath, isCurrent, isSplit);
+        await syncMtime(filePath, { isCurrent, isSplit });
         showToast('已保留本地未保存的修改', 'info');
         return;
       }
@@ -718,7 +728,7 @@ const App = () => {
       setSplitNote(prev => prev ? { ...prev, content: disk, isDirty: false } : null);
     }
     showToast('已加载外部修改', 'success');
-    await syncMtime(filePath, isCurrent, isSplit);
+    await syncMtime(filePath, { isCurrent, isSplit });
   }, [updateActiveTab, readFile, showToast, syncMtime]);
 
   // 启动 notify watcher（监听 currentDir 整个目录树）
@@ -775,6 +785,38 @@ const App = () => {
     });
   }, []));
 
+  /**
+   * 落盘一篇模板/日记并打开。两条入口（命令面板的"今日日记"、QuickInsert 面板）原来各写一份，
+   * 而且都裸调 invoke：浏览器模式下 ensure_dir/write_text_file 抛 TypeError 只留一条 console.warn
+   * 就继续往下走，于是要么凭空开出一篇空白笔记、要么整条链路静默失败。合并成走桥层的一份，
+   * 并把失败说给用户听。
+   */
+  const createAndOpenNote = useCallback(async (filePath: string, content: string, okToast: string) => {
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    try {
+      mustSucceed(await electronAPI.invoke('ensure-dir', dir));
+      mustSucceed(await electronAPI.invoke('write-text-file', filePath, content));
+    } catch (e) {
+      showToast(`创建失败（${errText(e)}）`, 'error');
+      return;
+    }
+    const result = await readFile(filePath);
+    if (!result.success || result.content === undefined) {
+      showToast(`创建失败（${result.error || '刚写入的文件读不回来'}）`, 'error');
+      return;
+    }
+    openNote({
+      id: filePath,
+      title: todayTitle(),
+      content: result.content,
+      filePath,
+      lastModified: new Date().toISOString(),
+      isDirty: false,
+    });
+    await syncMtime(filePath, { isCurrent: true, afterSave: true });
+    showToast(okToast, 'success');
+  }, [readFile, openNote, showToast, syncMtime]);
+
   // Create today's daily note
   const handleCreateDaily = useCallback(async () => {
     if (!currentDir) {
@@ -782,36 +824,12 @@ const App = () => {
       return;
     }
     const filePath = dailyNotePath(currentDir);
-    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-    try {
-      await invoke('ensure_dir', { path: dir });
-    } catch (e) { console.warn('创建目录失败:', dir, e); }
     const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily|日记|日志/i.test(t.name));
     const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## 今日计划\n- [ ]\n`, todayTitle());
-
-    try {
-      await invoke('write_text_file', { path: filePath, content });
-    } catch (e) { console.warn('写入每日笔记失败:', filePath, e); }
-    const result = await readFile(filePath);
-    if (result.success && result.content !== undefined) {
-      openNote({
-        id: filePath,
-        title: todayTitle(),
-        content: result.content,
-        filePath,
-        lastModified: new Date().toISOString(),
-        isDirty: false,
-      });
-      // 保存后记录文件修改时间（用于外部修改检测）
-      try {
-        const mtime = await invoke('get_file_modified', { path: filePath }) as string;
-        setLastSaved(mtime);
-      } catch {}
-      showToast('已打开今日日记');
-    }
+    await createAndOpenNote(filePath, content, '已打开今日日记');
     refreshFileList(currentDir);
     refreshKnowledgeIndex(currentDir);
-  }, [currentDir, templates, readFile, refreshFileList, refreshKnowledgeIndex, showToast, openNote]);
+  }, [currentDir, templates, createAndOpenNote, refreshFileList, refreshKnowledgeIndex, showToast]);
 
   // Electron IPC listeners
   // 注意：此 effect 依赖数组为 []，所有 handler 闭包捕获的是首次渲染的值。
@@ -1030,11 +1048,7 @@ const App = () => {
     // 若标签已打开，仅聚焦，避免覆盖未保存编辑
     if (openTabsRef.current.some(t => t.id === filePath)) {
       setActiveTabId(filePath);
-      // 记录文件修改时间（用于外部修改检测）
-      try {
-        const mtime = await invoke('get_file_modified', { path: filePath }) as string;
-        setLastSaved(mtime);
-      } catch {}
+      await syncMtime(filePath, { isCurrent: true });
       return;
     }
     setIsLoading(true);
@@ -1102,7 +1116,7 @@ const App = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [readFile, readFileBinary, getFileMeta, openNote, showToast]);
+  }, [readFile, readFileBinary, getFileMeta, openNote, showToast, syncMtime]);
 
   // 编辑器里 Cmd+点击 [[链接]] → 按标题/文件名解析并打开（主窗格与分屏共用同一份逻辑）
   const handleWikiLinkNavigate = useCallback((href: string) => {
@@ -1345,18 +1359,14 @@ const App = () => {
       // 创建备份（版本历史）—— 节流：同文件 5 分钟内不重复备份
       if (shouldCreateBackup(currentNote.filePath)) {
         try {
-          await invoke('create_backup', { notePath: currentNote.filePath, content: currentNote.content });
+          mustSucceed(await electronAPI.invoke('create-backup', currentNote.filePath, currentNote.content));
           markBackedUp(currentNote.filePath);
         } catch (e) {
-          console.warn('创建备份失败:', e);
+          console.warn('创建备份失败:', errText(e));
         }
       }
       updateActiveTab({ isDirty: false });
-      // 保存后记录文件修改时间（用于外部修改检测）
-      try {
-        const mtime = await invoke('get_file_modified', { path: currentNote.filePath }) as string;
-        setLastSaved(mtime);
-      } catch {}
+      await syncMtime(currentNote.filePath, { isCurrent: true, afterSave: true });
       showToast('已保存', 'success');
       // Refresh knowledge index since tags/links may have changed
       if (currentDir) {
@@ -1366,7 +1376,7 @@ const App = () => {
     } else {
       handleSaveAs();
     }
-  }, [currentNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateActiveTab, showToast]);
+  }, [currentNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateActiveTab, showToast, syncMtime]);
   handleSaveRef.current = handleSave;
 
   const handleSaveAs = useCallback(async () => {
@@ -1387,14 +1397,11 @@ const App = () => {
         isDirty: false,
         title: displayName(result.filePath) || title,
       });
-      // 保存后记录文件修改时间（用于外部修改检测）
-      try {
-        const mtime = await invoke('get_file_modified', { path: result.filePath }) as string;
-        setLastSaved(mtime);
-      } catch {}
+      // 另存为之后也要对上时间戳：状态栏「已保存 HH:MM」和外部修改检测都读它
+      await syncMtime(result.filePath, { isCurrent: true, afterSave: true });
       showToast('已保存', 'success');
     }
-  }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab]);
+  }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab, syncMtime]);
 
   const handleExportHtml = useCallback(async () => {
     if (!currentNote) return;
@@ -1448,23 +1455,19 @@ const App = () => {
     // 分屏同样需要版本历史（之前漏掉，P0 缺陷）
     if (shouldCreateBackup(splitNote.filePath)) {
       try {
-        await invoke('create_backup', { notePath: splitNote.filePath, content: splitNote.content });
+        mustSucceed(await electronAPI.invoke('create-backup', splitNote.filePath, splitNote.content));
         markBackedUp(splitNote.filePath);
       } catch (e) {
-        console.warn('分屏创建备份失败:', e);
+        console.warn('分屏创建备份失败:', errText(e));
       }
     }
     updateNote(splitNote.id, { isDirty: false });
-    // 保存后记录文件修改时间（用于外部修改检测）
-    try {
-      const mtime = await invoke('get_file_modified', { path: splitNote.filePath }) as string;
-      setLastSavedSplit(mtime);
-    } catch {}
+    await syncMtime(splitNote.filePath, { isCurrent: false, isSplit: true, afterSave: true });
     if (currentDir) {
       refreshKnowledgeIndex(currentDir);
       refreshBacklinks();
     }
-  }, [splitNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateNote, showToast]);
+  }, [splitNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateNote, showToast, syncMtime]);
   handleSaveSplitRef.current = handleSaveSplit;
 
   const handleSplitContentChange = useCallback((content: string) => {
@@ -1676,15 +1679,10 @@ const App = () => {
           splitId={splitNote?.id || null}
           onSelect={(id) => {
             setActiveTabId(id);
-            // 切换标签时记录文件修改时间（用于外部修改检测）
+            // 切换标签时把这篇的 mtime 对进状态栏（拿不到就留着上一份，别报个假时间）
             const tab = openTabs.find(t => t.id === id);
-            if (tab?.filePath) {
-              invoke('get_file_modified', { path: tab.filePath }).then((mtime: string) => {
-                setLastSaved(mtime);
-              }).catch(() => {});
-            } else {
-              setLastSaved(null);
-            }
+            if (tab?.filePath) void syncMtime(tab.filePath, { isCurrent: true });
+            else setLastSaved(null);
           }}
           onClose={closeTab}
           onOpenInSplit={openInSplit}
@@ -2018,26 +2016,7 @@ const App = () => {
             showToast('请先打开一个文件夹');
             return;
           }
-          const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-          try { await invoke('ensure_dir', { path: dir }); } catch (e) { console.warn('创建目录失败:', dir, e); }
-          try { await invoke('write_text_file', { path: filePath, content }); } catch (e) { console.warn('写入每日笔记失败:', filePath, e); }
-          const res = await readFile(filePath);
-          if (res.success && res.content !== undefined) {
-            openNote({
-              id: filePath,
-              title: todayTitle(),
-              content: res.content,
-              filePath,
-              lastModified: new Date().toISOString(),
-              isDirty: false,
-            });
-            // 保存后记录文件修改时间（用于外部修改检测）
-            try {
-              const mtime = await invoke('get_file_modified', { path: filePath }) as string;
-              setLastSaved(mtime);
-            } catch {}
-            showToast('今日日记已创建');
-          }
+          await createAndOpenNote(filePath, content, '今日日记已创建');
           refreshFileList(currentDir);
           refreshKnowledgeIndex(currentDir);
         }}
