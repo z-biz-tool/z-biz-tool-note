@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { electronAPI } from './electronAPI';
 
 export interface IndexedMatch {
   file_path: string;
@@ -25,7 +25,8 @@ export interface IndexStatus {
  */
 export const searchNotes = async (query: string, limit = 100): Promise<IndexedMatch[] | null> => {
   try {
-    return await invoke<IndexedMatch[]>('search_notes', { query, limit });
+    const res = await electronAPI.invoke('search-notes', query, limit);
+    return res?.success ? (res.results as IndexedMatch[]) : null;
   } catch {
     return null;
   }
@@ -33,7 +34,8 @@ export const searchNotes = async (query: string, limit = 100): Promise<IndexedMa
 
 export const getIndexStatus = async (): Promise<IndexStatus | null> => {
   try {
-    return await invoke<IndexStatus>('index_status');
+    const res = await electronAPI.invoke('index-status');
+    return res?.success ? (res.status as IndexStatus) : null;
   } catch {
     return null;
   }
@@ -42,7 +44,8 @@ export const getIndexStatus = async (): Promise<IndexStatus | null> => {
 /** 按 mtime 增量对齐 dir 下的 .md（新增/变更/已删除都会被处理） */
 export const rebuildIndex = async (dir: string): Promise<IndexStatus | null> => {
   try {
-    return await invoke<IndexStatus>('rebuild_index', { dir });
+    const res = await electronAPI.invoke('rebuild-index', dir);
+    return res?.success ? (res.status as IndexStatus) : null;
   } catch {
     return null;
   }
@@ -51,7 +54,7 @@ export const rebuildIndex = async (dir: string): Promise<IndexStatus | null> => 
 /** 单篇重新入索引（外部编辑器改文件后调用，后端会自己读盘） */
 export const indexNote = async (path: string): Promise<void> => {
   try {
-    await invoke('index_upsert_note', { path });
+    await electronAPI.invoke('index-upsert-note', path);
   } catch {
     // 索引是尽力而为：失败时下次 rebuild 会补上
   }
@@ -59,7 +62,7 @@ export const indexNote = async (path: string): Promise<void> => {
 
 export const unindexNote = async (path: string): Promise<void> => {
   try {
-    await invoke('index_delete_note', { path });
+    await electronAPI.invoke('index-delete-note', path);
   } catch {
     // 同上
   }

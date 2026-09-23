@@ -544,6 +544,16 @@ export const electronAPI = {
         // 所以这条在浏览器里必然走失败分支 —— 失败形状两侧一致，UI 才敢直接说原因。
         case 'read-image':
           return { success: false, error: '浏览器模式没有笔记图库' };
+        // FTS5 搜索索引（search_notes / index_status / rebuild_index / index_upsert_note /
+        // index_delete_note）是 Rust + SQLite 的东西，演示区没有索引库。
+        // 这五条以前是 searchIndex.ts 里裸调 invoke()：绕开了桥层这唯一出口。
+        // 现在两侧都回 {success:false}，调用方继续按"拿不到就降级全盘扫描"处理。
+        case 'search-notes':
+        case 'index-status':
+        case 'rebuild-index':
+        case 'index-upsert-note':
+        case 'index-delete-note':
+          return { success: false, error: '浏览器模式没有搜索索引' };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
         default:
@@ -651,6 +661,25 @@ export const electronAPI = {
           const matches = await invoke<any[]>('search_in_files', { dir: args[0], query: args[1] });
           return { success: true, matches };
         }
+        // 索引类：形状统一成 {success, ...}，让 searchIndex.ts 不再自己 catch invoke
+        case 'search-notes': {
+          const results = await invoke<any[]>('search_notes', { query: args[0], limit: args[1] });
+          return { success: true, results: results || [] };
+        }
+        case 'index-status': {
+          const status = await invoke<any>('index_status');
+          return { success: true, status };
+        }
+        case 'rebuild-index': {
+          const status = await invoke<any>('rebuild_index', { dir: args[0] });
+          return { success: true, status };
+        }
+        case 'index-upsert-note':
+          await invoke('index_upsert_note', { path: args[0] });
+          return { success: true };
+        case 'index-delete-note':
+          await invoke('index_delete_note', { path: args[0] });
+          return { success: true };
         case 'read-file-stats':
           return { success: true, stats: { size: 0, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), isFile: true, isDirectory: false } };
         case 'open-file-in-finder':
