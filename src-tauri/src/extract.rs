@@ -100,11 +100,18 @@ pub fn extract_tags(content: &str) -> Vec<String> {
 }
 
 /// frontmatter 里 `tags:` 的三种写法：`tags: [a, b]`、`tags: a`、`tags:` + 后续 `- a` 列表
+///
+/// 空行一律跳过：所见即所得编辑器把这篇笔记存一次，YAML 会被重排成
+/// `tags:` + 空行 + `- reading`（合法 YAML，只是中间多了空行），
+/// 之前这里把空行当列表结束，于是编辑一次标签就全丢了。
 fn frontmatter_tags(block: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut in_list = false;
     for line in block.lines() {
         let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
         if in_list {
             match trimmed.strip_prefix("- ") {
                 Some(item) => {
@@ -308,6 +315,17 @@ mod tests {
         let t = extract_title(&long);
         assert_eq!(t.chars().count(), 53); // 50 字 + "..."
         assert!(t.ends_with("..."));
+    }
+
+    #[test]
+    fn tags_survive_editor_round_trip() {
+        // 这就是 Tiptap 把上面那篇笔记存一次之后落盘的字节（实测从演示区读出来的）：
+        // 每行之间插了空行、列表缩进没了 —— 合法 YAML，但旧解析器把空行当列表结束
+        let mangled = "---\n\ntags:\n\n- reading\n- 长期计划\n\n---\n\n正文\n";
+        assert_eq!(
+            extract_tags(mangled),
+            vec!["reading".to_string(), "长期计划".to_string()]
+        );
     }
 
     #[test]
