@@ -2,6 +2,7 @@ import React from 'react';
 import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode, Maximize2, Minimize2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import type { ThemeName, NoteStats } from '../types';
 import { themeLabel } from '../lib/themes';
+import { modKeys } from '../lib/modifier';
 
 interface StatusBarProps {
   theme: ThemeName;
@@ -98,7 +99,13 @@ export const StatusBar = React.memo(({
         <button className={`status-bar-btn ${typewriterMode ? 'active' : ''}`} onClick={onToggleTypewriterMode} title="打字机模式：光标始终居中" aria-pressed={typewriterMode}>
           <AlignCenter size={14} /> 打字机
         </button>
-        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="源码模式：直接编辑 Markdown 原文" aria-pressed={editorMode === 'source'}>
+        {/* 这一个不能用固定文案：它不是开关，是「富文本 ↔ 源码」两态互切，
+            按钮上写的就是当前那态。所以提示语也得跟着翻——
+            之前在源码模式下悬停，仍写着"源码模式：直接编辑 Markdown 原文"，
+            看着像"再点一次进源码模式"，实际是按回富文本。 */}
+        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode}
+          title={`${editorMode === 'source' ? '返回富文本模式：所见即所得渲染' : '切到源码模式：直接编辑 Markdown 原文'}（${modKeys('Cmd+/')}）`}
+          aria-pressed={editorMode === 'source'}>
           <FileCode size={14} /> {editorMode === 'wysiwyg' ? '富文本' : '源码'}
         </button>
         {/* 文案固定为模式名，靠高亮表达开关（和专注/打字机一致）。
