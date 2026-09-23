@@ -17,6 +17,7 @@ import { XlsxViewer } from './components/Viewers/XlsxViewer';
 import { BinaryViewer } from './components/Viewers/BinaryViewer';
 import type { FileKind } from './lib/fileTypes';
 import { isMarkdownPath, displayName } from './lib/fileTypes';
+import { disambiguateTabTitles } from './lib/tabTitles';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { StatusBar } from './components/StatusBar';
@@ -145,8 +146,12 @@ const App = () => {
 
   // 标题跟随当前笔记：多标签应用里"窗口标题永远是仓库名"等于没有信息。
   // 未保存是这里唯一需要抢眼的状态，所以它进标题而不是只靠标签页上的小圆点。
-  const windowTitle = currentNote
-    ? `${currentNote.title || '未命名'}${currentNote.isDirty ? ' · 未保存' : ''} — ZenNote`
+  // 显示名与标签栏同一套（撞名补目录后缀），否则三篇 Code 时标签写着「Code · Sub」、
+  // 窗口标题却只说「Code」，切换窗口时又分不清了。
+  const displayTabTitles = useMemo(() => disambiguateTabTitles(openTabs), [openTabs]);
+  const activeTabIndex = openTabs.findIndex(t => t.id === activeTabId);
+  const windowTitle = activeTabIndex >= 0
+    ? `${displayTabTitles[activeTabIndex] || '未命名'}${openTabs[activeTabIndex].isDirty ? ' · 未保存' : ''} — ZenNote`
     : 'ZenNote';
   useEffect(() => { document.title = windowTitle; }, [windowTitle]);
 
@@ -277,12 +282,21 @@ const App = () => {
   }, []);
 
   // 关闭标签（含未保存提示）
+  // 给用户看的标签名：与标签栏、窗口标题同一套（撞名带目录后缀）。
+  // 从 openTabsRef 现算，closeTab 才能待在 [] 依赖里而不出 stale 闭包。
+  const shownTabTitle = (id: string, fallback: string) => {
+    const tabs = openTabsRef.current;
+    const i = tabs.findIndex(t => t.id === id);
+    return (i >= 0 ? disambiguateTabTitles(tabs)[i] : '') || fallback;
+  };
+
   const closeTab = useCallback(async (id: string) => {
     const tab = openTabsRef.current.find(t => t.id === id);
     if (tab?.isDirty) {
       const ok = await confirmDialog({
         title: '关闭未保存的标签',
-        message: `"${tab.title}" 有未保存的更改，关闭后这些改动会丢失。`,
+        // 用标签栏那套显示名：三篇 Code 时，"Code 有未保存的更改" 说不清是哪一篇
+        message: `"${shownTabTitle(id, tab.title)}" 有未保存的更改，关闭后这些改动会丢失。`,
         confirmText: '丢弃并关闭',
         danger: true,
       });
