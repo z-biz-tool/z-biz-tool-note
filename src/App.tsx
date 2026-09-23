@@ -164,6 +164,7 @@ const App = () => {
   const [focusMode, setFocusMode] = useState(false);
   const [typewriterMode, setTypewriterMode] = useState(false);
   const [showFindReplace, setShowFindReplace] = useState(false);
+
   // 从侧栏搜索结果点进来时待定位的那一处（{query, line}），编辑器消费完清掉
   const [searchJump, setSearchJump] = useState<{ path: string; query: string; line: number } | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
@@ -551,6 +552,10 @@ const App = () => {
     setTreeVersion(v => v + 1);
     const dir = currentDirRef.current;
     if (dir) void refreshFileList(dir);
+    // 「刷新」不能只重扫目录树：开着的标签也得跟磁盘对账，否则用户按了刷新还以为看的是新内容
+    for (const t of openTabsRef.current) {
+      if (t.filePath) void handleExternalChangeRef.current?.(t.filePath);
+    }
   }, [refreshFileList]);
 
   const refreshNoteIndex = useCallback(() => {
@@ -652,6 +657,9 @@ const App = () => {
     setShowAIPanel(false);
   }, [insertMarkdown]);
 
+  // 给 refreshFileTree 转接 handleExternalChange（它定义得更晚，直接引用会踩 TDZ）
+  const handleExternalChangeRef = useRef<((path: string) => void) | null>(null);
+
   // Toast helper：实现已挪到 lib/dialogs.tsx 的全局 store，这里保留同名薄封装，
   // 让 App 内 20 多处 showToast 调用和它们的 useCallback 依赖表不用动
   const showToast = useCallback((message: string, kind?: ToastKind) => notify(message, kind), []);
@@ -686,6 +694,7 @@ const App = () => {
    * lastSaved 是「已保存 HH:MM」唯一的数据来源，读不到盘上时间时也要把这一笔记下来，
    * 否则会一直挂着上一次保存（甚至打开）的那一刻（实测 13:57 保存后仍显示 13:47）。
    */
+  const updateActiveTabRef = useRef<((patch: Partial<Note>) => void) | null>(null);
   const syncMtime = useCallback(async (filePath: string, opts: {
     isCurrent?: boolean; isSplit?: boolean; afterSave?: boolean;
   } = {}) => {
@@ -696,6 +705,11 @@ const App = () => {
     } catch {}
     if (!mtime && !afterSave) return;
     const stamp = mtime || formatMtime();
+    // 顺手把标签自己的"已知盘上时间"更新掉：切回这个标签时靠它判断盘有没有又被人动过
+    if (isCurrent) {
+      const t = openTabsRef.current.find(x => x.id === activeTabIdRef.current);
+      if (t) updateActiveTabRef.current({ lastModified: stamp });
+    }
     if (isCurrent) setLastSaved(stamp);
     if (isSplit) setLastSavedSplit(stamp);
   }, []);
@@ -704,7 +718,11 @@ const App = () => {
     const cur = openTabsRef.current.find(t => t.id === activeTabIdRef.current);
     const isCurrent = cur?.filePath === filePath;
     const isSplit = splitNoteRef.current?.filePath === filePath;
-    if (!isCurrent && !isSplit) return;
+    if (!isCurrent && !isSplit) {
+      // 后台标签页不在这里处理：侧栏没有"刷新"按钮、watcher 又是原生才有的，
+      // 真正兜住它的是下面"切回该标签时按 mtime 对账"那个 effect
+      return;
+    }
 
     // 先读盘对账：watcher 不认人，我们自己 write_file 的那一笔半秒后也会广播回来。
     // 对得上就是回声 —— 不重载、不弹框、不打扰（决策口径见 lib/selfWrites.ts）
@@ -754,6 +772,36 @@ const App = () => {
     showToast('已加载外部修改', 'success');
     await syncMtime(filePath, { isCurrent, isSplit });
   }, [updateActiveTab, readFile, showToast, syncMtime]);
+
+  handleExternalChangeRef.current = handleExternalChange;
+  updateActiveTabRef.current = updateActiveTab;
+
+  // 切到一个"有未保存改动"的标签时先看盘上的 mtime：只有它比标签记着的更新才读盘对账。
+  // 不能只比内容 —— 落盘走 prepareMarkdownForWrite（双链的 \\[\\[ 还原等），
+  // 存一次盘之后"盘上内容 ≠ 标签内容"是常态，比内容会自己弹自己（实测误弹过一次）。
+  // 依赖只放 activeTabId：否则每敲一个字都要 stat 一次。
+  useEffect(() => {
+    const cur = openTabsRef.current.find(t => t.id === activeTabId);
+    const path = cur?.filePath;
+    if (!path || !cur.isDirty) return;
+    let cancelled = false;
+    void (async () => {
+      let m = '';
+      try {
+        m = String(mustSucceed(await electronAPI.invoke('get-file-modified', path)) || '');
+      } catch {
+        return; // 读不到时间戳就当没变，不打扰
+      }
+      if (!m || cancelled) return;
+      const known = Date.parse(cur.lastModified || '') || 0;
+      const now = Date.parse(m) || 0;
+      // 标签记的时间就是它上次见盘上的样子；盘没更新就不打扰
+      if (now && known && now <= known) return;
+      await handleExternalChange(path);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId]);
 
   // 启动 notify watcher（监听 currentDir 整个目录树）
   useFileWatcher({
