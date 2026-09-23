@@ -241,7 +241,7 @@ export const Editor = ({
       Callout,
       DragHandle,
       Fold,
-      Embed,
+      Embed.configure({ getTargets: () => wikiTargetsRef.current ?? [] }),
       SearchEnhanced,
     ],
     content,
