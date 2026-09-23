@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Folder, FileText, Search, Plus, ChevronRight, ChevronDown,
-  Home, Clock, Files, Hash, Settings, Sparkles, Calendar
+  Home, Clock, Files, Hash, Settings, Sparkles, Calendar, X
 } from 'lucide-react';
 import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
@@ -749,28 +749,28 @@ export const Sidebar = ({
             <div className="sidebar-empty">还没有最近打开的文件</div>
           ) : (
             recentFiles.map(file => (
-              <button
-                key={file.path}
-                className="sidebar-file-item"
-                onClick={() => handleRecentClick(file)}
-                title={file.path}
-                style={{
-                  margin: 2,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "rgba(102,126,234,0.1)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = "transparent";
-                }}
-              >
-                <Clock size={14} />
-                <span>{file.name}</span>
-                <span className="sidebar-item-meta">{formatRecentTime(file.lastOpened, now)}</span>
-              </button>
+              // 打开按钮和移除按钮是兄弟，不能嵌套（HTML 里 button 不能套 button）。
+              <div key={file.path} className="sidebar-recent-row">
+                <button
+                  className={`sidebar-file-item ${currentNote?.filePath === file.path ? 'active' : ''}`}
+                  onClick={() => handleRecentClick(file)}
+                  title={file.path}
+                  style={{ padding: '8px 12px', borderRadius: 8 }}
+                >
+                  <Clock size={14} />
+                  <span>{file.name}</span>
+                  <span className="sidebar-item-meta">{formatRecentTime(file.lastOpened, now)}</span>
+                </button>
+                {/* 只是从列表里划走，不动磁盘上的文件；所以不弹确认，也不用 toast */}
+                <button
+                  className="sidebar-row-action"
+                  onClick={() => mutateRecentFiles(e => (e.path === file.path ? null : e))}
+                  title="从「最近打开」移除（不删除文件）"
+                  aria-label={`从最近打开移除 ${file.name}`}
+                >
+                  <X size={13} />
+                </button>
+              </div>
             ))
           )}
         </div>

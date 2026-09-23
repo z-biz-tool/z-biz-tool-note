@@ -410,18 +410,23 @@ body {
   outline-offset: -2px;
   background-color: color-mix(in srgb, var(--accent-color) 10%, transparent);
 }
-.sidebar-recent-item {
-  padding: 6px 12px; cursor: pointer; border-bottom: 1px solid var(--border-color);
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 6px;
-  position: relative; overflow: hidden;
+/* 「最近打开」一行 = 打开按钮 + 右侧悬停才显形的移除按钮（两个兄弟 button） */
+.sidebar-recent-row {
+  display: flex; align-items: center; gap: 2px; margin: 2px;
 }
-.sidebar-recent-item::before {
-  content: ''; position: absolute; inset: 0; border-radius: 6px;
-  transition: transform 0.15s ease; transform: scale(0); opacity: 0;
+.sidebar-recent-row > .sidebar-file-item { flex: 1; min-width: 0; }
+.sidebar-row-action {
+  flex: none; width: 22px; height: 22px; display: inline-flex; align-items: center;
+  justify-content: center; border: none; border-radius: 6px; background: transparent;
+  color: var(--text-muted); cursor: pointer; opacity: 0; pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
-.sidebar-recent-item:hover { background: transparent; }
-.sidebar-recent-item:hover::before { transform: scale(1); opacity: 0.08; }
-.sidebar-recent-item:active { transform: scale(0.98); }
+/* 用 :focus-within 而不是只认 :hover：键盘 Tab 到移除按钮时它得先现身 */
+.sidebar-recent-row:hover .sidebar-row-action,
+.sidebar-recent-row:focus-within .sidebar-row-action { opacity: 1; pointer-events: auto; }
+.sidebar-row-action:hover { background: rgba(239, 68, 68, 0.14); color: #ef4444; }
+/* 选中行是紫底，时间那列的灰色底不动就看不清了 */
+.sidebar-file-item.active > .sidebar-item-meta { color: rgba(255, 255, 255, 0.78); }
 .sidebar-empty { padding: 24px 16px; color: var(--text-muted); font-size: 13px; text-align: center; }
 .sidebar-empty p { margin: 0; }
 .sidebar-empty-hint { margin-top: 8px; font-size: 12px; opacity: .8; }
