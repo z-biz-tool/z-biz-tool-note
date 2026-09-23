@@ -1643,7 +1643,9 @@ body {
   text-align: left;
   transition: background var(--transition);
 }
-.quick-insert-item:hover {
+.quick-insert-item:hover,
+/* 键盘选中态要和鼠标悬停一个样子，否则用方向键根本看不出停在哪一行 */
+.quick-insert-item.selected {
   background: var(--bg-tertiary);
 }
 .quick-insert-item.daily {
