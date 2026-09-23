@@ -28,26 +28,44 @@ pub fn strip_frontmatter(content: &str) -> &str {
     split_frontmatter(content).map(|(_, body)| body).unwrap_or(content)
 }
 
-/// 提取标题：第一行非空文本，去掉前导 `# `
+/// 去掉 ATX 标题前缀：`#` 到 `######` 后紧跟空白才算。
+///
+/// 原来只认 `# `（一级标题），于是 `## 会议纪要` 开头的笔记标题就成了
+/// "## 会议纪要"，搜索结果、图谱节点、反链面板上都带着两个井号。
+/// `#标签` 这种没有空格的不能当标题剥，否则 #work 会变成 work。
+fn strip_heading_prefix(line: &str) -> &str {
+    let hashes = line.chars().take_while(|c| *c == '#').count();
+    if hashes == 0 || hashes > 6 {
+        return line;
+    }
+    let rest = &line[hashes..];
+    match rest.chars().next() {
+        Some(c) if c.is_whitespace() => rest.trim_start(),
+        None => "",
+        _ => line,
+    }
+}
+
+/// 提取标题：第一条"有内容"的行（空行和只写了井号的行都跳过）
 ///
 /// frontmatter 要先剥掉：否则一篇以 `---` 开头的笔记，标题就被提成了 `---`，
 /// 搜索结果、图谱节点、反链面板上显示的全是 `---`。
 pub fn extract_title(content: &str) -> String {
-    strip_frontmatter(content)
+    let first = strip_frontmatter(content)
         .lines()
-        .find(|line| !line.trim().is_empty())
-        .map(|line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with("# ") {
-                trimmed.trim_start_matches("# ").to_string()
-            } else if trimmed.chars().count() > 50 {
-                let truncated: String = trimmed.chars().take(50).collect();
-                format!("{}...", truncated)
-            } else {
-                trimmed.to_string()
-            }
+        .filter_map(|line| {
+            let title = strip_heading_prefix(line.trim()).trim();
+            (!title.is_empty()).then(|| title.to_string())
         })
-        .unwrap_or_else(|| "无标题笔记".to_string())
+        .next();
+    match first {
+        Some(title) if title.chars().count() > 50 => {
+            let truncated: String = title.chars().take(50).collect();
+            format!("{}...", truncated)
+        }
+        Some(title) => title,
+        None => "无标题笔记".to_string(),
+    }
 }
 
 /// 提取标签：先看 frontmatter 的 `tags:`，没有再退回正文的 `#tag`。
@@ -259,6 +277,37 @@ mod tests {
     fn strip_frontmatter_passthrough() {
         assert_eq!(strip_frontmatter("# 无 frontmatter\n"), "# 无 frontmatter\n");
         assert_eq!(strip_frontmatter("---\na: 1\n---\n正文\n"), "正文\n");
+    }
+
+    #[test]
+    fn title_strips_any_heading_level() {
+        // 修复前只认 "# "，二到六级标题带着井号进搜索结果和图谱节点
+        assert_eq!(extract_title("## 二级标题"), "二级标题");
+        assert_eq!(extract_title("###### 六级"), "六级");
+        // 七个井号不是 ATX 标题，原样留着
+        assert_eq!(extract_title("####### 不是标题"), "####### 不是标题");
+    }
+
+    #[test]
+    fn title_keeps_hashtag_that_is_not_a_heading() {
+        // `#work` 没有空格，是标签不是标题，井号不能被剥掉
+        assert_eq!(extract_title("#work 开头的一行"), "#work 开头的一行");
+    }
+
+    #[test]
+    fn title_skips_empty_heading_lines() {
+        // 敲完 `# ` 还没写字的空标题行，不该把标题吞成空串
+        assert_eq!(extract_title("# \n# \n真正的开头\n"), "真正的开头");
+        assert_eq!(extract_title("###\n\n"), "无标题笔记");
+    }
+
+    #[test]
+    fn title_truncates_long_heading_too() {
+        // 修复前 `# ` 那一支直接返回，长标题不截断，只有纯文本首行才截
+        let long = format!("# {}", "标".repeat(80));
+        let t = extract_title(&long);
+        assert_eq!(t.chars().count(), 53); // 50 字 + "..."
+        assert!(t.ends_with("..."));
     }
 
     #[test]
