@@ -83,7 +83,9 @@ body {
 }
 
 /* Placeholder */
-.ProseMirror p.is-editor-empty:first-child::before {
+/* 拖拽手柄 widget 会插到正文前面，:first-child 因此永远匹配不上，占位符一度完全不显示；
+   is-editor-empty 本身就只在整篇为空时挂上，不需要再限定位置 */
+.ProseMirror p.is-editor-empty::before {
   content: attr(data-placeholder);
   float: left;
   color: var(--text-muted);
