@@ -88,7 +88,7 @@ pub fn extract_tags(content: &str) -> Vec<String> {
                     .trim_start_matches('#')
                     .trim_matches(|c: char| !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c))
                     .to_string();
-                if !tag.is_empty() && tag.len() < 20 {
+                if !tag.is_empty() && tag.chars().count() < 20 {
                     tags.insert(tag);
                 }
             }
@@ -308,6 +308,19 @@ mod tests {
         let t = extract_title(&long);
         assert_eq!(t.chars().count(), 53); // 50 字 + "..."
         assert!(t.ends_with("..."));
+    }
+
+    #[test]
+    fn tags_allow_long_cjk_tag() {
+        // 长度上限原先按字节算（tag.len()）：7 个汉字就 21 字节，整条标签被静默丢掉
+        let v = extract_tags("#一个很长的中文标签名称");
+        assert_eq!(v, vec!["一个很长的中文标签名称".to_string()]);
+    }
+
+    #[test]
+    fn tags_drop_overlong_ascii_tag() {
+        // 超过 20 个字符仍然丢掉：那是句子里被误当标签的 #词
+        assert!(extract_tags("#aaaaaaaaaaaaaaaaaaaaaaaaa").is_empty());
     }
 
     #[test]
