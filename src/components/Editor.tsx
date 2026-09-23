@@ -630,6 +630,9 @@ export const Editor = ({
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
         placeholder="笔记标题…"
+        // placeholder 只在空值时被当成可访问名，填上标题后读屏就只剩"编辑框"；
+        // 而且长标题会把提示文字整个顶掉，这里给一个不随内容变的固定名字。
+        aria-label="笔记标题"
       />
 
       <div className="editor-body-row">
@@ -653,7 +656,7 @@ export const Editor = ({
       {lightboxSrc && (
         <div className="lightbox-overlay" onClick={() => setLightboxSrc(null)}>
           <img className="lightbox-image" src={lightboxSrc} alt="图片预览" />
-          <button className="lightbox-close" onClick={() => setLightboxSrc(null)}>✕</button>
+          <button className="lightbox-close" onClick={() => setLightboxSrc(null)} title="关闭" aria-label="关闭图片预览">✕</button>
         </div>
       )}
     </div>

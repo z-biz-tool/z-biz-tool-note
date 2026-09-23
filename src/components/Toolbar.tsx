@@ -166,6 +166,7 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
         className="tb-btn tb-lang-btn"
         onClick={toggleLang}
         title={t('toolbar', 'toggleLang')}
+        aria-label={t('toolbar', 'toggleLang')}
         style={{
           background: lang === 'zh' ? brandGradient : 'transparent',
           color: lang === 'zh' ? 'white' : undefined,

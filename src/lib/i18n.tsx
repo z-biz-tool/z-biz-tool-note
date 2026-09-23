@@ -126,7 +126,7 @@ const translations: Record<Language, Translations> = {
       alignRight: '右对齐',
       wysiwyg: '所见即所得',
       source: '源代码',
-      toggleLang: 'Switch to English',
+      toggleLang: '切换为英文',
     },
     prompt: {
       imageUrl: '图片地址：',

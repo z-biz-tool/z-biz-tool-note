@@ -98,7 +98,7 @@ export default function VersionHistory({ notePath, onRestore, onClose }: Version
       <div className="version-history-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3><Clock size={16} /> 版本历史</h3>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          <button className="modal-close" onClick={onClose} title="关闭" aria-label="关闭版本历史"><X size={16} /></button>
         </div>
         <div className="version-history-content">
           <div className="version-list">
