@@ -44,6 +44,50 @@ interface Translations {
     imageUrl: string;
     linkUrl: string;
   };
+  settings: {
+    title: string;
+    tabAI: string;
+    tabAppearance: string;
+    tabTemplates: string;
+    tabSearch: string;
+    close: string;
+    aiHint: string;
+    enableAI: string;
+    baseURL: string;
+    apiKey: string;
+    model: string;
+    presets: string;
+    zhipu: string;
+    fontSize: string;
+    font: string;
+    fontSystem: string;
+    fontPingFang: string;
+    fontSourceSans: string;
+    fontSourceSerif: string;
+    aiHintTail: string;
+    searchHint: string;
+    indexDir: string;
+    noFolder: string;
+    indexed: string;
+    indexedValue: string;
+    unavailable: string;
+    lastBuild: string;
+    buildTime: string;
+    neverBuilt: string;
+    manualRebuild: string;
+    rebuilding: string;
+    rebuildNow: string;
+    builtin: string;
+    deleteTpl: string;
+    newTpl: string;
+    unnamedTpl: string;
+    tplName: string;
+    tplContent: string;
+    placeholders: string;
+    builtinNote: string;
+    cancel: string;
+    save: string;
+  };
   meta: {
     aliases: string;
     fields: string;
@@ -135,6 +179,50 @@ const translations: Record<Language, Translations> = {
       imageUrl: 'Image URL:',
       linkUrl: 'Link URL:',
     },
+    settings: {
+      title: 'Settings',
+      tabAI: 'AI Services',
+      tabAppearance: 'Appearance',
+      tabTemplates: 'Templates',
+      tabSearch: 'Search',
+      close: 'Close settings',
+      aiHint: 'Works with any OpenAI-compatible endpoint: OpenAI, DeepSeek, Zhipu, Kimi, Ollama (',
+      aiHintTail: '), etc.',
+      enableAI: 'Enable AI assistant',
+      baseURL: 'Base URL',
+      apiKey: 'API Key',
+      model: 'Model',
+      presets: 'Presets:',
+      zhipu: 'Zhipu',
+      fontSize: 'Font size',
+      font: 'Font',
+      fontSystem: 'System default',
+      fontPingFang: 'PingFang SC',
+      fontSourceSans: 'Source Han Sans SC',
+      fontSourceSerif: 'Source Han Serif SC',
+      searchHint: 'Full-text search uses the local SQLite FTS5 index. Opening a folder aligns it by mtime, and files changed by an external editor are re-indexed automatically.',
+      indexDir: 'Indexed folder',
+      noFolder: 'No folder open',
+      indexed: 'Indexed',
+      indexedValue: '{a} of {total} notes',
+      unavailable: 'Unavailable',
+      lastBuild: 'Last alignment',
+      buildTime: '{sec}s spent',
+      neverBuilt: 'Not fully built in this session',
+      manualRebuild: 'Rebuild',
+      rebuilding: 'Aligning…',
+      rebuildNow: 'Align index now',
+      builtin: 'Built-in',
+      deleteTpl: 'Delete template',
+      newTpl: 'New template',
+      unnamedTpl: 'Untitled template',
+      tplName: 'Template name',
+      tplContent: 'Template content — {{date}}, {{title}} and {{time}} are supported',
+      placeholders: 'Placeholders:',
+      builtinNote: ' · Built-in templates can be edited but not deleted',
+      cancel: 'Cancel',
+      save: 'Save',
+    },
     meta: {
       aliases: 'Aliases',
       fields: 'fields',
@@ -223,6 +311,50 @@ const translations: Record<Language, Translations> = {
     prompt: {
       imageUrl: '图片地址：',
       linkUrl: '链接地址：',
+    },
+    settings: {
+      title: '设置',
+      tabAI: 'AI 服务',
+      tabAppearance: '外观',
+      tabTemplates: '模板',
+      tabSearch: '搜索',
+      close: '关闭设置',
+      aiHint: '支持任意 OpenAI 兼容接口：OpenAI、DeepSeek、智谱、Kimi、Ollama（',
+      aiHintTail: '）等。',
+      enableAI: '启用 AI 助手',
+      baseURL: '接口地址 Base URL',
+      apiKey: 'API Key',
+      model: '模型',
+      presets: '预设：',
+      zhipu: '智谱',
+      fontSize: '字体大小',
+      font: '字体',
+      fontSystem: '系统默认',
+      fontPingFang: '苹方',
+      fontSourceSans: '思源黑体',
+      fontSourceSerif: '思源宋体',
+      searchHint: '全文搜索走本地 SQLite FTS5 索引。打开目录时会按 mtime 增量对齐，外部编辑器改过的文件也会自动重新入库。',
+      indexDir: '索引目录',
+      noFolder: '尚未打开文件夹',
+      indexed: '已索引',
+      indexedValue: '{a} / {total} 条',
+      unavailable: '不可用',
+      lastBuild: '上次对齐',
+      buildTime: '耗时 {sec} 秒',
+      neverBuilt: '本会话尚未全量构建',
+      manualRebuild: '手动重建',
+      rebuilding: '对齐中…',
+      rebuildNow: '立即对齐索引',
+      builtin: '内置',
+      deleteTpl: '删除模板',
+      newTpl: '新建模板',
+      unnamedTpl: '未命名模板',
+      tplName: '模板名称',
+      tplContent: '模板内容，可用 {{date}}、{{title}}、{{time}} 作为占位符',
+      placeholders: '占位符：',
+      builtinNote: ' · 内置模板可修改内容，但不可删除',
+      cancel: '取消',
+      save: '保存',
     },
     meta: {
       aliases: '别名',
