@@ -50,6 +50,17 @@ function findMatches(doc: any, query: string, options: { caseSensitive: boolean;
   return matches;
 }
 
+/**
+ * 给查找替换条读当前搜索结果：匹配数和"第几个"都以插件状态为唯一真源，
+ * 免得界面自己再数一遍 —— 之前 FindReplace 就是自己写了一份正则匹配，
+ * 于是总数对得上、文档里却一个高亮都没有（装饰只认这份插件状态）。
+ */
+export function readSearchState(state: any): { query: string; total: number; index: number } {
+  const s = searchKey.getState(state) as SearchState | undefined;
+  if (!s) return { query: '', total: 0, index: -1 };
+  return { query: s.query, total: s.matches.length, index: s.currentMatch };
+}
+
 export const SearchEnhanced = Extension.create({
   name: 'searchEnhanced',
 
