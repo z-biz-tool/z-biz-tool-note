@@ -210,6 +210,27 @@ export function stripFrontmatter(raw: string): string {
 }
 
 /**
+ * 原样取出文件开头的 frontmatter 块（含闭合 `---` 那一行及其换行）；没有则返回 ''。
+ *
+ * 直接切前缀而不是重新序列化：YAML 里的手写缩进、引号风格都要一字不动地还回去。
+ */
+export function frontmatterBlock(raw: string): string {
+  const body = parseFrontmatter(raw).content;
+  return body === raw ? '' : raw.slice(0, raw.length - body.length);
+}
+
+/**
+ * 把编辑器回写的正文前面补回原来的 frontmatter。
+ *
+ * 所见即所得编辑器只会看到正文，回写的也就少了 YAML 头；不补回来的话保存一次
+ * 元数据就没了。已经带着头（比如调用方给的是整篇原文）时不再重复前插。
+ */
+export function withFrontmatter(raw: string, body: string): string {
+  const fm = frontmatterBlock(raw);
+  return !fm || body.startsWith(fm) ? body : fm + body;
+}
+
+/**
  * 持久化的 frontmatter 合并（写文件时把更新过的字段写回）
  */
 export function mergeFrontmatter(

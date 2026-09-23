@@ -48,7 +48,7 @@ import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './l
 import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hooks/useAutoSave';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
-import { parseFrontmatter } from './lib/frontmatter';
+import { parseFrontmatter, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
 
@@ -1149,6 +1149,11 @@ const App = () => {
     const fp = note.filePath || '';
     const mime = note.fileMime || 'application/octet-stream';
     const dataUrl = note.dataUrl;
+    // 所见即所得只编辑正文：Tiptap 会把 YAML 头当普通段落重排（`tags:` 和 `- 条目`
+    // 之间插空行、缩进消失），存一次元数据就走形。回写时再把原块一字不动贴回去，
+    // 顶部的元数据卡片显示的还是同一份 frontmatter。
+    const editableBody = stripFrontmatter(note.content);
+    const writeBack = (body: string) => withFrontmatter(note.content, body);
 
     // markdown 走原 tiptap 编辑器(主/分屏参数不同)
     if (kind === 'markdown') {
@@ -1157,8 +1162,8 @@ const App = () => {
           <>
             {fmElement}
             <Editor
-            content={note.content}
-            onChange={handleSplitContentChange}
+            content={editableBody}
+            onChange={body => handleSplitContentChange(writeBack(body))}
             title={note.title}
             onTitleChange={handleSplitTitleChange}
             editorMode={editorMode}
@@ -1185,8 +1190,8 @@ const App = () => {
         <>
           {fmElement}
           <Editor
-            content={note.content}
-            onChange={handleContentChange}
+            content={editableBody}
+            onChange={body => handleContentChange(writeBack(body))}
             title={note.title}
             onTitleChange={handleTitleChange}
             editorMode={editorMode}
