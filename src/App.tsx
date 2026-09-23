@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } fro
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { electronAPI } from './lib/electronAPI';
+import { DialogHost, ToastHost, notify, type ToastKind } from './lib/dialogs';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -171,8 +172,6 @@ const App = () => {
   const [allFiles, setAllFiles] = useState<Array<{ path: string; name: string; lastModified: number }>>([]);
   // 侧栏文件树的刷新信号：新建/重命名/删除后 bump，Sidebar 只认它、不自己存目录
   const [treeVersion, setTreeVersion] = useState(0);
-  const [toast, setToast] = useState<string | null>(null);
-  const [toastExiting, setToastExiting] = useState(false);
   // 本地暂存（WAL）里待恢复的条目；保存失败或异常退出后在此露出恢复入口
   const [walEntries, setWalEntries] = useState<WalEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -574,13 +573,9 @@ const App = () => {
     setShowAIPanel(false);
   }, []);
 
-  // Toast helper
-  const showToast = useCallback((message: string) => {
-    setToastExiting(false);
-    setToast(message);
-    setTimeout(() => setToastExiting(true), 2200); // 开始退出动画
-    setTimeout(() => setToast(null), 2500); // 移除 DOM
-  }, []);
+  // Toast helper：实现已挪到 lib/dialogs.tsx 的全局 store，这里保留同名薄封装，
+  // 让 App 内 20 多处 showToast 调用和它们的 useCallback 依赖表不用动
+  const showToast = useCallback((message: string, kind?: ToastKind) => notify(message, kind), []);
 
   // 文件/文件夹被删掉（侧栏移到废纸篓，或外部删除）：关掉指向它的标签与分屏。
   // 不关的话标签里的内容还在，2 秒防抖自动保存会按原路径重新写盘，把刚删的文件"复活"回来。
@@ -919,7 +914,7 @@ const App = () => {
       openNote(created);
       setLastSaved(null);
     } catch (e) {
-      showToast(`创建失败: ${e}`);
+      showToast(`创建失败: ${e}`, 'error');
     }
   }, [openNote, currentDir, createNewNote, showToast]);
 
@@ -1003,7 +998,7 @@ const App = () => {
       return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
     });
     if (m) handleOpenFile(m.path);
-    else showToast(`未找到笔记: ${t}`);
+    else showToast(`未找到笔记: ${t}`, 'error');
   }, [allFiles, handleOpenFile, showToast]);
 
   const handleOpenFolder = useCallback((dirPath: string) => {
@@ -1200,7 +1195,7 @@ const App = () => {
         walStore.write(currentNote.filePath, currentNote.content);
         setMainSaveState('error');
         refreshWal();
-        showToast('保存失败，内容已暂存，可在顶部横幅恢复');
+        showToast('保存失败，内容已暂存，可在顶部横幅恢复', 'error');
         return;
       }
       // 写入成功后再清理 WAL
@@ -1221,7 +1216,7 @@ const App = () => {
         const mtime = await invoke('get_file_modified', { path: currentNote.filePath }) as string;
         setLastSaved(mtime);
       } catch {}
-      showToast('已保存');
+      showToast('已保存', 'success');
       // Refresh knowledge index since tags/links may have changed
       if (currentDir) {
         refreshKnowledgeIndex(currentDir);
@@ -1249,7 +1244,7 @@ const App = () => {
         const mtime = await invoke('get_file_modified', { path: result.filePath }) as string;
         setLastSaved(mtime);
       } catch {}
-      showToast('已保存');
+      showToast('已保存', 'success');
     }
   }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab]);
 
@@ -1258,7 +1253,9 @@ const App = () => {
     const filePath = currentNote.filePath || `~/Documents/${currentNote.title}.md`;
     const result = await exportHtml(currentNote.content, filePath);
     if (result.success) {
-      showToast(`Exported to: ${result.filePath}`);
+      showToast(`已导出 HTML：${result.filePath}`, 'success');
+    } else {
+      showToast(`导出失败: ${result.error || '未知错误'}`, 'error');
     }
   }, [currentNote, exportHtml, showToast]);
 
@@ -1267,7 +1264,9 @@ const App = () => {
     const filePath = currentNote.filePath || `~/Documents/${currentNote.title}.md`;
     const result = await exportPdf(currentNote.content, filePath);
     if (result.success) {
-      showToast(`PDF exported to: ${result.filePath}`);
+      showToast(`已导出 PDF：${result.filePath}`, 'success');
+    } else {
+      showToast(`导出失败: ${result.error || '未知错误'}`, 'error');
     }
   }, [currentNote, exportPdf, showToast]);
 
@@ -1292,7 +1291,7 @@ const App = () => {
       walStore.write(splitNote.filePath, splitNote.content);
       setSplitSaveState('error');
       refreshWal();
-      showToast('分屏保存失败，内容已暂存，可在顶部横幅恢复');
+      showToast('分屏保存失败，内容已暂存，可在顶部横幅恢复', 'error');
       return;
     }
     walStore.clear(splitNote.filePath);
@@ -1922,7 +1921,8 @@ const App = () => {
         </ErrorBoundary>
       )}
 
-      {toast && <div className={`toast ${toastExiting ? 'toast-exit' : ''}`} role="alert" aria-live="assertive">{toast}</div>}
+      <ToastHost />
+      <DialogHost />
     </div>
     </ErrorBoundary>
     </I18nProvider>

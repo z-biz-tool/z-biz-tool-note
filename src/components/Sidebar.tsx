@@ -7,6 +7,7 @@ import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
+import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
 import { FolderContextMenu } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 
@@ -284,32 +285,50 @@ export const Sidebar = ({
     setContextMenu(null);
   };
 
+  /**
+   * 树里展示的是去掉扩展名的名字，用户照着输入 "Guide" 时要把原扩展名补回来，
+   * 否则落盘成无扩展名文件、被笔记列表过滤掉，看起来就像数据丢了。
+   * 校验和落盘都走这里，保证「查重的名字」和「真正写出去的名字」是同一个。
+   */
+  const normalizeName = (item: FileItem, raw: string) => {
+    const ext = pathExtname(item.path);
+    const name = raw.trim();
+    return ext && !pathExtname(name) ? name + ext : name;
+  };
+
+  /** 返回错误文案则留在弹窗里继续改；重名要查一次磁盘，所以是异步 */
+  const validateName = async (item: FileItem, raw: string): Promise<string | null> => {
+    const name = raw.trim();
+    if (!name) return '名称不能为空';
+    if (/[/\\]/.test(name) || /^\.+$/.test(name)) return '名称不能包含 / 或 \\，也不能只有点';
+    const target = pathJoin(pathDirname(item.path), normalizeName(item, name));
+    // 只改大小写时不算重名：macOS 默认 APFS 大小写不敏感，原名会把自己查成"已存在"
+    if (target.toLowerCase() === item.path.toLowerCase()) return null;
+    if (await electronAPI.invoke('file-exists', target)) return '该名称已存在';
+    return null;
+  };
+
   const handleRename = async () => {
     const item = contextMenu?.item;
     if (!item) return;
-    
-    const input = prompt('输入新名称:', item.name);
+    // 先把右键菜单收掉，弹窗叠在菜单上会两层浮层抢焦点
+    setContextMenu(null);
+
+    const input = await promptDialog({
+      title: item.isDirectory ? '重命名文件夹' : '重命名',
+      message: item.path,
+      defaultValue: item.name,
+      confirmText: '重命名',
+      validate: raw => validateName(item, raw),
+    });
     if (input === null) return;
-    let newName = input.trim();
+    const newName = normalizeName(item, input);
     if (!newName || newName === item.name) return;
-    if (/[/\\]/.test(newName) || /^\.+$/.test(newName)) {
-      alert('名称不能包含 / 或 \\，也不能只有点');
-      return;
-    }
-    // 树里展示的是去掉扩展名的名字，用户照着输入 "Guide" 时要把原扩展名补回来，
-    // 否则落盘成无扩展名文件、被笔记列表过滤掉，看起来就像数据丢了
-    const ext = pathExtname(item.path);
-    if (ext && !pathExtname(newName)) newName += ext;
-    if (newName === item.name) return;
 
     const parentDir = pathDirname(item.path);
     const newPath = pathJoin(parentDir, newName);
-    
+
     try {
-      if (await electronAPI.invoke('file-exists', newPath)) {
-        alert('该名称已存在');
-        return;
-      }
       must(await electronAPI.invoke('rename-file', item.path, newPath));
       const oldPrefix = item.path + '/';
       const newPrefix = newPath + '/';
@@ -330,24 +349,30 @@ export const Sidebar = ({
         });
       }
       onRename?.(item.path, newPath, newName, !!item.isDirectory);
-      onRefresh?.();    } catch (err) {
+      onRefresh?.();
+      notify(`已重命名为 ${newName}`, 'success');
+    } catch (err) {
       console.error('重命名失败:', err);
-      alert('重命名失败: ' + err);
+      notify('重命名失败: ' + err, 'error');
     }
-    setContextMenu(null);
   };
 
   const handleDelete = async (e?: React.MouseEvent) => {
-    e?.stopPropagation();
     const item = contextMenu?.item;
     if (!item) return;
+    e?.stopPropagation();
+    setContextMenu(null);
 
     const isDir = item.isDirectory;
-    const msg = isDir
-      ? `确定将文件夹 "${item.name}" 移到废纸篓吗？`
-      : `确定将笔记 "${item.name}" 移到废纸篓吗？`;
-
-    if (!window.confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: isDir ? '删除文件夹' : '删除笔记',
+      message: isDir
+        ? `确定将文件夹 "${item.name}" 移到废纸篓吗？`
+        : `确定将笔记 "${item.name}" 移到废纸篓吗？`,
+      confirmText: '移到废纸篓',
+      danger: true,
+    });
+    if (!ok) return;
 
     try {
       must(await electronAPI.invoke('move-to-trash', item.path));
@@ -357,11 +382,11 @@ export const Sidebar = ({
       // 交给 App 关掉对应标签：标签还活着的话，2 秒防抖自动保存会把刚进废纸篓的文件写回来
       onDelete?.(gone, dir);
       onRefresh?.();
+      notify(isDir ? '文件夹已移到废纸篓' : '笔记已移到废纸篓', 'success');
     } catch (err) {
       console.error('删除失败:', err);
-      alert('删除失败: ' + err);
+      notify('删除失败: ' + err, 'error');
     }
-    setContextMenu(null);
   };
 
   const handleRecentClick = async (file: RecentFile) => {

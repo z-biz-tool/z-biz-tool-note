@@ -698,19 +698,26 @@ body {
 .empty-state p { font-size: 15px; }
 .empty-state-icon { margin-bottom: 16px; opacity: 0.3; }
 
-/* ===== Toast ===== */
-.toast {
+/* ===== Toast（见 lib/dialogs.tsx 的 notify / ToastHost） ===== */
+.toast-stack {
   position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  z-index: 10000; pointer-events: none;
+}
+.toast {
   padding: 10px 20px; background: var(--bg-tertiary); color: var(--text-primary);
   border: 1px solid var(--border-color); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md); font-size: 14px; z-index: 10000;
-  animation: toastIn 0.3s ease-out;
+  box-shadow: var(--shadow-md); font-size: 14px; max-width: 70vw;
+  pointer-events: auto; cursor: pointer; animation: toastIn 0.3s ease-out;
 }
 .toast.toast-exit {
   animation: toastOut 0.3s ease-in forwards;
 }
-@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@keyframes toastOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-10px); } }
+/* 错误提示要一眼看出是失败，不能和"已保存"长一个样 */
+.toast-error { border-left: 3px solid var(--danger-color); }
+.toast-success { border-left: 3px solid var(--success-color); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-10px); } }
 
 /* ===== Theme Selector ===== */
 .theme-selector { display: flex; gap: 8px; padding: 12px; }
@@ -1217,6 +1224,49 @@ body {
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border-color);
+}
+
+/* ===== 应用内 confirm / prompt（替代原生对话框，见 lib/dialogs.tsx） ===== */
+.app-dialog {
+  width: 420px;
+  animation: appDialogIn 0.14s ease-out;
+}
+@keyframes appDialogIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+.app-dialog .modal-body {
+  padding: 16px 20px 12px;
+}
+.app-dialog-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.app-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.app-dialog-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+.app-dialog-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--danger-color);
+}
+.btn-primary.danger {
+  background: var(--danger-color);
 }
 
 .settings-form {
