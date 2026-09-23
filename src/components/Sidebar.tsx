@@ -353,7 +353,9 @@ export const Sidebar = ({
     const input = await promptDialog({
       title: item.isDirectory ? '重命名文件夹' : '重命名',
       message: item.path,
-      defaultValue: item.name,
+      // 输入框预填的是树里/标签里看到的那个名字（笔记不带 .md）：
+      // 预填 "Getting Started.md" 会让人以为 .md 是名字的一部分，删掉它反而像在改扩展名。
+      defaultValue: displayName(item.name),
       confirmText: '重命名',
       validate: raw => validateName(item, raw),
     });
@@ -369,7 +371,7 @@ export const Sidebar = ({
       remapPaths(item.path, newPath, !!item.isDirectory, newName);
       onRename?.(item.path, newPath, newName, !!item.isDirectory);
       onRefresh?.();
-      notify(`已重命名为 ${newName}`, 'success');
+      notify(`已重命名为 ${displayName(newName)}`, 'success');
     } catch (err) {
       console.error('重命名失败:', err);
       notify('重命名失败: ' + err, 'error');
