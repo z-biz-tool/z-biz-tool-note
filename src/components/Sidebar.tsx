@@ -273,10 +273,10 @@ export const Sidebar = ({
       parentDir = item.isDirectory ? item.path : pathDirname(item.path);
     }
     if (!parentDir) return;
-    let folderName = 'New Folder';
+    let folderName = '新建文件夹';
     let counter = 1;
     while (await electronAPI.invoke('file-exists', pathJoin(parentDir, folderName))) {
-      folderName = `New Folder ${counter++}`;
+      folderName = `新建文件夹 ${counter++}`;
     }
     const folderPath = pathJoin(parentDir, folderName);
     must(await electronAPI.invoke('ensure-dir', folderPath));
