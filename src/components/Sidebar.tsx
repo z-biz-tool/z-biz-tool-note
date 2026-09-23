@@ -674,6 +674,8 @@ export const Sidebar = ({
 
       <div 
         className="sidebar-tabs"
+        role="group"
+        aria-label="侧栏视图"
         style={{
           background: cardBgGradient,
           borderRadius: 10,
@@ -681,16 +683,18 @@ export const Sidebar = ({
           marginBottom: 12,
         }}
       >
-        <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} onClick={() => setActiveTab('files')} title="文件树" aria-label="文件树">
+        {/* 用 aria-pressed 而不是 role=tab：这四个按钮下面没有四个 tabpanel，
+            标成 tab 只会得到一组指向不存在面板的 aria-controls。跟状态栏那排模式按钮同一套约定。 */}
+        <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} aria-pressed={activeTab === 'files'} onClick={() => setActiveTab('files')} title="文件树" aria-label="文件树">
           <Files size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} onClick={() => setActiveTab('recent')} title="最近打开" aria-label="最近打开">
+        <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} aria-pressed={activeTab === 'recent'} onClick={() => setActiveTab('recent')} title="最近打开" aria-label="最近打开">
           <Clock size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')} title={modKeys('全文搜索（Cmd+K）')} aria-label="全文搜索">
+        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} aria-pressed={activeTab === 'search'} onClick={() => setActiveTab('search')} title={modKeys('全文搜索（Cmd+K）')} aria-label="全文搜索">
           <Search size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'tags' ? 'active' : ''}`} onClick={() => setActiveTab('tags')} title="标签" aria-label="标签">
+        <button className={`sidebar-tab ${activeTab === 'tags' ? 'active' : ''}`} aria-pressed={activeTab === 'tags'} onClick={() => setActiveTab('tags')} title="标签" aria-label="标签">
           <Hash size={14} />
         </button>
       </div>

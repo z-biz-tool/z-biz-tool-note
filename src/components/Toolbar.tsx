@@ -43,8 +43,16 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
 
   if (!editor) return null;
 
+  // 图标按钮的可访问名与按下态：只有 title 的话读屏能不能报出来全看浏览器心情，
+  // 而加粗/斜体这类"开着还是关着"更是完全看不出来（active 只是变色）。
   const btn = (onClick: () => void, active: boolean, icon: React.ReactNode, title: string) => (
-    <button className={`tb-btn ${active ? 'active' : ''}`} onClick={onClick} title={modKeys(title)}>
+    <button
+      className={`tb-btn ${active ? 'active' : ''}`}
+      onClick={onClick}
+      title={modKeys(title)}
+      aria-label={title}
+      aria-pressed={active}
+    >
       {icon}
     </button>
   );
@@ -55,7 +63,14 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
 
   const MenuButton = ({ id, icon, label, children }: { id: string; icon: React.ReactNode; label: string; children: React.ReactNode }) => (
     <div className="tb-menu-wrap" ref={openMenu === id ? menuRef : undefined}>
-      <button className={`tb-menu-btn ${openMenu === id ? 'active' : ''}`} onClick={() => toggleMenu(id)} title={modKeys(label)}>
+      <button
+        className={`tb-menu-btn ${openMenu === id ? 'active' : ''}`}
+        onClick={() => toggleMenu(id)}
+        title={modKeys(label)}
+        aria-label={label}
+        aria-haspopup="true"
+        aria-expanded={openMenu === id}
+      >
         {icon}
         <ChevronDown size={12} className="tb-chevron" />
       </button>
