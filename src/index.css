@@ -884,6 +884,18 @@ body {
   background: var(--border-color);
   margin: 4px 8px;
 }
+/* 「移到文件夹」子菜单：贴在侧栏的右键菜单里内嵌展开，比浮出面板更少被相邻窗口裁掉 */
+.context-menu-arrow { margin-left: auto; opacity: 0.55; transition: transform var(--transition); }
+.context-menu-arrow.open { transform: rotate(90deg); }
+.context-submenu {
+  max-height: 208px; overflow-y: auto;
+  margin: 0 0 2px 14px; padding-left: 8px;
+  border-left: 1px solid var(--border-color);
+}
+.context-submenu-item { padding: 6px 10px; gap: 6px; font-size: 12px; }
+.context-submenu-hint { padding: 6px 10px; font-size: 12px; color: var(--text-muted); }
+/* 父目录不在列表里时补的位置提示：如 "Sub …… Examples/" */
+.context-submenu-where { margin-left: auto; padding-left: 8px; font-size: 11px; color: var(--text-muted); }
 
 /* ===== Tags ===== */
 .tag-mark {

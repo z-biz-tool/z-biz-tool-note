@@ -8,7 +8,7 @@ import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
-import { FolderContextMenu } from './FolderContextMenu';
+import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
 
@@ -21,6 +21,16 @@ const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(
 function must(r: any) {
   if (r && r.success === false) throw new Error(r.error || '操作失败');
   return r;
+}
+
+/** 递归树里挑出所有能当放置目标的目录，depth 用来在子菜单里缩进 */
+function collectDirs(nodes: FileItem[], depth: number, out: MoveTarget[] = []): MoveTarget[] {
+  for (const n of nodes) {
+    if (!n.isDirectory || n.name.startsWith('.')) continue;
+    out.push({ path: n.path, name: n.name, depth, relPath: n.path });
+    collectDirs(n.children ?? [], depth + 1, out);
+  }
+  return out;
 }
 
 const SEARCH_HISTORY_KEY = 'searchHistory';
@@ -75,7 +85,7 @@ export const Sidebar = ({
   isOpen, currentDir, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
-  const { listFiles, readFile, showOpenDialog } = useFileOperations();
+  const { listFiles, listFilesRecursive, readFile, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -92,6 +102,11 @@ export const Sidebar = ({
   // 拖拽移动的源：dataTransfer 在 dragover 阶段读不出数据（浏览器隐私限制），只能自己记
   const dragItemRef = useRef<{ path: string; isDir: boolean } | null>(null);
   const [dropTargetDir, setDropTargetDir] = useState<string | null>(null);
+  // 右键「移到文件夹」子菜单的候选：null 表示还没加载完
+  const [moveTargets, setMoveTargets] = useState<MoveTarget[] | null>(null);
+  // 递归列目录按工作区缓存；改名/移动/新建都会 bump refreshKey，缓存随之作废
+  const dirsCacheRef = useRef<{ key: string; dirs: MoveTarget[] } | null>(null);
+  const moveSeqRef = useRef(0);
 
   useEffect(() => {
     try {
@@ -234,6 +249,9 @@ export const Sidebar = ({
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const type: 'file' | 'folder' | 'empty' = file?.isDirectory ? 'folder' : file?.isFile ? 'file' : 'empty';
+    // 每次右键都是一次新的提问：作废上一次子菜单的候选和仍在飞的列目录结果
+    moveSeqRef.current++;
+    setMoveTargets(null);
     setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, type, item: file || undefined });
   };
 
@@ -429,6 +447,41 @@ export const Sidebar = ({
       console.error('移动失败:', err);
       notify('移动失败: ' + err, 'error');
     }
+  };
+
+  /** 子菜单展开时才递归列目录：拖拽之外给键盘/触控板一条同样的移动路径 */
+  const prepareMoveTargets = async () => {
+    const item = contextMenu?.item;
+    if (!item || !currentDir) return;
+    setMoveTargets(null);
+    const seq = ++moveSeqRef.current;
+    const key = `${currentDir}#${refreshKey ?? 0}`;
+    let dirs = dirsCacheRef.current?.key === key ? dirsCacheRef.current.dirs : null;
+    if (!dirs) {
+      const result = await listFilesRecursive(currentDir);
+      if (!result.success || !result.files) {
+        notify('无法列出文件夹' + (result.error ? '：' + result.error : ''), 'error');
+        dirs = [];
+      } else {
+        // 根目录也是合法目标（把东西拖回工作区根），列目录只给子节点，所以自己补上
+        dirs = [{ path: currentDir, name: '根目录', depth: 0, relPath: '根目录' }, ...collectDirs(result.files as FileItem[], 1)];
+      }
+      dirsCacheRef.current = { key, dirs };
+    }
+    if (seq !== moveSeqRef.current) return;
+    const prefix = currentDir + '/';
+    setMoveTargets(
+      dirs
+        .filter(d => canDropInto(item.path, d.path))
+        .map(d => ({ ...d, relPath: d.path === currentDir ? '根目录' : d.path.slice(prefix.length) })),
+    );
+  };
+
+  const handleMoveTo = async (dirPath: string) => {
+    const item = contextMenu?.item;
+    if (!item) return;
+    setContextMenu(null);
+    await moveInto(item.path, dirPath, !!item.isDirectory);
   };
 
   const handleDelete = async (e?: React.MouseEvent) => {
@@ -886,6 +939,9 @@ export const Sidebar = ({
           onNewFolder={handleNewFolder}
           onRename={handleRename}
           onDelete={handleDelete}
+          moveTargets={moveTargets}
+          onOpenMove={prepareMoveTargets}
+          onMoveTo={handleMoveTo}
         />
       )}
 
