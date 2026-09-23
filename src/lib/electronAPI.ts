@@ -510,13 +510,17 @@ export const electronAPI = {
         case 'open-file-in-finder':
           return { success: false, error: '浏览器模式不可用' };
         case 'save-image':
-          return { success: false, error: '浏览器模式不可用' };
+          return { success: false, error: '浏览器模式没有笔记图库' };
         case 'read-all-notes':
           return { success: true, notes: demoNoteSummaries() };
         case 'find-backlinks':
           return { success: true, backlinks: demoBacklinks(args[0], args[1], args[2]) };
         case 'read-note':
           return { success: true, content: demoNoteById(args[0]) };
+        // 笔记图库（notes_dir/images）是 Tauri 侧的东西，演示区的正文一律以 base64 存，
+        // 所以这条在浏览器里必然走失败分支 —— 失败形状两侧一致，UI 才敢直接说原因。
+        case 'read-image':
+          return { success: false, error: '浏览器模式没有笔记图库' };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
         default:
@@ -628,6 +632,11 @@ export const electronAPI = {
         case 'save-image': {
           const relativePath = await invoke<string>('save_image', { noteId: args[0], data: args[1] });
           return { success: true, path: relativePath };
+        }
+        case 'read-image': {
+          // 正文里 src 形如 images/xxx.png 的图要由 Rust 读成 data URI（前端拼不出这个路径）
+          const dataUrl = await invoke<string>('read_image', { path: args[0] });
+          return { success: true, dataUrl };
         }
         case 'ai-chat': {
           try {

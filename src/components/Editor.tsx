@@ -51,6 +51,8 @@ import { FindReplace } from './FindReplace';
 import { EmojiPicker } from './EmojiPicker';
 import { Minimap } from './Minimap';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { electronAPI, errText } from '../lib/electronAPI';
+import { notify } from '../lib/dialogs';
 import type { EditorMode, HeadingItem, WikiLinkItem, NoteStats } from '../types';
 import mermaid from 'mermaid';
 
@@ -502,6 +504,28 @@ export const Editor = ({
     });
   }, [editor]);
 
+  // 粘贴/拖进来的图片先试着存进笔记图库，拿到 images/xxx 相对路径；存不成才内嵌 base64。
+  // 两种"存不成"必须分开：浏览器演示区本来就没有图库（内嵌是预期行为，不用打扰用户），
+  // 而原生侧真写盘失败（盘满、目录不可写）时静默转 base64，等于把几十 MB 塞进正文，
+  // 用户还以为图存在库里 —— 那条 catch 之前对两者一视同仁。
+  //
+  // try/catch 不能省：桥层只把 Tauri 分支包在 try 里（electronAPI.ts:532 起），
+  // 浏览器回退分支抛出来就是 rejected promise。实测过一次让 invoke 抛错的拖拽，
+  // 结果是图片既没入库也没内嵌 —— 拖进去的文件无声消失，比原来的裸 catch 更糟。
+  const persistImage = useCallback(async (dataUrl: string): Promise<string | null> => {
+    const noteId = currentFilePath.split('/').pop()?.replace(/\.md$/i, '') || 'untitled';
+    let reason: unknown;
+    try {
+      const result = await electronAPI.invoke('save-image', noteId, dataUrl) as { success?: boolean; path?: string; error?: string };
+      if (result?.success && result.path) return result.path;
+      reason = result?.error;
+    } catch (e) {
+      reason = e;
+    }
+    if (electronAPI.isTauri) notify(`图片没能存进笔记库：${errText(reason)}，这张先内嵌在正文里`, 'error');
+    return null;
+  }, [currentFilePath]);
+
   // 粘贴处理：Markdown 文本 + 图片
   useEffect(() => {
     if (!editor) return;
@@ -526,14 +550,8 @@ export const Editor = ({
             const reader = new FileReader();
             reader.onload = async () => {
               const base64 = reader.result as string;
-              try {
-                const { invoke } = await import('@tauri-apps/api/core');
-                const relativePath = await invoke('save_image', { noteId: currentFilePath.split('/').pop()?.replace('.md', '') || 'untitled', data: base64 });
-                editor.chain().focus().setImage({ src: relativePath as string }).run();
-              } catch {
-                // fallback to base64
-                editor.chain().focus().setImage({ src: base64 }).run();
-              }
+              const savedPath = await persistImage(base64);
+              editor.chain().focus().setImage({ src: savedPath || base64 }).run();
             };
             reader.readAsDataURL(file);
           }
@@ -543,7 +561,7 @@ export const Editor = ({
     const element = editor.view.dom;
     element.addEventListener('paste', handlePaste);
     return () => element.removeEventListener('paste', handlePaste);
-  }, [editor, currentFilePath]);
+  }, [editor, currentFilePath, persistImage]);
 
   // 拖拽图片处理 - 尝试保存到磁盘（与粘贴逻辑一致的磁盘路径
   useEffect(() => {
@@ -563,17 +581,8 @@ export const Editor = ({
         const reader = new FileReader();
         reader.onload = async () => {
           const data = reader.result as string;
-          try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            const relativePath = await invoke('save_image', {
-              noteId: currentFilePath.split('/').pop()?.replace('.md', '') || 'untitled',
-              data,
-            });
-            editor.chain().focus().setImage({ src: relativePath as string, alt: imageFile.name }).run();
-          } catch {
-            // 保存失败，回退到 base64
-            editor.chain().focus().setImage({ src: data, alt: imageFile.name }).run();
-          }
+          const savedPath = await persistImage(data);
+          editor.chain().focus().setImage({ src: savedPath || data, alt: imageFile.name }).run();
         };
         reader.readAsDataURL(imageFile);
         return;
@@ -592,7 +601,7 @@ export const Editor = ({
       element.removeEventListener('dragover', handleDragOver);
       element.removeEventListener('drop', handleDrop);
     };
-  }, [editor, currentFilePath]);
+  }, [editor, currentFilePath, persistImage]);
 
   const jumpToHeading = useCallback((pos: number) => {
     if (!editor) return;
