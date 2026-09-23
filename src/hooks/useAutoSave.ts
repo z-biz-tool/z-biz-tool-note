@@ -71,12 +71,21 @@ export const walStore = {
  * 启动节流：同一笔记短时间内多次触发 create_backup 时，仅保留最长一次间隔
  */
 export const BACKUP_DEBOUNCE_MS = 5 * 60 * 1000; // 5 分钟
+// 存的是 [...entries()] 这种数组（见下面 persist），读回来必须重新包成 Map：
+// 以前这里直接把 JSON.parse 的结果当 Map 用，第二次会话起 lastBackupTs.get() 就抛
+// `TypeError: lastBackupTs.get is not a function`，而它是在 handleSave 里被调的，
+// 于是盘已经写成功、脏标记却永远不清、也不弹「已保存」（实测 unhandledrejection 抓到）。
 const lastBackupTs: Map<string, number> = (() => {
+  const empty = new Map<string, number>();
   try {
     const raw = sessionStorage.getItem('zennote-last-backup-ts');
-    return raw ? (JSON.parse(raw) as Map<string, number>) : new Map<string, number>();
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return new Map<string, number>(parsed as [string, number][]);
+    if (parsed && typeof parsed === 'object') return new Map<string, number>(Object.entries(parsed));
+    return empty;
   } catch {
-    return new Map<string, number>();
+    return empty;
   }
 })();
 

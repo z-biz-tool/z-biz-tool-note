@@ -1467,14 +1467,16 @@ const App = () => {
       walStore.clear(currentNote.filePath);
       refreshWal();
       setMainSaveState('saved');
-      // 创建备份（版本历史）—— 节流：同文件 5 分钟内不重复备份
-      if (shouldCreateBackup(currentNote.filePath)) {
-        try {
+      // 创建备份（版本历史）—— 节流：同文件 5 分钟内不重复备份。
+      // 整段都要包起来：这里抛过一次（节流表反序列化坏掉）就直接把后面的
+      // 清脏标记、更新"已保存 HH:MM"、toast 全部跳过 —— 内容已经落盘，界面却永远说没保存。
+      try {
+        if (shouldCreateBackup(currentNote.filePath)) {
           mustSucceed(await electronAPI.invoke('create-backup', currentNote.filePath, currentNote.content));
           markBackedUp(currentNote.filePath);
-        } catch (e) {
-          console.warn('创建备份失败:', errText(e));
         }
+      } catch (e) {
+        console.warn('创建备份失败:', errText(e));
       }
       updateActiveTab({ isDirty: false });
       await syncMtime(currentNote.filePath, { isCurrent: true, afterSave: true });
@@ -1563,14 +1565,15 @@ const App = () => {
     walStore.clear(splitNote.filePath);
     refreshWal();
     setSplitSaveState('saved');
-    // 分屏同样需要版本历史（之前漏掉，P0 缺陷）
-    if (shouldCreateBackup(splitNote.filePath)) {
-      try {
+    // 分屏同样需要版本历史（之前漏掉，P0 缺陷）。
+    // 和主窗格一样整段兜住：记账抛错不能把清脏标记那段带走。
+    try {
+      if (shouldCreateBackup(splitNote.filePath)) {
         mustSucceed(await electronAPI.invoke('create-backup', splitNote.filePath, splitNote.content));
         markBackedUp(splitNote.filePath);
-      } catch (e) {
-        console.warn('分屏创建备份失败:', errText(e));
       }
+    } catch (e) {
+      console.warn('分屏创建备份失败:', errText(e));
     }
     updateNote(splitNote.id, { isDirty: false });
     await syncMtime(splitNote.filePath, { isCurrent: false, isSplit: true, afterSave: true });
