@@ -398,6 +398,13 @@ body {
 .sidebar-folder-item:hover { background: transparent; }
 .sidebar-folder-item:hover::before { transform: scale(1); opacity: 0.08; }
 .sidebar-folder-item:active { transform: scale(0.98); }
+/* 拖拽放置目标：用 outline 而不是 background，列表容器上的背景是行内渐变色，盖不住 */
+.sidebar-folder-item.drop-target,
+.sidebar-file-list.drop-target {
+  outline: 1px dashed var(--accent-color);
+  outline-offset: -2px;
+  background-color: color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
 .sidebar-recent-item {
   padding: 6px 12px; cursor: pointer; border-bottom: 1px solid var(--border-color);
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 6px;

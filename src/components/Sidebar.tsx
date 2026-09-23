@@ -89,6 +89,9 @@ export const Sidebar = ({
   const expandedRef = useRef<Set<string>>(expandedFolders);
   expandedRef.current = expandedFolders;
   const treeSeqRef = useRef(0);
+  // 拖拽移动的源：dataTransfer 在 dragover 阶段读不出数据（浏览器隐私限制），只能自己记
+  const dragItemRef = useRef<{ path: string; isDir: boolean } | null>(null);
+  const [dropTargetDir, setDropTargetDir] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -331,30 +334,94 @@ export const Sidebar = ({
 
     try {
       must(await electronAPI.invoke('rename-file', item.path, newPath));
-      const oldPrefix = item.path + '/';
-      const newPrefix = newPath + '/';
-      const renamedPath = item.path;
-      mutateRecent(f => {
-        if (f.path === renamedPath) return { ...f, path: newPath, name: newName };
-        if (item.isDirectory && f.path.startsWith(oldPrefix)) {
-          return { ...f, path: newPrefix + f.path.slice(oldPrefix.length) };
-        }
-        return f;
-      });
-      if (item.isDirectory) {
-        // 展开态记的是路径：目录改了名不跟着搬，刷新时补齐子节点就会认不出来，整棵子树收起
-        setExpandedFolders(prev => {
-          const next = new Set<string>();
-          prev.forEach(p => next.add(p === renamedPath ? newPath : p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : p));
-          return next;
-        });
-      }
+      remapPaths(item.path, newPath, !!item.isDirectory, newName);
       onRename?.(item.path, newPath, newName, !!item.isDirectory);
       onRefresh?.();
       notify(`已重命名为 ${newName}`, 'success');
     } catch (err) {
       console.error('重命名失败:', err);
       notify('重命名失败: ' + err, 'error');
+    }
+  };
+
+  /** 路径变了要一起搬的地方：最近列表、目录展开态（重命名与拖拽移动共用一套） */
+  const remapPaths = (oldPath: string, newPath: string, isDirectory: boolean, newName: string) => {
+    const oldPrefix = oldPath + '/';
+    const newPrefix = newPath + '/';
+    mutateRecent(f => {
+      if (f.path === oldPath) return { ...f, path: newPath, name: newName };
+      if (isDirectory && f.path.startsWith(oldPrefix)) {
+        return { ...f, path: newPrefix + f.path.slice(oldPrefix.length) };
+      }
+      return f;
+    });
+    if (!isDirectory) return;
+    // 展开态记的是路径：目录改了名不跟着搬，刷新时补齐子节点就会认不出来，整棵子树收起
+    setExpandedFolders(prev => {
+      const next = new Set<string>();
+      prev.forEach(p => next.add(p === oldPath ? newPath : p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : p));
+      return next;
+    });
+  };
+
+  // 允许把笔记/文件夹拖进另一个文件夹（T3-05）。已经在目标里、或要放进自己/自己的
+  // 子目录，都不算合法目标 —— 后者 fs.rename 会直接报错，不如提前拦住给句人话。
+  const canDropInto = (srcPath: string, targetDir: string) =>
+    !!srcPath && !!targetDir && pathDirname(srcPath) !== targetDir
+    && targetDir !== srcPath && !targetDir.startsWith(srcPath + '/');
+
+  const handleDragStart = (e: React.DragEvent, item: FileItem) => {
+    dragItemRef.current = { path: item.path, isDir: !!item.isDirectory };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.path);
+    (e.currentTarget as HTMLElement).style.opacity = '0.45';
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    dragItemRef.current = null;
+    setDropTargetDir(null);
+    (e.currentTarget as HTMLElement).style.opacity = '';
+  };
+
+  const handleDirDragOver = (e: React.DragEvent, dirPath: string) => {
+    const src = dragItemRef.current;
+    if (!src || !canDropInto(src.path, dirPath)) return;
+    // 不 preventDefault 就是"这里不能放"，浏览器不会触发 drop
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dropTargetDir !== dirPath) setDropTargetDir(dirPath);
+  };
+
+  const handleDirDrop = async (e: React.DragEvent, targetDir: string) => {
+    e.preventDefault();
+    // 冒泡到文件列表容器会被当成"移回根目录"，必须截住
+    e.stopPropagation();
+    const src = dragItemRef.current;
+    dragItemRef.current = null;
+    setDropTargetDir(null);
+    if (!src || !canDropInto(src.path, targetDir)) return;
+    await moveInto(src.path, targetDir, src.isDir);
+  };
+
+  const moveInto = async (srcPath: string, targetDir: string, isDir: boolean) => {
+    const name = pathBasename(srcPath);
+    const newPath = pathJoin(targetDir, name);
+    try {
+      if (await electronAPI.invoke('file-exists', newPath)) {
+        notify(`目标文件夹里已有 ${name}`, 'error');
+        return;
+      }
+      must(await electronAPI.invoke('rename-file', srcPath, newPath));
+      remapPaths(srcPath, newPath, isDir, name);
+      // 目标目录展开着才看得见移过去的东西，否则像"文件凭空消失了"
+      setExpandedFolders(prev => prev.has(targetDir) ? prev : new Set(prev).add(targetDir));
+      loadFileTree(currentDir, [targetDir]);
+      onRename?.(srcPath, newPath, name, isDir);
+      onRefresh?.();
+      notify(`已移动到 ${targetDir === currentDir ? '根目录' : pathBasename(targetDir)}`, 'success');
+    } catch (err) {
+      console.error('移动失败:', err);
+      notify('移动失败: ' + err, 'error');
     }
   };
 
@@ -484,14 +551,23 @@ export const Sidebar = ({
 
   const renderFileTree = (files: FileItem[], depth = 0): React.ReactNode => {
     return files.map(file => (
-      <div key={file.path}>
+      <div
+        key={file.path}
+        draggable
+        onDragStart={(e) => handleDragStart(e, file)}
+        onDragEnd={handleDragEnd}
+      >
         {file.isDirectory ? (
           <>
             <button
-              className="sidebar-folder-item"
+              className={`sidebar-folder-item ${dropTargetDir === file.path ? 'drop-target' : ''}`}
               style={{ paddingLeft: `${12 + depth * 16}px` }}
               onClick={() => handleFileClick(file)}
               onContextMenu={(e) => handleContextMenu(e, file)}
+              onDragOver={(e) => handleDirDragOver(e, file.path)}
+              onDragLeave={() => setDropTargetDir(prev => (prev === file.path ? null : prev))}
+              onDrop={(e) => handleDirDrop(e, file.path)}
+              title={dropTargetDir === file.path ? `移动到 ${file.name}` : undefined}
             >
               {expandedFolders.has(file.path) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               <Folder size={15} />
@@ -506,6 +582,9 @@ export const Sidebar = ({
             role="treeitem"
             onClick={() => handleFileClick(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
+            // 笔记行不是放置目标：吞掉 dragover 让它不冒泡到列表容器，
+            // 否则"把笔记拖到另一篇笔记上"会被容器当成放回根目录。
+            onDragOver={(e) => e.stopPropagation()}
           >
             <FileText size={14} />
             <span>{file.name.replace(/\.md$|\.markdown$/, '')}</span>
@@ -599,9 +678,12 @@ export const Sidebar = ({
             </span>
           </div>
           <div 
-            className="sidebar-file-list" 
+            className={`sidebar-file-list ${dropTargetDir === currentDir ? 'drop-target' : ''}`} 
             role="tree" 
             onContextMenu={(e) => handleContextMenu(e)}
+            onDragOver={(e) => handleDirDragOver(e, currentDir)}
+            onDrop={(e) => handleDirDrop(e, currentDir)}
+            onDragLeave={() => setDropTargetDir(prev => (prev === currentDir ? null : prev))}
             style={{
               background: cardBgGradient,
               borderRadius: 10,
