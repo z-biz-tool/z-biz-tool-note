@@ -230,6 +230,23 @@ body {
   padding: 32px 48px !important;
   line-height: 1.6 !important;
 }
+/* 源码模式真正用的那个输入框（跟 .source-mode 同一套观感：等宽、保留换行、同样的内边距） */
+.source-textarea {
+  width: 100%;
+  min-height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  padding: 32px 48px;
+  tab-size: 2;
+}
+
 .source-mode .ProseMirror pre {
   background: transparent !important;
   border: none !important;

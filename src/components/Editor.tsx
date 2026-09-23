@@ -288,6 +288,8 @@ export const Editor = ({
       }
     }
 
+    // 源码模式下 textarea 才是编辑对象：这里再 setContent 会把用户刚敲的原文按渲染后的文档盖掉
+    if (editorMode === 'source') return;
     // 切换到新笔记：直接替换 doc
     // 注：之前用 rAF + opacity 0 做切换过渡，macOS 失焦时 rAF 被节流会导致容器
     // 永久 opacity 0（"白屏，要切到其他 app 再回来才恢复"）。已撤掉，简单 setContent
@@ -320,7 +322,7 @@ export const Editor = ({
       updateHeadingsRef.current();
       updateWikiLinksRef.current();
     }
-  }, [content, editor, currentFilePath]);
+  }, [content, editor, currentFilePath, editorMode]);
 
   // 搜索结果跳转：先让 SearchEnhanced 画好高亮，再把光标放到第一处匹配上。
   // 侧栏那一行明明印着 L6，以前点击却只传路径 —— 打开后停在文首，行号等于假的。
@@ -349,16 +351,23 @@ export const Editor = ({
     };
   }, [editor]);
 
-  // Source mode toggle
+  // 源码模式：真的拿一个 textarea 编辑 Markdown 原文。
+  // 以前这里只是给 .ProseMirror 挂一个 .source-mode 类（CSS 早就是按 textarea 写的：mono + pre-wrap
+  // + 32px 内边距），可界面却写着"切到源码模式：直接编辑 Markdown 原文" —— 实际改的还是渲染后的树，
+  // 表格、标题、双链全都碰不到原文。
+  const [sourceText, setSourceText] = useState<string | null>(null);
   useEffect(() => {
     if (!editor) return;
     const element = editor.view.dom;
     if (editorMode === 'source') {
       element.classList.add('source-mode');
+      // content 就是上层喂进来的正文 markdown（编辑器每次改动都会 onChange 上来），拿它当源文本
+      setSourceText(content ?? editor.getMarkdown());
     } else {
       element.classList.remove('source-mode');
+      setSourceText(null);
     }
-  }, [editorMode, editor]);
+  }, [editorMode, editor, content]);
 
   // Focus mode
   useEffect(() => {
@@ -639,7 +648,25 @@ export const Editor = ({
       <div className="editor-body-row">
         <div className="editor-scroll" ref={(el) => { editorScrollRef.current = el; scrollContainerRef.current = el; setScrollContainerEl(el); }}>
           <div className="editor-content">
-            <EditorContent editor={editor} />
+            {/* 编辑器本体只隐藏不卸载：拔掉 EditorContent 会连 ProseMirror 的 DOM 一起拆掉，
+                撤销栈、光标、节点视图全得重建 */}
+            <div style={{ display: sourceText === null ? 'block' : 'none' }}>
+              <EditorContent editor={editor} />
+            </div>
+            {sourceText !== null && (
+              <textarea
+                className="source-textarea"
+                value={sourceText}
+                spellCheck={false}
+                aria-label="Markdown 源码"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSourceText(v);
+                  // 同步给上层：脏标记、自动保存、WAL 全都照原来的路子走
+                  onChange(v);
+                }}
+              />
+            )}
           </div>
         </div>
         <Minimap editor={editor} scrollContainer={scrollContainerEl} />
