@@ -153,13 +153,13 @@ const App = () => {
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [stats, setStats] = useState({ words: 0, characters: 0, lines: 0, readingTime: 0 });
+  const [stats, setStats] = useState({ words: 0, characters: 0, blocks: 0, readingTime: 0 });
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
   const [activeHeading, setActiveHeading] = useState<string | null>(null);
   // 分屏右窗格独立的标题/统计状态
   const [splitHeadings, setSplitHeadings] = useState<HeadingItem[]>([]);
   const [splitActiveHeading, setSplitActiveHeading] = useState<string | null>(null);
-  const [splitStats, setSplitStats] = useState({ words: 0, characters: 0, lines: 0, readingTime: 0 });
+  const [splitStats, setSplitStats] = useState({ words: 0, characters: 0, blocks: 0, readingTime: 0 });
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [lastSavedSplit, setLastSavedSplit] = useState<string | null>(null);
   // 保存状态机：驱动 StatusBar 的 saving/saved/error 微标

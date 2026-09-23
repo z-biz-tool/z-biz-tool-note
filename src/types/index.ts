@@ -112,7 +112,7 @@ export interface FileItem {
 export interface NoteStats {
   words: number;
   characters: number;
-  lines: number;
+  blocks: number;
   readingTime: number;
 }
 

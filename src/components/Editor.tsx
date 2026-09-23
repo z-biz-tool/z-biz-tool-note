@@ -50,7 +50,7 @@ import { FindReplace } from './FindReplace';
 import { EmojiPicker } from './EmojiPicker';
 import { Minimap } from './Minimap';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { EditorMode, HeadingItem, WikiLinkItem } from '../types';
+import type { EditorMode, HeadingItem, WikiLinkItem, NoteStats } from '../types';
 import mermaid from 'mermaid';
 
 import 'katex/dist/katex.min.css';
@@ -86,7 +86,7 @@ interface EditorProps {
   typewriterMode: boolean;
   showFindReplace: boolean;
   onToggleFindReplace: () => void;
-  onStatsChange: (stats: { words: number; characters: number; lines: number; readingTime: number }) => void;
+  onStatsChange: (stats: NoteStats) => void;
   onHeadingsChange: (headings: HeadingItem[]) => void;
   onWikiLinksChange: (links: WikiLinkItem[]) => void;
   currentFilePath: string;
@@ -420,9 +420,11 @@ export const Editor = ({
     const nonCjkWords = nonCjkText.trim() ? nonCjkText.trim().split(/\s+/).length : 0;
     const words = cjkCount + nonCjkWords;
     const characters = text.length;
-    const lines = text.split('\n').length;
+    // 行数以前取 getText() 换行数：表格每个单元格、代码块每一行都算一行，
+    // 一篇 26 个块的笔记能报出 231 行，用户对着屏幕完全对不上。改成顶层块数。
+    const blocks = editor.state.doc.childCount;
     const readingTime = words === 0 ? 0 : Math.max(1, Math.ceil(words / 200)); // CJK 约 200 字/分钟；空文档别谎称"约 1 分钟"
-    onStatsChange({ words, characters, lines, readingTime });
+    onStatsChange({ words, characters, blocks, readingTime });
   }, [editor, onStatsChange]);
   updateStatsRef.current = updateStats;
 

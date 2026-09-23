@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode, Maximize2, Minimize2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import type { ThemeName } from '../types';
+import type { ThemeName, NoteStats } from '../types';
 import { themeLabel } from '../lib/themes';
 
 interface StatusBarProps {
@@ -9,7 +9,7 @@ interface StatusBarProps {
   isDirty: boolean;
   lastSaved: string | null;
   saveState?: 'idle' | 'dirty' | 'saving' | 'saved' | 'error'; // 保存状态机（P0 优化）
-  stats: { words: number; characters: number; lines: number; readingTime: number };
+  stats: NoteStats;
   editorMode: 'wysiwyg' | 'source';
   focusMode: boolean;
   typewriterMode: boolean;
@@ -109,8 +109,11 @@ export const StatusBar = React.memo(({
 
         <div className="status-bar-divider" />
 
-        <span style={{ fontSize: 12 }} title="按 200 字/分钟估算的阅读时间">
-          {stats.words} 词 · {stats.characters} 字 · {stats.lines} 行 · 约 {stats.readingTime} 分钟
+        <span
+          style={{ fontSize: 12 }}
+          title="词数：中文按字计、英文按词计；阅读时长按 200 字/分钟估算"
+        >
+          {stats.words} 词 · {stats.characters} 字 · {stats.blocks} 段 · 约 {stats.readingTime} 分钟
         </span>
 
         <div className="status-bar-divider" />
