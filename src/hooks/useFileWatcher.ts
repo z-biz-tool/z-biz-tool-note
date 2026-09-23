@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { electronAPI } from '../lib/electronAPI';
 
 type WatchHandler = (path: string) => void;
 
@@ -21,6 +22,7 @@ interface UseFileWatcherOptions {
  * 文件系统监听钩子（替代 5 秒 mtime 轮询）。
  *
  * 行为：
+ *   0. 非 Tauri 环境（浏览器演示区）直接跳过，不发 invoke/listen
  *   1. dir 变化时 → 先 stop_watch 再 start_watch（新目录，旧监听自动 drop）
  *   2. 接收 Rust emit 的 zennote://file-* 事件并分发到对应回调
  *   3. 组件卸载时自动 stop_watch
@@ -38,7 +40,9 @@ export function useFileWatcher(opts: UseFileWatcherOptions): void {
   callbacksRef.current = { onChanged, onRemoved, onCreated };
 
   useEffect(() => {
-    if (!enabled || !dir) return;
+    // 浏览器演示区没有 Tauri 后端，listen/invoke 都会在里面抛错，
+    // 之前每开一次目录就在控制台留一坨 setup 失败的堆栈
+    if (!enabled || !dir || !electronAPI.isTauri) return;
 
     // 取消令牌：dir 变化时让上一轮 setup 提前结束
     let cancelled = false;
