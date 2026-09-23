@@ -92,17 +92,19 @@ export const StatusBar = React.memo(({
       </div>
 
       <div className="status-bar-section">
-        <button className={`status-bar-btn ${focusMode ? 'active' : ''}`} onClick={onToggleFocusMode} title="专注模式">
+        <button className={`status-bar-btn ${focusMode ? 'active' : ''}`} onClick={onToggleFocusMode} title="专注模式：只点亮当前段落" aria-pressed={focusMode}>
           <Eye size={14} /> 专注
         </button>
-        <button className={`status-bar-btn ${typewriterMode ? 'active' : ''}`} onClick={onToggleTypewriterMode} title="打字机模式">
+        <button className={`status-bar-btn ${typewriterMode ? 'active' : ''}`} onClick={onToggleTypewriterMode} title="打字机模式：光标始终居中" aria-pressed={typewriterMode}>
           <AlignCenter size={14} /> 打字机
         </button>
-        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="切换源码模式">
+        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="源码模式：直接编辑 Markdown 原文" aria-pressed={editorMode === 'source'}>
           <FileCode size={14} /> {editorMode === 'wysiwyg' ? '富文本' : '源码'}
         </button>
-        <button className={`status-bar-btn ${documentWide ? 'active' : ''}`} onClick={onToggleDocumentWide} title={documentWide ? '切回标准视图（显示侧边 TOC）' : '宽屏（隐藏右侧 TOC，文档占满中间）'}>
-          {documentWide ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {documentWide ? '标准' : '宽屏'}
+        {/* 文案固定为模式名，靠高亮表达开关（和专注/打字机一致）。
+            之前显示的是"点下去会变成什么"，宽屏时按钮却写着"标准"。 */}
+        <button className={`status-bar-btn ${documentWide ? 'active' : ''}`} onClick={onToggleDocumentWide} title={documentWide ? '退出宽屏，恢复右侧面板' : '宽屏：隐藏右侧面板，文档占满中间'} aria-pressed={documentWide}>
+          {documentWide ? <Minimize2 size={14} /> : <Maximize2 size={14} />} 宽屏
         </button>
 
         <div className="status-bar-divider" />
