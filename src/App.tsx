@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } fro
 import { listen } from '@tauri-apps/api/event';
 import { electronAPI, mustSucceed, formatMtime, errText } from './lib/electronAPI';
 import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, validateUrl, type ToastKind } from './lib/dialogs';
-import { applyTheme, THEMES } from './lib/themes';
+import { applyTheme, storedThemeName, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { ImageViewer } from './components/Viewers/ImageViewer';
@@ -158,7 +158,7 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // TOC（Outline）默认打开：notes app 的大纲是核心导航体验
   const [outlineOpen, setOutlineOpen] = useState(true);
-  const [theme, setTheme] = useState<ThemeName>('light');
+  const [theme, setTheme] = useState<ThemeName>(storedThemeName);
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg');
   const [focusMode, setFocusMode] = useState(false);
   const [typewriterMode, setTypewriterMode] = useState(false);
@@ -434,9 +434,7 @@ const App = () => {
 
   // Initialize
   useEffect(() => {
-    const savedTheme = (localStorage.getItem('theme') as ThemeName) || 'light';
-    setTheme(savedTheme);
-    applyTheme(savedTheme);
+    // 主题已由 main.tsx 在首帧前应用，这里不再重复 apply（否则又是一次"先浅色后深色"的闪）
 
     // Load AI config
     const savedAI = localStorage.getItem('aiConfig');

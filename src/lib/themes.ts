@@ -130,6 +130,14 @@ export function applyTheme(themeName: ThemeName) {
   root.style.setProperty('--accent-color', c.accentColor);
   root.style.setProperty('--accent-hover', c.accentHover);
   root.style.setProperty('--code-bg', c.codeBg);
-  root.setAttribute('data-theme', themeName);
-  localStorage.setItem('theme', themeName);
+  // 认不出的存值要落到实际生效的那个主题上：以前这里写回的是传进来的原名字，
+  // 于是 data-theme 会挂上一个 THEMES 里不存在的值（样式、themeLabel 都对不上）
+  root.setAttribute('data-theme', theme.name);
+  localStorage.setItem('theme', theme.name);
+}
+
+/** localStorage 里存的主题名；认不出来就回 light */
+export function storedThemeName(): ThemeName {
+  const saved = localStorage.getItem('theme');
+  return THEMES.some((t) => t.name === saved) ? (saved as ThemeName) : 'light';
 }
