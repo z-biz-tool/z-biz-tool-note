@@ -267,7 +267,7 @@ fn extract_tags(content: &str) -> Vec<String> {
         for word in line.split_whitespace() {
             if word.starts_with('#') && word.len() > 1 {
                 let tag = word.trim_start_matches('#')
-                    .trim_matches(|c: char| !c.is_alphanumeric() && (c < '\u{4e00}' || c > '\u{9fff}'))
+                    .trim_matches(|c: char| !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c))
                     .to_string();
                 if !tag.is_empty() && tag.len() < 20 {
                     tags.insert(tag);
@@ -287,7 +287,7 @@ pub fn list_notes() -> Vec<NoteMeta> {
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "md") {
+            if path.extension().is_some_and(|ext| ext == "md") {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let id = id_from_filename(&filename);
 
@@ -449,7 +449,7 @@ pub fn list_trash() -> Vec<NoteMeta> {
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "md") {
+            if path.extension().is_some_and(|ext| ext == "md") {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let id = id_from_filename(&filename);
 
@@ -521,8 +521,8 @@ pub fn save_image(note_id: String, data: String) -> Result<String, String> {
         fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {}", e))?;
     }
     // data格式: data:image/png;base64,xxxxx
-    let (mime, b64) = if data.starts_with("data:") {
-        let parts: Vec<&str> = data[5..].splitn(2, ',').collect();
+    let (mime, b64) = if let Some(rest) = data.strip_prefix("data:") {
+        let parts: Vec<&str> = rest.splitn(2, ',').collect();
         if parts.len() != 2 {
             return Err("无效的base64数据".to_string());
         }
@@ -585,7 +585,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     let mut result = Vec::with_capacity(input.len() * 3 / 4);
     let buf: Vec<u8> = input.bytes().filter_map(|b| CHARS.iter().position(|&c| c == b).map(|i| i as u8)).collect();
     for chunk in buf.chunks(4) {
-        let b0 = chunk.get(0).copied().unwrap_or(0);
+        let b0 = chunk.first().copied().unwrap_or(0);
         let b1 = chunk.get(1).copied().unwrap_or(0);
         let b2 = chunk.get(2).copied().unwrap_or(0);
         let b3 = chunk.get(3).copied().unwrap_or(0);
@@ -894,7 +894,7 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
             continue;
         }
 
-        if path.extension().map_or(true, |ext| ext != "md") {
+        if path.extension().is_none_or(|ext| ext != "md") {
             continue;
         }
 
@@ -948,7 +948,7 @@ fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Re
             continue;
         }
 
-        if path.extension().map_or(true, |ext| ext != "md") {
+        if path.extension().is_none_or(|ext| ext != "md") {
             continue;
         }
 
@@ -1020,7 +1020,7 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
             continue;
         }
 
-        if path.extension().map_or(true, |ext| ext != "md") {
+        if path.extension().is_none_or(|ext| ext != "md") {
             continue;
         }
 
@@ -1045,8 +1045,8 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
                         if let Some(end) = after.find("]]") {
                             let link_content = &after[..end];
                             // link_content 应该是 note_title 或 note_title#heading
-                            if link_content == note_title || link_content.starts_with(&format!("{}#", note_title)) {
-                                if !found {
+                            if (link_content == note_title || link_content.starts_with(&format!("{}#", note_title)))
+                                && !found {
                                     found = true;
                                     // 提取包含链接的行的前100个字符作为预览
                                     let preview = if line.chars().count() > 100 {
@@ -1061,7 +1061,6 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
                                         preview,
                                     });
                                 }
-                            }
                         }
                     }
                 }
@@ -1212,7 +1211,7 @@ pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
     let backup_base = base.join(".z-note").join("backups");
 
     // 从文件路径生成备份目录名（替换 / 为 _）
-    let safe_name = note_path.replace('/', "_").replace('\\', "_");
+    let safe_name = note_path.replace(['/', '\\'], "_");
     let backup_dir = backup_base.join(&safe_name);
     fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
 
@@ -1242,7 +1241,7 @@ pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
     validate_path(&note_path)?;
     let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let backup_base = base.join(".z-note").join("backups");
-    let safe_name = note_path.replace('/', "_").replace('\\', "_");
+    let safe_name = note_path.replace(['/', '\\'], "_");
     let backup_dir = backup_base.join(&safe_name);
 
     if !backup_dir.exists() {
@@ -1253,7 +1252,7 @@ pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
     if let Ok(dir_entries) = fs::read_dir(&backup_dir) {
         for entry in dir_entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "md") {
+            if path.extension().is_some_and(|ext| ext == "md") {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let timestamp = filename.trim_end_matches(".md").to_string();
                 let modified = path.metadata()
@@ -1543,7 +1542,7 @@ fn scan_md_recursive(
             scan_md_recursive(&path, out)?;
             continue;
         }
-        if path.extension().map_or(false, |e| e == "md") {
+        if path.extension().is_some_and(|e| e == "md") {
             out.insert(path.to_string_lossy().to_string());
         }
     }

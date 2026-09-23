@@ -30,7 +30,7 @@ pub fn extract_tags(content: &str) -> Vec<String> {
             if word.starts_with('#') && word.len() > 1 {
                 let tag = word
                     .trim_start_matches('#')
-                    .trim_matches(|c: char| !c.is_alphanumeric() && (c < '\u{4e00}' || c > '\u{9fff}'))
+                    .trim_matches(|c: char| !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c))
                     .to_string();
                 if !tag.is_empty() && tag.len() < 20 {
                     tags.insert(tag);

@@ -153,6 +153,8 @@ impl IndexStore {
     }
 
     /// upsert 单文件
+    /// 参数就是 notes 表的列，聚成 struct 只会让每个调用点多一层组装，收益为负。
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_note(
         &self,
         path: &str,
