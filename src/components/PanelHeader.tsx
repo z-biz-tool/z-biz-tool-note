@@ -29,7 +29,7 @@ export const PanelHeader = ({ icon, title, badge, wide, onToggleWide, onClose }:
         {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         <span className="panel-wide-label">{wide ? '标准' : '宽屏'}</span>
       </button>
-      <button className="toolbar-btn" onClick={onClose} title="关闭面板" aria-label="Close panel">
+      <button className="toolbar-btn" onClick={onClose} title="关闭面板" aria-label="关闭面板">
         <X size={14} />
       </button>
     </div>

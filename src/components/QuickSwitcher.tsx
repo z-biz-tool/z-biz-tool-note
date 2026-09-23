@@ -97,14 +97,14 @@ export const QuickSwitcher = ({ files, onSelect, onClose }: QuickSwitcherProps) 
           ref={inputRef}
           className="modal-input"
           type="text"
-          placeholder="Search files..."
+          placeholder="搜索文件名…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
         />
         <div className="modal-list" ref={listRef}>
           {filtered.length === 0 ? (
-            <div className="modal-list-item">No files found</div>
+            <div className="modal-list-item">没有匹配的文件</div>
           ) : (
             filtered.map((file, i) => (
               <button

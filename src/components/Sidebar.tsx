@@ -548,7 +548,7 @@ export const Sidebar = ({
             backgroundImage: brandGradient,
           }}
         >ZenNote</span>
-        <button className="toolbar-btn" onClick={onNewNote} title="New Note">
+        <button className="toolbar-btn" onClick={onNewNote} title="新建笔记">
           <Plus size={16} />
         </button>
       </div>

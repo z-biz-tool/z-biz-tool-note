@@ -246,7 +246,7 @@ export const EmojiPicker = ({ onSelect, onClose }: EmojiPickerProps) => {
           ref={searchInputRef}
           className="emoji-picker-search"
           type="text"
-          placeholder="Search emoji..."
+          placeholder="搜索表情…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={handleKeyDown}

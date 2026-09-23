@@ -23,14 +23,14 @@ export const Outline = ({ headings, activeId, onJump, onClose, width }: OutlineP
   return (
     <div className="outline-panel" style={width ? { width: `${width}px` } : undefined}>
       <div className="outline-header">
-        Outline
-        <button className="find-replace-btn" onClick={onClose} title="Close">
+        大纲
+        <button className="find-replace-btn" onClick={onClose} title="关闭大纲">
           <X size={14} />
         </button>
       </div>
       <div className="outline-list">
         {headings.length === 0 ? (
-          <div className="outline-item">No headings found</div>
+          <div className="outline-item">暂无标题</div>
         ) : (
           headings.map((heading) => (
             <button

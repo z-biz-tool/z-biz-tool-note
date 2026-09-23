@@ -50,7 +50,7 @@ export const QuickInsert = ({ open, templates, currentDir, onInsert, onCreateDai
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search templates..."
+            placeholder="搜索模板…"
             onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
           />
         </div>

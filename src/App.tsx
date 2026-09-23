@@ -567,7 +567,7 @@ const App = () => {
   // Run an AI action against the current note
   const runAIAction = useCallback(async (action: AIAction, context?: string, history?: AIMessage[]): Promise<string> => {
     if (!aiConfig.enabled) {
-      throw new Error('AI is not enabled. Open Settings → AI Provider to configure.');
+      throw new Error('AI 功能未启用，请先在 设置 → AI 服务商 中配置。');
     }
 
     const noteContent = currentNote?.content || '';
@@ -586,9 +586,9 @@ const App = () => {
 
     const result = await electronAPI.invoke('ai-chat', aiConfig, messages);
     if (!result.success) {
-      throw new Error(result.error || 'AI request failed');
+      throw new Error(result.error || 'AI 请求失败');
     }
-    return result.content || '(empty response)';
+    return result.content || '（模型没有返回内容）';
   }, [aiConfig, currentNote, allFiles]);
 
   const handleInsertText = useCallback((text: string) => {
@@ -1735,14 +1735,14 @@ const App = () => {
           >
             <PanelHeader
               icon={<ListTree size={14} />}
-              title="Outline"
+              title="大纲"
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setOutlineOpen(false)}
             />
             <div className="outline-list">
               {headings.length === 0 ? (
-                <div className="outline-item">No headings found</div>
+                <div className="outline-item">暂无标题</div>
               ) : (
                 headings.map((heading) => (
                   <button
@@ -1781,7 +1781,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Link2 size={14} />}
-              title="Backlinks"
+              title="反向链接"
               badge={<span className="count-badge">{backlinks.length}</span>}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
@@ -1790,8 +1790,8 @@ const App = () => {
             <div className="backlinks-list">
               {backlinks.length === 0 ? (
                 <div className="sidebar-empty">
-                  <p>No backlinks yet</p>
-                  <p className="hint">Other notes will appear here when they link to this note via [[wiki links]]</p>
+                  <p>还没有反向链接</p>
+                  <p className="hint">其他笔记中用 [[双向链接]] 指向本篇时，会出现在这里</p>
                 </div>
               ) : (
                 backlinks.map(b => (
@@ -1834,7 +1834,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Sparkles size={14} />}
-              title="AI Assistant"
+              title="AI 助手"
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setShowAIPanel(false)}
@@ -1875,7 +1875,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Network size={14} />}
-              title="Knowledge Graph"
+              title="知识图谱"
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setShowKnowledgeGraph(false)}

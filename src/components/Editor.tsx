@@ -213,7 +213,7 @@ export const Editor = ({
       TableEnhanced,
       Highlight,
       Typography,
-      Placeholder.configure({ placeholder: 'Start writing your note...' }),
+      Placeholder.configure({ placeholder: '开始写点什么…' }),
       CharacterCount,
       TextStyle,
       Color,
@@ -471,7 +471,7 @@ export const Editor = ({
         mermaid.render('mermaid-' + (++mermaidCounterRef.current), code).then((result) => {
           container.innerHTML = result.svg;
         }).catch(() => {
-          container.innerHTML = '<pre style="color: red;">Invalid Mermaid syntax</pre>';
+          container.innerHTML = '<pre style="color: red;">Mermaid 语法有误</pre>';
         });
       }
     });
@@ -604,7 +604,7 @@ export const Editor = ({
         className="title-input"
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
-        placeholder="Note title..."
+        placeholder="笔记标题…"
       />
 
       <div className="editor-body-row">
@@ -627,7 +627,7 @@ export const Editor = ({
       )}
       {lightboxSrc && (
         <div className="lightbox-overlay" onClick={() => setLightboxSrc(null)}>
-          <img className="lightbox-image" src={lightboxSrc} alt="Preview" />
+          <img className="lightbox-image" src={lightboxSrc} alt="图片预览" />
           <button className="lightbox-close" onClick={() => setLightboxSrc(null)}>✕</button>
         </div>
       )}

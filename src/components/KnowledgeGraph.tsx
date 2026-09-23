@@ -63,7 +63,7 @@ export const KnowledgeGraph = ({ nodes, links, onNodeClick, currentFilePath, tag
   if (nodes.length === 0) {
     return (
       <div className="knowledge-graph-empty">
-        <p>No connections found</p>
+        <p>暂无关联笔记</p>
         <p className="hint">Use [[wiki links]] and #tags in your notes to create connections</p>
       </div>
     );
@@ -78,7 +78,7 @@ export const KnowledgeGraph = ({ nodes, links, onNodeClick, currentFilePath, tag
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter nodes..."
+            placeholder="筛选节点…"
           />
           {query && <button className="graph-clear" onClick={() => setQuery('')}><X size={12} /></button>}
         </div>
@@ -132,7 +132,7 @@ export const KnowledgeGraph = ({ nodes, links, onNodeClick, currentFilePath, tag
               </button>
             ))}
             {activeTag && (
-              <button className="legend-clear" onClick={() => setActiveTag(null)}>Clear filter</button>
+              <button className="legend-clear" onClick={() => setActiveTag(null)}>清除筛选</button>
             )}
           </div>
         </div>

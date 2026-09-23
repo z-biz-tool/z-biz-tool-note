@@ -134,25 +134,25 @@ export const FindReplace = ({ onClose, editor }: FindReplaceProps) => {
           ref={findInputRef}
           className="find-replace-input"
           type="text"
-          placeholder="Find"
+          placeholder="查找"
           value={findTerm}
           onChange={(e) => setFindTerm(e.target.value)}
           onKeyDown={handleFindKeyDown}
         />
-        <button className="find-replace-btn" onClick={() => setMatchCase((v) => !v)} title="Match case">
+        <button className="find-replace-btn" onClick={() => setMatchCase((v) => !v)} title="区分大小写">
           {matchCase ? '✓ Aa' : 'Aa'}
         </button>
-        <button className="find-replace-btn" onClick={() => setWholeWord((v) => !v)} title="Whole word">
+        <button className="find-replace-btn" onClick={() => setWholeWord((v) => !v)} title="全词匹配">
           {wholeWord ? '✓ W' : 'W'}
         </button>
         <span className="find-replace-info">{infoText}</span>
-        <button className="find-replace-btn" onClick={handleFindPrev} title="Previous match">
+        <button className="find-replace-btn" onClick={handleFindPrev} title="上一个匹配">
           <ChevronUp size={14} />
         </button>
-        <button className="find-replace-btn" onClick={handleFindNext} title="Next match">
+        <button className="find-replace-btn" onClick={handleFindNext} title="下一个匹配">
           <ChevronDown size={14} />
         </button>
-        <button className="find-replace-btn" onClick={onClose} title="Close">
+        <button className="find-replace-btn" onClick={onClose} title="关闭查找替换">
           <X size={14} />
         </button>
       </div>
@@ -160,7 +160,7 @@ export const FindReplace = ({ onClose, editor }: FindReplaceProps) => {
         <input
           className="find-replace-input"
           type="text"
-          placeholder="Replace"
+          placeholder="替换为"
           value={replaceTerm}
           onChange={(e) => setReplaceTerm(e.target.value)}
           onKeyDown={(e) => {
@@ -170,10 +170,10 @@ export const FindReplace = ({ onClose, editor }: FindReplaceProps) => {
             }
           }}
         />
-        <button className="find-replace-btn" onClick={handleReplace} title="Replace">
+        <button className="find-replace-btn" onClick={handleReplace} title="替换当前">
           <ArrowRight size={14} />
         </button>
-        <button className="find-replace-btn" onClick={handleReplaceAll} title="Replace All">
+        <button className="find-replace-btn" onClick={handleReplaceAll} title="全部替换">
           <Replace size={14} />
         </button>
       </div>

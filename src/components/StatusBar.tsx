@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sun, Moon, Save, Clock, Eye, AlignCenter, FileCode, Maximize2, Minimize2, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import type { ThemeName } from '../types';
+import { themeLabel } from '../lib/themes';
 
 interface StatusBarProps {
   theme: ThemeName;
@@ -91,14 +92,14 @@ export const StatusBar = React.memo(({
       </div>
 
       <div className="status-bar-section">
-        <button className={`status-bar-btn ${focusMode ? 'active' : ''}`} onClick={onToggleFocusMode} title="Focus Mode">
-          <Eye size={14} /> Focus
+        <button className={`status-bar-btn ${focusMode ? 'active' : ''}`} onClick={onToggleFocusMode} title="专注模式">
+          <Eye size={14} /> 专注
         </button>
-        <button className={`status-bar-btn ${typewriterMode ? 'active' : ''}`} onClick={onToggleTypewriterMode} title="Typewriter Mode">
-          <AlignCenter size={14} /> Typewriter
+        <button className={`status-bar-btn ${typewriterMode ? 'active' : ''}`} onClick={onToggleTypewriterMode} title="打字机模式">
+          <AlignCenter size={14} /> 打字机
         </button>
-        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="Toggle Source Mode">
-          <FileCode size={14} /> {editorMode === 'wysiwyg' ? 'WYSIWYG' : 'Source'}
+        <button className={`status-bar-btn ${editorMode === 'source' ? 'active' : ''}`} onClick={onToggleEditorMode} title="切换源码模式">
+          <FileCode size={14} /> {editorMode === 'wysiwyg' ? '富文本' : '源码'}
         </button>
         <button className={`status-bar-btn ${documentWide ? 'active' : ''}`} onClick={onToggleDocumentWide} title={documentWide ? '切回标准视图（显示侧边 TOC）' : '宽屏（隐藏右侧 TOC，文档占满中间）'}>
           {documentWide ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {documentWide ? '标准' : '宽屏'}
@@ -106,15 +107,15 @@ export const StatusBar = React.memo(({
 
         <div className="status-bar-divider" />
 
-        <span style={{ fontSize: 12 }}>
-          {stats.words} words · {stats.characters} chars · {stats.lines} lines · {stats.readingTime} min read
+        <span style={{ fontSize: 12 }} title="按 200 字/分钟估算的阅读时间">
+          {stats.words} 词 · {stats.characters} 字 · {stats.lines} 行 · 约 {stats.readingTime} 分钟
         </span>
 
         <div className="status-bar-divider" />
 
-        <button className="status-bar-btn" onClick={onCycleTheme} title={`Theme: ${theme}`}>
+        <button className="status-bar-btn" onClick={onCycleTheme} title={`当前主题：${themeLabel(theme)}，点击切换`}>
           {theme === 'light' || theme === 'sepia' || theme === 'solarized' ? <Sun size={14} /> : <Moon size={14} />}
-          <span style={{ textTransform: 'capitalize' }}>{theme}</span>
+          {themeLabel(theme)}
         </button>
 
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>ZenNote v2.0</span>

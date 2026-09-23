@@ -125,7 +125,6 @@ export interface RecentFile {
 
 export interface ThemeOption {
   name: ThemeName;
-  label: string;
   colors: {
     bgPrimary: string;
     bgSecondary: string;

@@ -12,7 +12,7 @@ interface WelcomeProps {
 }
 
 /**
- * VS Code 风格欢迎首屏：左侧 Start 快速操作，右侧 Recent 最近文件。
+ * VS Code 风格欢迎首屏：左侧「开始」快速操作，右侧「最近打开」。
  * 每次挂载时从 localStorage 读取最近文件（Sidebar 打开文件时会更新）。
  */
 export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, onOpenFile, currentDir }: WelcomeProps) => {
@@ -33,39 +33,39 @@ export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, o
             <span className="welcome-logo">📝</span>
           </div>
           <h1 className="welcome-title">ZenNote</h1>
-          <p className="welcome-subtitle">A beautiful Markdown note-taking app, inspired by Typora, Obsidian, and Notion.</p>
+          <p className="welcome-subtitle">一款沿用 Typora / Obsidian / Notion 思路的 Markdown 笔记应用。</p>
         </div>
 
         <div className="welcome-body">
           <div className="welcome-section">
             <h2 className="section-title">
               <Sparkles size={16} />
-              <span>Start</span>
+              <span>开始</span>
             </h2>
             <button className="welcome-action" onClick={onNewNote}>
               <Plus size={18} />
-              <span>New Note</span>
+              <span>新建笔记</span>
               <ArrowRight size={14} />
             </button>
             <button className="welcome-action" onClick={onOpenFolder}>
               <FolderOpen size={18} />
-              <span>Open Folder…</span>
+              <span>打开文件夹…</span>
               <ArrowRight size={14} />
             </button>
             <button className="welcome-action" onClick={onCreateDaily}>
               <Calendar size={18} />
-              <span>Today's Daily Note</span>
+              <span>今日日记</span>
               <ArrowRight size={14} />
             </button>
             <button className="welcome-action" onClick={onOpenGuide}>
               <BookOpen size={18} />
-              <span>Welcome Guide</span>
+              <span>使用指南</span>
               <ArrowRight size={14} />
             </button>
             {currentDir && (
               <div className="welcome-current-dir" title={currentDir}>
                 <FileText size={14} />
-                Current folder: {currentDir.split('/').pop() || currentDir}
+                当前文件夹：{currentDir.split('/').pop() || currentDir}
               </div>
             )}
           </div>
@@ -73,13 +73,13 @@ export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, o
           <div className="welcome-section">
             <h2 className="section-title">
               <Clock size={16} />
-              <span>Recent</span>
+              <span>最近打开</span>
             </h2>
             {recentFiles.length === 0 ? (
               <div className="welcome-hint">
                 <div className="hint-icon">📂</div>
-                <p>No recent files yet</p>
-                <p className="hint-sub">Open a folder to get started</p>
+                <p>还没有最近打开的文件</p>
+                <p className="hint-sub">先打开一个文件夹，之后这里会列出最近编辑的笔记</p>
               </div>
             ) : (
               recentFiles.slice(0, 10).map(f => (
@@ -96,10 +96,10 @@ export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, o
         </div>
 
         <div className="welcome-footer">
-          <span className="shortcut-hint"><kbd>Cmd+N</kbd> New Note</span>
-          <span className="shortcut-hint"><kbd>Cmd+P</kbd> Quick Switch</span>
-          <span className="shortcut-hint"><kbd>Cmd+Shift+P</kbd> Command Palette</span>
-          <span className="shortcut-hint"><kbd>Cmd+,</kbd> Settings</span>
+          <span className="shortcut-hint"><kbd>Cmd+N</kbd> 新建笔记</span>
+          <span className="shortcut-hint"><kbd>Cmd+P</kbd> 快速切换</span>
+          <span className="shortcut-hint"><kbd>Cmd+Shift+P</kbd> 命令面板</span>
+          <span className="shortcut-hint"><kbd>Cmd+,</kbd> 设置</span>
         </div>
       </div>
     </div>

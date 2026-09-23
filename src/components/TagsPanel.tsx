@@ -70,9 +70,9 @@ export const TagsPanel = React.memo(({ tags, onTagClick, activeTag }: TagsPanelP
   if (tags.length === 0) {
     return (
       <div className="sidebar-empty">
-        <p>No tags yet</p>
-        <p className="hint">Use #tag in your notes to organize them</p>
-        <p className="hint">Use #parent/child for nested tags (Bear-style)</p>
+        <p>还没有标签</p>
+        <p className="hint">在笔记里写 #标签 即可归类</p>
+        <p className="hint">用 #父级/子级 可以建嵌套标签</p>
       </div>
     );
   }

@@ -14,14 +14,14 @@ export const BacklinksPanel = React.memo(({ backlinks, onJump, onClose, width }:
     <div className="backlinks-panel" style={width ? { width: `${width}px` } : undefined}>
       <div className="outline-header">
         <Link2 size={14} />
-        <span>Backlinks</span>
+        <span>反向链接</span>
         <span className="count-badge">{backlinks.length}</span>
-        <button className="toolbar-btn" onClick={onClose} title="Close">×</button>
+        <button className="toolbar-btn" onClick={onClose} title="关闭反向链接">×</button>
       </div>
       <div className="backlinks-list">
         {backlinks.length === 0 ? (
           <div className="sidebar-empty">
-            <p>No backlinks yet</p>
+            <p>还没有反向链接</p>
             <p className="hint">Other notes will appear here when they link to this note via [[wiki links]]</p>
           </div>
         ) : (

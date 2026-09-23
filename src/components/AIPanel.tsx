@@ -19,10 +19,10 @@ interface ChatMessage {
 }
 
 const ACTIONS: Array<{ id: AIAction; label: string; icon: any; desc: string }> = [
-  { id: 'summarize', label: 'Summarize', icon: FileText, desc: 'Condense the current note into key points' },
-  { id: 'tags', label: 'Extract Tags', icon: Tag, desc: 'Suggest #tags for this note' },
-  { id: 'outline', label: 'Outline', icon: ListTree, desc: 'Generate a structured outline' },
-  { id: 'suggest-links', label: 'Suggest Links', icon: Network, desc: 'Recommend wiki links to other notes' },
+  { id: 'summarize', label: '总结要点', icon: FileText, desc: '把当前笔记压缩成几条要点' },
+  { id: 'tags', label: '提取标签', icon: Tag, desc: '为这篇笔记建议 #标签' },
+  { id: 'outline', label: '生成大纲', icon: ListTree, desc: '生成结构化的大纲' },
+  { id: 'suggest-links', label: '推荐双链', icon: Network, desc: '推荐指向其他笔记的 [[双链]]' },
 ];
 
 export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, width }: AIPanelProps) => {
@@ -47,7 +47,7 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
       const result = await onAction(action);
       setChat(prev => [...prev, { role: 'assistant', content: result }]);
     } catch (e: any) {
-      setChat(prev => [...prev, { role: 'assistant', content: `Error: ${e.message || e}` }]);
+      setChat(prev => [...prev, { role: 'assistant', content: `请求失败：${e.message || e}` }]);
     } finally {
       setLoading(false);
       setBusyAction(null);
@@ -69,7 +69,7 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
       const result = await onAction('chat', userMsg, chat.map(m => ({ role: m.role, content: m.content }) as AIMessage).slice(-10)); // 传最近 10 条对话历史
       setChat(prev => [...prev, { role: 'assistant', content: result }]);
     } catch (e: any) {
-      setChat(prev => [...prev, { role: 'assistant', content: `Error: ${e.message || e}` }]);
+      setChat(prev => [...prev, { role: 'assistant', content: `请求失败：${e.message || e}` }]);
     } finally {
       setLoading(false);
       setBusyAction(null);
@@ -80,14 +80,14 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
     <div className="ai-panel" style={width ? { width: `${width}px` } : undefined}>
       <div className="outline-header">
         <Sparkles size={14} />
-        <span>AI Assistant</span>
-        <button className="toolbar-btn" onClick={onClose} title="Close">×</button>
+        <span>AI 助手</span>
+        <button className="toolbar-btn" onClick={onClose} title="关闭">×</button>
       </div>
 
       {!enabled && (
         <div className="ai-disabled-notice">
-          <p>AI is not configured.</p>
-          <button className="btn-primary" onClick={onOpenSettings}>Configure</button>
+          <p>还没有配置 AI 服务。</p>
+          <button className="btn-primary" onClick={onOpenSettings}>去配置</button>
         </div>
       )}
 
@@ -115,22 +115,22 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
           {chat.length === 0 && (
             <div className="ai-empty">
               <MessageSquare size={20} />
-              <p>Ask anything about your notes, or run an action above.</p>
+              <p>可以直接提问，或用上面的动作处理当前笔记。</p>
             </div>
           )}
           {chat.map((m, i) => (
             <div key={i} className={`ai-msg ai-msg-${m.role}`}>
               <div className="ai-msg-content">{m.content}</div>
               {m.role === 'assistant' && (
-                <button className="ai-insert-btn" onClick={() => onInsert(m.content)} title="Insert into note">
-                  Insert
+                <button className="ai-insert-btn" onClick={() => onInsert(m.content)} title="插入到正文">
+                  插入
                 </button>
               )}
             </div>
           ))}
           {loading && busyAction === 'chat' && (
             <div className="ai-msg ai-msg-assistant">
-              <Loader2 size={14} className="spin" /> Thinking...
+              <Loader2 size={14} className="spin" /> 思考中…
             </div>
           )}
           <div ref={chatEndRef} />
@@ -142,7 +142,7 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-            placeholder={enabled ? 'Ask about this note...' : 'Configure AI to start chatting...'}
+            placeholder={enabled ? '就这篇笔记提问…' : '先在设置里配置 AI 才能对话…'}
             disabled={loading}
           />
           <button className="btn-primary" onClick={sendChat} disabled={loading || !input.trim()}>

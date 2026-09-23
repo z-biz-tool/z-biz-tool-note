@@ -3,7 +3,6 @@ import type { ThemeOption, ThemeName } from '../types';
 export const THEMES: ThemeOption[] = [
   {
     name: 'light',
-    label: 'Light',
     colors: {
       bgPrimary: '#ffffff',
       bgSecondary: '#f8f9fa',
@@ -19,7 +18,6 @@ export const THEMES: ThemeOption[] = [
   },
   {
     name: 'dark',
-    label: 'Dark',
     colors: {
       bgPrimary: '#1a1b26',
       bgSecondary: '#16161e',
@@ -35,7 +33,6 @@ export const THEMES: ThemeOption[] = [
   },
   {
     name: 'sepia',
-    label: 'Sepia',
     colors: {
       bgPrimary: '#f4ecd8',
       bgSecondary: '#efe6cf',
@@ -51,7 +48,6 @@ export const THEMES: ThemeOption[] = [
   },
   {
     name: 'solarized',
-    label: 'Solarized',
     colors: {
       bgPrimary: '#fdf6e3',
       bgSecondary: '#eee8d5',
@@ -67,7 +63,6 @@ export const THEMES: ThemeOption[] = [
   },
   {
     name: 'dracula',
-    label: 'Dracula',
     colors: {
       bgPrimary: '#282a36',
       bgSecondary: '#21222c',
@@ -83,7 +78,6 @@ export const THEMES: ThemeOption[] = [
   },
   {
     name: 'nord',
-    label: 'Nord',
     colors: {
       bgPrimary: '#2e3440',
       bgSecondary: '#272c36',
@@ -98,6 +92,19 @@ export const THEMES: ThemeOption[] = [
     },
   },
 ];
+
+// name 是持久化标识（localStorage.theme / data-theme），不随语言变化；
+// 界面统一展示中文名
+const LABELS_ZH: Record<ThemeName, string> = {
+  light: '浅色',
+  dark: '深色',
+  sepia: '米黄',
+  solarized: '暖阳',
+  dracula: '暗夜',
+  nord: '极地',
+};
+
+export const themeLabel = (name: ThemeName) => LABELS_ZH[name] ?? name;
 
 export function applyTheme(themeName: ThemeName) {
   const theme = THEMES.find(t => t.name === themeName) || THEMES[0];
