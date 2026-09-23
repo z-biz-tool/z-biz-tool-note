@@ -1,0 +1,99 @@
+name: CI
+
+# build-release.yml 只在 `push: tags: v*` 上跑，也就是说往 main 推任何东西都不会有门禁；
+# 想验一次就得打 tag，而 tag 触发的是四平台打包 —— 为了拿一个"typecheck 过不过"的答案
+# 付四份 bundle 的开销。这里把廉价门禁拆出来，每次 push / PR 跑，出包仍旧只认 tag。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一个分支上后一次推送直接取消前一次：本仓有多会话并行直推 main 的习惯，
+# 不取消的话每次 WIP 都会把三平台 runner 占满。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  frontend:
+    name: 前端 typecheck + 构建
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --registry=https://registry.npmmirror.com
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # dist 在 .gitignore 里，而 tauri::generate_context! 要读 frontendDist，
+      # 所以后端腿之前必须先出一次前端。
+      - name: Build frontend
+        run: npm run build
+
+  backend:
+    name: Rust test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 不排 macos：日常开发就在 macOS 上，那条腿本地已经证过；
+        # 排 windows 是因为 src-tauri 里有 cfg(windows) 分支（atomic_write），
+        # 那段代码只有 Windows runner 真编得到 —— 历史上正是在这里红过（E0425）。
+        os: [ubuntu-22.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # runner 上新版 token 会写坏 rust-toolchain 生成的 cargo config（与 build-release.yml 同一条 workaround）
+      - name: Reset broken cargo config
+        shell: bash
+        run: rm -f "$HOME/.cargo/config.toml" "${USERPROFILE:-$HOME}/.cargo/config.toml"
+
+      - name: Build frontend (for Tauri context)
+        run: |
+          npm ci --registry=https://registry.npmmirror.com
+          npm run build
+
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Clippy (advisory)
+        # 不加 `-D warnings`：只在 macOS 一侧实测过 0，Linux/Windows 上平台特有的
+        # 告警（例如只在 cfg(unix) 下被调用的 helper 在 Windows 上算 dead_code）本地量不到。
+        # 在本机看不到那些输出的情况下把 warning 升级成失败，等于交一条永远红的 CI。
+        working-directory: src-tauri
+        run: cargo clippy --all-targets
