@@ -112,7 +112,7 @@ interface Note {
 | 快捷插入日记或模板 | ⌘⇧I |
 | 打开文件夹 / 在笔记间快速切换 | ⌘⇧O、⌘P |
 | 左右分屏对照两篇 | ⌘ 加反斜杠 |
-| 关闭标签 / 上一个 / 下一个 | ⌘W、⌘⇧[、⌘⇧] |
+| 关闭标签 / 上一个 / 下一个 / 恢复刚关的 | ⌘W、⌘⇧[、⌘⇧]、⌘⇧T |
 | 侧边栏 / AI 助手 / 设置 | ⌘B、⌘J、⌘, |
 | 版本历史 | ⌘⇧H |
 
@@ -297,6 +297,20 @@ const App = () => {
     return (i >= 0 ? disambiguateTabTitles(tabs)[i] : '') || fallback;
   };
 
+  // 最近关掉的标签（⌘⇧T 恢复）。只记有落盘路径的；因为文件被删/进废纸篓而关掉的标签不记，
+  // 那种恢复必然失败。
+  const closedTabsRef = useRef<{ path: string; title: string }[]>([]);
+  const rememberClosedTabs = useCallback((tabs: (Note | undefined)[]) => {
+    let list = closedTabsRef.current;
+    for (const tab of tabs) {
+      if (!tab?.filePath) continue;
+      list = list.filter(t => t.path !== tab.filePath);
+      list.push({ path: tab.filePath, title: tab.title });
+    }
+    // 只兜最近 10 个：再深就没人指望它了，栈本身也没必要一直长
+    closedTabsRef.current = list.slice(-10);
+  }, []);
+
   const closeTab = useCallback(async (id: string) => {
     const tab = openTabsRef.current.find(t => t.id === id);
     if (tab?.isDirty) {
@@ -309,6 +323,7 @@ const App = () => {
       });
       if (!ok) return;
     }
+    rememberClosedTabs([tab]);
     setOpenTabs(prev => {
       const idx = prev.findIndex(t => t.id === id);
       if (idx < 0) return prev;
@@ -322,7 +337,7 @@ const App = () => {
     });
     // 若关闭的是分屏笔记，清空分屏
     setSplitNote(prev => (prev && prev.id === id ? null : prev));
-  }, []);
+  }, [rememberClosedTabs]);
 
   // 关闭其他标签（保留指定标签）
   const closeOtherTabs = useCallback(async (keepId: string) => {
@@ -336,6 +351,7 @@ const App = () => {
       });
       if (!ok) return;
     }
+    rememberClosedTabs(openTabsRef.current.filter(t => t.id !== keepId));
     setOpenTabs(prev => prev.filter(t => t.id === keepId));
     setActiveTabId(keepId);
     setSplitNote(null);
@@ -360,6 +376,7 @@ const App = () => {
       });
       if (!ok) return;
     }
+    rememberClosedTabs(closing);
     setOpenTabs(prev => {
       const at = prev.findIndex(t => t.id === tabId);
       if (at < 0) return prev;
@@ -953,6 +970,10 @@ const App = () => {
       } else if (cmd && e.shiftKey && key === 'g') {
         e.preventDefault();
         setShowKnowledgeGraph(prev => !prev);
+      } else if (cmd && e.shiftKey && key === 't') {
+        // Cmd+Shift+T：恢复刚关掉的标签（和浏览器/编辑器的主流键位一致）
+        e.preventDefault();
+        void reopenTabRef.current();
       } else if (cmd && e.shiftKey && key === 'h') {
         // Cmd+Shift+H：版本历史
         e.preventDefault();
@@ -1116,6 +1137,19 @@ const App = () => {
       setIsLoading(false);
     }
   }, [readFile, readFileBinary, getFileMeta, openNote, showToast, syncMtime]);
+
+  // ⌘⇧T 恢复最近关掉的标签。快捷键那个 effect 只在挂载时注册一次，闭包里拿不到后面这份
+  // useCallback，所以同时留一个 ref 给它调（menuActionsRef 是同一个套路）。
+  const handleReopenTab = useCallback(async () => {
+    const last = closedTabsRef.current.pop();
+    if (!last) {
+      showToast('没有最近关闭的标签可以恢复');
+      return;
+    }
+    await handleOpenFile(last.path);
+  }, [closedTabsRef, handleOpenFile, showToast]);
+  const reopenTabRef = useRef(handleReopenTab);
+  reopenTabRef.current = handleReopenTab;
 
   // 编辑器里 Cmd+点击 [[链接]] → 按标题/文件名解析并打开（主窗格与分屏共用同一份逻辑）
   const handleWikiLinkNavigate = useCallback((href: string) => {
@@ -1578,6 +1612,7 @@ const App = () => {
     { id: 'toggle-focus', title: '切换专注模式', category: '视图', action: () => setFocusMode(prev => !prev) },
     { id: 'toggle-typewriter', title: '切换打字机模式', category: '视图', action: () => setTypewriterMode(prev => !prev) },
     { id: 'toggle-sidebar', title: '切换侧边栏', shortcut: 'Cmd+B', category: '视图', action: () => setSidebarOpen(prev => !prev) },
+    { id: 'reopen-tab', title: '恢复最近关闭的标签', shortcut: 'Cmd+Shift+T', category: '标签', action: () => { void handleReopenTab(); } },
     { id: 'toggle-outline', title: '切换大纲', category: '视图', action: () => setOutlineOpen(prev => !prev) },
     { id: 'toggle-graph', title: '切换知识图谱', shortcut: 'Cmd+Shift+G', category: '视图', action: () => setShowKnowledgeGraph(prev => !prev) },
     { id: 'toggle-backlinks', title: '切换反向链接', category: '视图', action: () => setShowBacklinks(prev => !prev) },
