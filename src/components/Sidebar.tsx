@@ -249,13 +249,13 @@ export const Sidebar = ({
       parentDir = item.isDirectory ? item.path : pathDirname(item.path);
     }
     if (!parentDir) return;
-    let fileName = 'Untitled.md';
+    let fileName = '未命名.md';
     let counter = 1;
     while (await electronAPI.invoke('file-exists', pathJoin(parentDir, fileName))) {
-      fileName = `Untitled ${counter++}.md`;
+      fileName = `未命名 ${counter++}.md`;
     }
     const filePath = pathJoin(parentDir, fileName);
-    must(await electronAPI.invoke('write-text-file', filePath, '# Untitled\n\nStart writing...'));
+    must(await electronAPI.invoke('write-text-file', filePath, '# 未命名\n\n开始写点什么…\n'));
     // 在某个文件夹里新建，就得让那个文件夹保持展开，否则刷新后新建项藏在收起的目录里，
     // 界面上等于"点了没反应"
     setExpandedFolders(prev => prev.has(parentDir!) ? prev : new Set(prev).add(parentDir!));

@@ -53,7 +53,7 @@ export const useFileOperations = () => {
 
   const createNewNote = (): Note => ({
     id: `note-${Date.now()}`,
-    title: 'Untitled',
+    title: '未命名',
     content: '',
     filePath: '',
     // 新建的必定是 markdown 笔记；这里留空会让状态栏/ Frontmatter 面板

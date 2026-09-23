@@ -146,7 +146,7 @@ export const TabsBar = React.memo(({
               }}
             >
               <FileText size={12} className="tab-icon" />
-              <span className="tab-title">{tab.title || 'Untitled'}</span>
+              <span className="tab-title">{tab.title || '未命名'}</span>
               {tab.isDirty && <span className="tab-dirty" title="未保存">●</span>}
               <button
                 className="tab-close"

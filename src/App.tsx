@@ -1287,7 +1287,7 @@ const App = () => {
 
   const handleSaveAs = useCallback(async () => {
     if (!currentNote) return;
-    const title = currentNote.title || 'Untitled';
+    const title = currentNote.title || '未命名';
     const result = await showSaveDialog(`~/Documents/${title}.md`);
     if (!result.canceled && result.filePath) {
       await writeFile(result.filePath, currentNote.content);
