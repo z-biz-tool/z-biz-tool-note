@@ -840,8 +840,11 @@ const App = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const cmd = e.metaKey || e.ctrlKey;
+      // e.key 的大小写跟着 Caps Lock / Shift 变（开着大写锁定按 ⌘B 拿到的是 'B'），
+      // 统一转小写、要靠 shiftKey 区分组合，否则这批快捷键会整片静默失效
+      const key = typeof e.key === 'string' ? e.key.toLowerCase() : '';
       // Cmd+S 保存（带 Shift 时留给下面的另存为）
-      if (cmd && e.key === 's' && !e.shiftKey) {
+      if (cmd && key === 's' && !e.shiftKey) {
         e.preventDefault();
         if (document.activeElement?.closest('.editor-pane-split')) {
           handleSaveSplitRef.current();
@@ -850,53 +853,53 @@ const App = () => {
         }
         return;
       }
-      if (cmd && e.key === 'p' && !e.shiftKey) {
+      if (cmd && key === 'p' && !e.shiftKey) {
         e.preventDefault();
         setShowQuickSwitcher(true);
-      } else if (cmd && e.shiftKey && e.key === 'P') {
+      } else if (cmd && e.shiftKey && key === 'p') {
         e.preventDefault();
         setShowCommandPalette(true);
-      } else if (cmd && e.key === 'n') {
+      } else if (cmd && key === 'n') {
         e.preventDefault();
         menuActionsRef.current['new-note']?.();
-      } else if (cmd && e.shiftKey && e.key === 'S') {
+      } else if (cmd && e.shiftKey && key === 's') {
         e.preventDefault();
         menuActionsRef.current['save-as']?.();
-      } else if (cmd && e.key === 'b') {
+      } else if (cmd && key === 'b') {
         // 编辑器内 Cmd+B 被 Tiptap 的加粗拦走，这里只在编辑器之外生效
         e.preventDefault();
         menuActionsRef.current['toggle-sidebar']?.();
-      } else if (cmd && e.shiftKey && e.key === 'I') {
+      } else if (cmd && e.shiftKey && key === 'i') {
         e.preventDefault();
         setShowQuickInsert(true);
-      } else if (cmd && e.key === 'f') {
+      } else if (cmd && key === 'f') {
         e.preventDefault();
         setShowFindReplace(true);
       } else if (cmd && e.key === '/') {
         e.preventDefault();
         setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg');
-      } else if (cmd && e.shiftKey && e.key === 'O') {
+      } else if (cmd && e.shiftKey && key === 'o') {
         e.preventDefault();
         handleOpenFolderDialog();
-      } else if (cmd && e.key === 'j') {
+      } else if (cmd && key === 'j') {
         e.preventDefault();
         setShowAIPanel(prev => !prev);
       } else if (cmd && e.key === ',') {
         // macOS 惯例：Cmd+, 打开设置
         e.preventDefault();
         setShowSettings(true);
-      } else if (cmd && e.shiftKey && e.key === 'D') {
+      } else if (cmd && e.shiftKey && key === 'd') {
         // 每日笔记移至 Cmd+Shift+D（Cmd+D 让给多光标）
         e.preventDefault();
         handleCreateDaily();
-      } else if (cmd && e.shiftKey && e.key === 'G') {
+      } else if (cmd && e.shiftKey && key === 'g') {
         e.preventDefault();
         setShowKnowledgeGraph(prev => !prev);
-      } else if (cmd && e.shiftKey && e.key === 'H') {
+      } else if (cmd && e.shiftKey && key === 'h') {
         // Cmd+Shift+H：版本历史
         e.preventDefault();
         setShowVersionHistory(true);
-      } else if (cmd && e.key === 'w' && !e.shiftKey) {
+      } else if (cmd && key === 'w' && !e.shiftKey) {
         // Cmd+W：关闭当前标签
         e.preventDefault();
         if (activeTabIdRef.current) closeTab(activeTabIdRef.current);
