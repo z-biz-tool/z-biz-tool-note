@@ -24,7 +24,6 @@ import { StatusBar } from './components/StatusBar';
 import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
-import { BacklinksPanel } from './components/BacklinksPanel';
 import { QuickInsert } from './components/QuickInsert';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';

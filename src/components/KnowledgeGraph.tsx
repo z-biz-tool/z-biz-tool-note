@@ -64,7 +64,7 @@ export const KnowledgeGraph = ({ nodes, links, onNodeClick, currentFilePath, tag
     return (
       <div className="knowledge-graph-empty">
         <p>暂无关联笔记</p>
-        <p className="hint">Use [[wiki links]] and #tags in your notes to create connections</p>
+        <p className="hint">正文里用 [[双链]] 和 #标签 就能把笔记连起来</p>
       </div>
     );
   }

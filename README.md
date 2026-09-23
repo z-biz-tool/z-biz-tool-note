@@ -322,7 +322,7 @@ ZenNote 是一款本地优先的 Markdown 笔记工具，融合了 Typora 的所
 - 首屏不加载未使用的功能模块
 
 ### 渲染优化
-- 6 个展示组件包裹 `React.memo`（StatusBar、Breadcrumb、BacklinksPanel、TagsPanel、Minimap、TabsBar）
+- 5 个展示组件包裹 `React.memo`（StatusBar、Breadcrumb、TagsPanel、Minimap、TabsBar）
 - 统计信息/标题列表/大纲 300ms 防抖更新
 - Minimap 滚动 rAF 节流 + 文本重建 200ms 防抖
 - 知识图谱 ForceGraph2D 回调 memo 化
@@ -476,7 +476,6 @@ z-biz-tool-note/
 │   │   ├── StatusBar.tsx    # 状态栏（字数/保存时间）
 │   │   ├── Outline.tsx      # 大纲面板
 │   │   ├── KnowledgeGraph.tsx # 知识图谱
-│   │   ├── BacklinksPanel.tsx # 反向链接面板
 │   │   ├── AIPanel.tsx      # AI 助手面板
 │   │   ├── TagsPanel.tsx    # 嵌套标签树
 │   │   ├── VersionHistory.tsx # 版本历史
