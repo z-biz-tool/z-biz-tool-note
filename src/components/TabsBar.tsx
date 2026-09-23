@@ -3,6 +3,7 @@ import { X, SplitSquareHorizontal, FileText, MoreHorizontal } from 'lucide-react
 import type { Note } from '../types';
 import { modKeys } from '../lib/modifier';
 import { useClampedMenuPos } from '../lib/useClampedMenuPos';
+import { disambiguateTabTitles } from '../lib/tabTitles';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
@@ -44,6 +45,12 @@ export const TabsBar = React.memo(({
   );
   const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
+
+  // 显示名：同名标签补目录后缀区分（只影响这一行文字，tab.title 不动，双链匹配还要用它）
+  const displayTitles = React.useMemo(
+    () => disambiguateTabTitles(tabs.map(t => ({ title: t.title, filePath: t.filePath }))),
+    [tabs],
+  );
 
   // 键盘导航：左右箭头切换标签
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent, tabIndex: number) => {
@@ -154,7 +161,7 @@ export const TabsBar = React.memo(({
               }}
             >
               <FileText size={12} className="tab-icon" />
-              <span className="tab-title">{tab.title || '未命名'}</span>
+              <span className="tab-title">{displayTitles[index] || '未命名'}</span>
               {tab.isDirty && <span className="tab-dirty" title="未保存">●</span>}
               <button
                 className="tab-close"
