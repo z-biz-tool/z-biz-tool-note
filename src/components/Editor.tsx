@@ -16,8 +16,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import CharacterCount from '@tiptap/extension-character-count';
 import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
-import Subscript from '@tiptap/extension-subscript';
-import Superscript from '@tiptap/extension-superscript';
+import { SubscriptMark, SuperscriptMark } from '../lib/markHtmlMarkdown';
 import Mathematics from '@tiptap/extension-mathematics';
 import { Mermaid } from '../lib/MermaidExtension';
 import { WikiLink } from '../lib/WikiLinkExtension';
@@ -219,8 +218,8 @@ export const Editor = ({
       CharacterCount,
       TextStyle,
       Color,
-      Subscript,
-      Superscript,
+      SubscriptMark,
+      SuperscriptMark,
       Mathematics,
       Mermaid,
       WikiLink.configure({
