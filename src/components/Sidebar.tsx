@@ -247,12 +247,12 @@ export const Sidebar = ({
   const handleContextMenu = (e: React.MouseEvent, file?: FileItem) => {
     e.preventDefault();
     e.stopPropagation();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const type: 'file' | 'folder' | 'empty' = file?.isDirectory ? 'folder' : file?.isFile ? 'file' : 'empty';
     // 每次右键都是一次新的提问：作废上一次子菜单的候选和仍在飞的列目录结果
     moveSeqRef.current++;
     setMoveTargets(null);
-    setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, type, item: file || undefined });
+    // 用视口坐标而不是容器坐标：菜单是 position: fixed，按容器算会整体偏掉工具栏那段高度
+    setContextMenu({ x: e.clientX, y: e.clientY, type, item: file || undefined });
   };
 
   // 路径工具函数（替代 Node.js path 模块）

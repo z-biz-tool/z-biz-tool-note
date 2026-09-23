@@ -846,7 +846,8 @@ body {
 
 /* ===== Context Menu ===== */
 .context-menu {
-  position: absolute;
+  /* fixed + 视口坐标：绝对定位的话要按定位祖先换算，侧栏里曾经把菜单画偏一截 */
+  position: fixed;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);

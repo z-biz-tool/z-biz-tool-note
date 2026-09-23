@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, SplitSquareHorizontal, FileText, MoreHorizontal } from 'lucide-react';
 import type { Note } from '../types';
 import { modKeys } from '../lib/modifier';
+import { useClampedMenuPos } from '../lib/useClampedMenuPos';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
@@ -37,6 +38,10 @@ export const TabsBar = React.memo(({
 }: TabsBarProps) => {
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  // 靠右的标签右键时菜单会掉出窗口右边，收进视口再显示
+  const { ref: menuRef, pos: menuPos } = useClampedMenuPos<HTMLDivElement>(
+    contextMenu?.x ?? 0, contextMenu?.y ?? 0, contextMenu?.tabId ?? ''
+  );
   const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
 
@@ -176,7 +181,7 @@ export const TabsBar = React.memo(({
 
       {/* 右键菜单 */}
       {contextMenu && (
-        <div className="tab-context-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+        <div ref={menuRef} className="tab-context-menu" role="menu" style={{ left: menuPos.left, top: menuPos.top }}>
           <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { onClose(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { onClose(contextMenu.tabId); setContextMenu(null); } }}>关闭标签</div>
           <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { onCloseOthers?.(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { onCloseOthers?.(contextMenu.tabId); setContextMenu(null); } }}>关闭其他标签</div>
           <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { onCloseToRight?.(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { onCloseToRight?.(contextMenu.tabId); setContextMenu(null); } }}>关闭右侧标签</div>

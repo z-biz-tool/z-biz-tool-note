@@ -1,5 +1,6 @@
 import React from 'react';
 import { FolderPlus, FileText, Trash2, Edit3, FolderInput, ChevronRight, Folder } from 'lucide-react';
+import { useClampedMenuPos } from '../lib/useClampedMenuPos';
 
 /** 一个可移入的目录；depth 用来缩进，relPath 放在 title 里指清位置 */
 export interface MoveTarget {
@@ -49,6 +50,8 @@ export const FolderContextMenu = ({
   onMoveTo,
 }: FolderContextMenuProps) => {
   const [moveOpen, setMoveOpen] = React.useState(false);
+  // 子菜单展开会长高，位置要跟着重新收进视口，所以把展开态和内容条数一起当 key
+  const { ref: menuRef, pos } = useClampedMenuPos<HTMLDivElement>(x, y, `${moveOpen}:${moveTargets?.length ?? -1}`);
 
   const handleClickOutside = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.context-menu')) return;
@@ -95,10 +98,11 @@ export const FolderContextMenu = ({
 
   return (
     <div
+      ref={menuRef}
       className="context-menu"
       role="menu"
       aria-label="文件操作菜单"
-      style={{ left: x, top: y }}
+      style={{ left: pos.left, top: pos.top }}
       onClick={handleClickOutside}
     >
       {items.map(item => (
