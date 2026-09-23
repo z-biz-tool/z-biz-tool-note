@@ -2143,6 +2143,12 @@ body {
 .version-item:hover {
   background: var(--bg-tertiary);
 }
+/* 版本行现在也能用 Tab + Enter 选（不再只服务鼠标），
+   没有这条的话键盘用户 Tab 过来看不到自己在哪一行。 */
+.version-item:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
 .version-item.active {
   background: color-mix(in srgb, var(--accent-color) 15%, var(--bg-primary));
   color: var(--text-primary);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { electronAPI, mustSucceed, formatMtime } from './lib/electronAPI';
+import { electronAPI, mustSucceed, formatMtime, errText } from './lib/electronAPI';
 import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, validateUrl, type ToastKind } from './lib/dialogs';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
@@ -51,12 +51,6 @@ import { parseFrontmatter, stripFrontmatter, withFrontmatter } from './lib/front
 import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
-
-/**
- * 拼进 toast 的错误文案：抛出来的是 Error，直接 ${e} 会带上 "Error: " 前缀，
- * 而这条是保存失败时用户唯一看得到的原因，得干净可读。
- */
-const errText = (e: unknown): string => String((e as Error | null)?.message || e || '未知错误').slice(0, 60);
 
 const DEMO_CONTENT = `# 使用指南
 

@@ -23,6 +23,13 @@ export function mustSucceed<T>(result: T): T {
   return result;
 }
 
+/**
+ * 拼进 toast/错误行的错误文案：抛出来的是 Error，直接 ${e} 会带上 "Error: " 前缀，
+ * 而这条往往是用户唯一看得到的原因，得干净可读（也是 mustSucceed 那条约定的对端）。
+ */
+export const errText = (e: unknown): string =>
+  String((e as Error | null)?.message || e || '未知错误').slice(0, 60);
+
 // 对话框插件（懒加载，可能不可用）
 let _dialogLoaded = false;
 let dialogSave: ((opts: any) => Promise<string | string[] | null>) | null = null;
