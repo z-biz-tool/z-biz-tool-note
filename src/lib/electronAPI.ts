@@ -390,6 +390,19 @@ li{margin:0.3em 0}</style></head>
 }
 
 /**
+ * 导出 HTML 的目标路径。
+ *
+ * Why: 调用方传进来的一直是**笔记自己的 .md 路径**，而两侧都是"给什么路径就写什么文件"，
+ * 于是 Tauri 侧那条 `write_file(path, 一整份 HTML)` 会点一次「导出为 HTML」就把笔记本体
+ * 覆盖成 HTML 文档（实测传的确实是 demo/读书笔记.md，toast 也照着念这个名字）。
+ * 目标名在这里算一次，两侧共用，浏览器侧也真的落一个 .html 文件，好验证。
+ */
+export function exportHtmlPath(notePath: string): string {
+  const base = (notePath || '').replace(/\.(md|markdown)$/i, '');
+  return `${base || 'note'}.html`;
+}
+
+/**
  * 哪些附件可以走 asset:// 直链而不是 base64。只有直接把地址塞给 src 的那几个查看器受益；
  * pdf/docx/xlsx 要的是字节本身（pdf.js 与 mammoth/SheetJS 自己解析），给 URL 等于把它们
  * 读文件那步删掉，所以它们继续走 base64。
@@ -488,9 +501,13 @@ export const electronAPI = {
         case 'list-files-recursive':
           return { success: true, files: demoFilesRecursive(args[0]) };
         case 'export-html': {
+          // 以前浏览器侧只 return html、不写文件，却把 filePath 原样报回去 —— toast 于是
+          // 指着 .md 说"已导出 HTML"。现在两侧形状一致：都写到 .html、都脱敏。
           const content = args[0] as string;
-          const fullHtml = generateHtmlFromContent(content);
-          return { success: true, html: fullHtml, filePath: args[1] };
+          const target = exportHtmlPath(String(args[1] || ''));
+          const fullHtml = generateHtmlFromContent(sanitizeExport(content));
+          demoWrite(target, fullHtml);
+          return { success: true, html: fullHtml, filePath: target };
         }
         case 'export-pdf': {
           const content = args[0] as string;
@@ -598,13 +615,16 @@ export const electronAPI = {
         }
         case 'export-html': {
           // 直接将内容导出为 HTML 文件；默认脱敏（移除 API Key、用户名等敏感信息）
+          // 目标路径必须由 exportHtmlPath 从笔记路径换算：调用方给的是 .md，
+          // 原样 write_file 会把笔记本身覆盖成 HTML。
           const content = args[0] as string;
           const filePath = args[1] as string;
           const safeContent = sanitizeExport(content);
           const fullHtml = generateHtmlFromContent(safeContent);
           if (filePath) {
-            await invoke('write_file', { path: filePath, content: fullHtml });
-            return { success: true, filePath };
+            const target = exportHtmlPath(filePath);
+            await invoke('write_file', { path: target, content: fullHtml });
+            return { success: true, filePath: target };
           }
           return { success: true, html: fullHtml };
         }
