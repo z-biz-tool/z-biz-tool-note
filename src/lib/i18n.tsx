@@ -44,6 +44,44 @@ interface Translations {
     imageUrl: string;
     linkUrl: string;
   };
+  panel: {
+    outline: string;
+    backlinks: string;
+    ai: string;
+    graph: string;
+    standard: string;
+    wide: string;
+    toStandardTitle: string;
+    toWideTitle: string;
+    closeTitle: string;
+    noHeadings: string;
+  };
+  status: {
+    saved: string;
+    saving: string;
+    savingTitle: string;
+    saveFailed: string;
+    saveFailedTitle: string;
+    unsaved: string;
+    focus: string;
+    focusTitle: string;
+    typewriter: string;
+    typewriterTitle: string;
+    richText: string;
+    source: string;
+    toSourceTitle: string;
+    toRichTitle: string;
+    wide: string;
+    wideOnTitle: string;
+    wideOffTitle: string;
+    words: string;
+    characters: string;
+    blocks: string;
+    about: string;
+    minutes: string;
+    statsTitle: string;
+    themeTitle: string;
+  };
 }
 
 const translations: Record<Language, Translations> = {
@@ -89,6 +127,44 @@ const translations: Record<Language, Translations> = {
       imageUrl: 'Image URL:',
       linkUrl: 'Link URL:',
     },
+    panel: {
+      outline: 'Outline',
+      backlinks: 'Backlinks',
+      ai: 'AI Assistant',
+      graph: 'Knowledge Graph',
+      standard: 'Standard',
+      wide: 'Wide',
+      toStandardTitle: 'Switch to the standard view',
+      toWideTitle: 'Switch to wide view (fills the right side, editor hidden)',
+      closeTitle: 'Close panel',
+      noHeadings: 'No headings yet',
+    },
+    status: {
+      saved: 'Saved',
+      saving: 'Saving',
+      savingTitle: 'Saving…',
+      saveFailed: 'Save failed',
+      saveFailedTitle: 'Save failed (content kept in the WAL)',
+      unsaved: 'Unsaved',
+      focus: 'Focus',
+      focusTitle: 'Focus mode: only the current paragraph is lit up',
+      typewriter: 'Typewriter',
+      typewriterTitle: 'Typewriter mode: the caret stays centered',
+      richText: 'Rich text',
+      source: 'Source',
+      toSourceTitle: 'Switch to source: edit the Markdown directly ({key})',
+      toRichTitle: 'Back to rich text: what-you-see-is-what-you-get ({key})',
+      wide: 'Wide',
+      wideOnTitle: 'Leave wide mode and restore the right panel',
+      wideOffTitle: 'Wide: hide the right panel and let the document fill the window',
+      words: 'words',
+      characters: 'chars',
+      blocks: 'blocks',
+      about: 'about',
+      minutes: 'min',
+      statsTitle: 'Word count: CJK counts characters, Latin counts words; reading time assumes 200 chars/min',
+      themeTitle: 'Current theme: {theme} — click to switch',
+    },
   },
   zh: {
     toolbar: {
@@ -131,6 +207,44 @@ const translations: Record<Language, Translations> = {
     prompt: {
       imageUrl: '图片地址：',
       linkUrl: '链接地址：',
+    },
+    panel: {
+      outline: '大纲',
+      backlinks: '反向链接',
+      ai: 'AI 助手',
+      graph: '知识图谱',
+      standard: '标准',
+      wide: '宽屏',
+      toStandardTitle: '切换为标准视图',
+      toWideTitle: '切换为宽屏视图（占满右侧，编辑器隐藏）',
+      closeTitle: '关闭面板',
+      noHeadings: '暂无标题',
+    },
+    status: {
+      saved: '已保存',
+      saving: '保存中',
+      savingTitle: '正在保存',
+      saveFailed: '保存失败',
+      saveFailedTitle: '保存失败（内容已暂存到 WAL）',
+      unsaved: '未保存',
+      focus: '专注',
+      focusTitle: '专注模式：只点亮当前段落',
+      typewriter: '打字机',
+      typewriterTitle: '打字机模式：光标始终居中',
+      richText: '富文本',
+      source: '源码',
+      toSourceTitle: '切到源码模式：直接编辑 Markdown 原文（{key}）',
+      toRichTitle: '返回富文本模式：所见即所得渲染（{key}）',
+      wide: '宽屏',
+      wideOnTitle: '退出宽屏，恢复右侧面板',
+      wideOffTitle: '宽屏：隐藏右侧面板，文档占满中间',
+      words: '词',
+      characters: '字',
+      blocks: '段',
+      about: '约',
+      minutes: '分钟',
+      statsTitle: '词数：中文按字计、英文按词计；阅读时长按 200 字/分钟估算',
+      themeTitle: '当前主题：{theme}，点击切换',
     },
   },
 };

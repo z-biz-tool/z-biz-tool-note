@@ -94,7 +94,7 @@ export const THEMES: ThemeOption[] = [
 ];
 
 // name 是持久化标识（localStorage.theme / data-theme），不随语言变化；
-// 界面统一展示中文名
+// 展示名走下面两张表，切英文时别再漏出中文
 const LABELS_ZH: Record<ThemeName, string> = {
   light: '浅色',
   dark: '深色',
@@ -104,7 +104,17 @@ const LABELS_ZH: Record<ThemeName, string> = {
   nord: '极地',
 };
 
-export const themeLabel = (name: ThemeName) => LABELS_ZH[name] ?? name;
+const LABELS_EN: Record<ThemeName, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  sepia: 'Sepia',
+  solarized: 'Solarized',
+  dracula: 'Dracula',
+  nord: 'Nord',
+};
+
+export const themeLabel = (name: ThemeName, lang: string = 'zh') =>
+  (lang === 'en' ? LABELS_EN : LABELS_ZH)[name] ?? name;
 
 export function applyTheme(themeName: ThemeName) {
   const theme = THEMES.find(t => t.name === themeName) || THEMES[0];

@@ -21,7 +21,6 @@ import { recordRecentFile } from './lib/recentFiles';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { StatusBar } from './components/StatusBar';
-import { Outline } from './components/Outline';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
 import { QuickInsert } from './components/QuickInsert';
@@ -29,7 +28,7 @@ import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
 import { Welcome } from './components/Welcome';
 import ErrorBoundary from './components/ErrorBoundary';
-import { I18nProvider } from './lib/i18n';
+import { useI18n } from './lib/i18n';
 import { Resizer } from './components/Resizer';
 import { PanelHeader } from './components/PanelHeader';
 import { ListTree, Link2, Sparkles, Network, FileText } from 'lucide-react';
@@ -134,6 +133,7 @@ interface Note {
 这篇指南本身是内存态笔记，要留档得按 ⌘⇧S 存成文件。`;
 
 const App = () => {
+  const { t } = useI18n();
   const { writeFile, showSaveDialog, exportHtml, exportPdf, createNewNote, readFile, readFileBinary, getFileMeta } = useFileOperations();
 
   // 多标签 + 分屏：openTabs 为所有打开的笔记，activeTabId 为左窗格当前笔记，
@@ -1629,7 +1629,6 @@ const App = () => {
   }, [activeTag, tags, allFiles]);
 
   return (
-    <I18nProvider>
     <ErrorBoundary>
     <div style={{ display: 'flex', height: '100vh', width: '100%', overflow: 'hidden' }}>
       <Sidebar
@@ -1812,14 +1811,14 @@ const App = () => {
           >
             <PanelHeader
               icon={<ListTree size={14} />}
-              title="大纲"
+              title={t('panel', 'outline')}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setOutlineOpen(false)}
             />
             <div className="outline-list">
               {headings.length === 0 ? (
-                <div className="outline-item">暂无标题</div>
+                <div className="outline-item">{t('panel', 'noHeadings')}</div>
               ) : (
                 headings.map((heading) => (
                   <button
@@ -1858,7 +1857,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Link2 size={14} />}
-              title="反向链接"
+              title={t('panel', 'backlinks')}
               badge={<span className="count-badge">{backlinks.length}</span>}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
@@ -1916,7 +1915,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Sparkles size={14} />}
-              title="AI 助手"
+              title={t('panel', 'ai')}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setShowAIPanel(false)}
@@ -1957,7 +1956,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Network size={14} />}
-              title="知识图谱"
+              title={t('panel', 'graph')}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setShowKnowledgeGraph(false)}
@@ -2046,7 +2045,6 @@ const App = () => {
       <DialogHost />
     </div>
     </ErrorBoundary>
-    </I18nProvider>
   );
 };
 

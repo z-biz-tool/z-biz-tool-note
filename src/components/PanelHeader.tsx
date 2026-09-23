@@ -1,4 +1,5 @@
 import { X, Maximize2, Minimize2 } from 'lucide-react';
+import { useI18n } from '../lib/i18n';
 
 interface PanelHeaderProps {
   icon?: React.ReactNode;
@@ -15,6 +16,7 @@ interface PanelHeaderProps {
  * (similar to Yuque's panel switch) and a close button.
  */
 export const PanelHeader = ({ icon, title, badge, wide, onToggleWide, onClose }: PanelHeaderProps) => {
+  const { t } = useI18n();
   return (
     <div className="outline-header">
       {icon}
@@ -23,13 +25,13 @@ export const PanelHeader = ({ icon, title, badge, wide, onToggleWide, onClose }:
       <button
         className="panel-wide-toggle"
         onClick={onToggleWide}
-        title={wide ? '切换为标准视图' : '切换为宽屏视图（占满右侧，编辑器隐藏）'}
-        aria-label={wide ? '切换为标准视图' : '切换为宽屏视图'}
+        title={t('panel', wide ? 'toStandardTitle' : 'toWideTitle')}
+        aria-label={t('panel', wide ? 'standard' : 'wide')}
       >
         {wide ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-        <span className="panel-wide-label">{wide ? '标准' : '宽屏'}</span>
+        <span className="panel-wide-label">{t('panel', wide ? 'standard' : 'wide')}</span>
       </button>
-      <button className="toolbar-btn" onClick={onClose} title="关闭面板" aria-label="关闭面板">
+      <button className="toolbar-btn" onClick={onClose} title={t('panel', 'closeTitle')} aria-label={t('panel', 'closeTitle')}>
         <X size={14} />
       </button>
     </div>
