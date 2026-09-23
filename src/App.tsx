@@ -1065,6 +1065,21 @@ const App = () => {
     else showToast(`未找到笔记: ${t}`, 'error');
   }, [allFiles, handleOpenFile, showToast]);
 
+  // `[[` 补全的候选：目录里的 markdown 笔记名。allFiles 的 name 在 refreshFileList 里
+  // 就已经去掉了 .md/.markdown（它同时也是 handleWikiLinkNavigate 的比对键），
+  // 所以"是不是 markdown"只能看 path——用 name 判扩展名会一条都筛不出来。
+  // 排掉当前这篇：给自己建双链没意义，还占掉了最想要的第一行。
+  const wikiTargets = useMemo(() => {
+    const cur = currentNote?.filePath || '';
+    const seen = new Set<string>();
+    for (const f of allFiles) {
+      if (!/\.(md|markdown)$/i.test(f.path || '')) continue;
+      if (f.path === cur) continue;
+      if (f.name) seen.add(f.name);
+    }
+    return [...seen];
+  }, [allFiles, currentNote?.filePath]);
+
   const handleOpenFolder = useCallback((dirPath: string) => {
     if (dirPath) {
       setCurrentDir(dirPath);
@@ -1130,6 +1145,7 @@ const App = () => {
             onWikiLinkClick={handleWikiLinkNavigate}
             onTagClick={(tag: string) => handleTagClick(tag)}
             documentWide={rightPanelWide}
+            wikiTargets={wikiTargets}
           />
           </>
         );
@@ -1157,6 +1173,7 @@ const App = () => {
             scrollSyncTarget={splitScrollRef}
             onWikiLinkClick={handleWikiLinkNavigate}
             onTagClick={(tag: string) => handleTagClick(tag)}
+            wikiTargets={wikiTargets}
           />
         </>
       );

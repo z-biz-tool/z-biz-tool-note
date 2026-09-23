@@ -21,6 +21,7 @@ import Superscript from '@tiptap/extension-superscript';
 import Mathematics from '@tiptap/extension-mathematics';
 import { Mermaid } from '../lib/MermaidExtension';
 import { WikiLink } from '../lib/WikiLinkExtension';
+import { WikiLinkSuggest } from '../lib/WikiLinkSuggestionExtension';
 import { Tag } from '../lib/TagExtension';
 import { BlockReference } from '../lib/BlockReferenceExtension';
 import { MultiCursor } from '../lib/MultiCursorExtension';
@@ -100,6 +101,8 @@ interface EditorProps {
   scrollSyncTarget?: React.RefObject<HTMLElement>;
   // 文章宽屏：true 时文档撑满整个编辑区（去掉 max-width 限制）
   documentWide?: boolean;
+  // `[[` 双链补全的候选笔记名（已去扩展名）
+  wikiTargets?: string[];
 }
 
 export const Editor = ({
@@ -122,6 +125,7 @@ export const Editor = ({
   onTagClick,
   scrollSyncTarget,
   documentWide = false,
+  wikiTargets,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -149,6 +153,9 @@ export const Editor = ({
   // 所以 WikiLink/Tag 通过 ref 转发，ref 每次渲染都刷新。
   const wikiLinkClickRef = useRef(onWikiLinkClick);
   wikiLinkClickRef.current = onWikiLinkClick;
+  // 候选笔记每次列目录都会变，但扩展只在编辑器创建时配置一次，所以走 ref 取最新值
+  const wikiTargetsRef = useRef(wikiTargets);
+  wikiTargetsRef.current = wikiTargets;
   const tagClickRef = useRef(onTagClick);
   tagClickRef.current = onTagClick;
 
@@ -225,6 +232,9 @@ export const Editor = ({
         onNavigate: (href: string) => {
           wikiLinkClickRef.current?.(href);
         },
+      }),
+      WikiLinkSuggest.configure({
+        getTargets: () => wikiTargetsRef.current ?? [],
       }),
       Tag.configure({
         onTagClick: (tag: string) => {
