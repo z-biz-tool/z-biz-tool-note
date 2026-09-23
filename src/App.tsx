@@ -1079,9 +1079,12 @@ const App = () => {
           return;
         }
       } else {
-        // 二进制:读 base64 + 拼 dataUrl
+        // 二进制：小文件拿 base64 拼 dataUrl，超过 5MB 的媒体类桥层改吐 asset:// 直链（streamed）。
+        // 只认 base64 的话，大视频/大图点开就是「无法打开 xxx：文件读取失败」——而那批恰恰最需要预览。
         const result = await readFileBinary(filePath);
-        if (result.success && result.base64) {
+        if (result.streamed && result.assetUrl) {
+          dataUrl = result.assetUrl;
+        } else if (result.success && result.base64) {
           dataUrl = `data:${mime};base64,${result.base64}`;
         } else {
           fail(result.error || '文件读取失败');

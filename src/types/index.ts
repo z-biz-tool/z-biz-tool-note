@@ -12,7 +12,7 @@ export interface Note {
   isDirty?: boolean;
   // 文件类型路由扩展字段
   fileType?: FileKind;        // 当前文件形态
-  dataUrl?: string;           // 二进制文件用 base64 dataUrl
+  dataUrl?: string;           // 二进制文件的资源地址：base64 dataUrl，或大媒体直链 asset://
   fileSize?: number;          // 文件大小(byte)
   fileMtime?: string;         // 修改时间
   fileMime?: string;          // MIME 类型

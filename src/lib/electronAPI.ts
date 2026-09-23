@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { sanitizeExport } from './sanitize';
 import { promptDialog } from './dialogs';
-import { isMarkdownPath } from './fileTypes';
+import { isMarkdownPath, kindOf } from './fileTypes';
 import { extractTagsSmart, extractTitle } from './frontmatter';
 
 // 检测是否运行在 Tauri 环境
@@ -374,6 +374,16 @@ li{margin:0.3em 0}</style></head>
 <body>${htmlContent}</body></html>`;
 }
 
+/**
+ * 哪些附件可以走 asset:// 直链而不是 base64。只有直接把地址塞给 src 的那几个查看器受益；
+ * pdf/docx/xlsx 要的是字节本身（pdf.js 与 mammoth/SheetJS 自己解析），给 URL 等于把它们
+ * 读文件那步删掉，所以它们继续走 base64。
+ */
+export const isStreamablePath = (path: string): boolean => {
+  const kind = kindOf(path);
+  return kind === 'image' || kind === 'video' || kind === 'audio';
+};
+
 export const electronAPI = {
   isTauri,
   isElectron: false, // 向后兼容
@@ -512,8 +522,8 @@ export const electronAPI = {
             const meta = await invoke<{ size: number }>('get_file_meta', { path: filePath });
             size = meta.size;
           } catch {}
-          if (size > 5 * 1024 * 1024) {
-            // 大文件：返回 asset URL，前端用 <video>/<img>/<embed> 直接加载
+          if (size > 5 * 1024 * 1024 && isStreamablePath(filePath)) {
+            // 大文件：返回 asset URL，前端用 <video>/<img>/<audio> 直接加载
             return {
               success: true,
               base64: '',
