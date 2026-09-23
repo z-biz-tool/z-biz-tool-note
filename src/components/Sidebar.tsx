@@ -57,7 +57,7 @@ interface SidebarProps {
   currentDir: string;
   currentNote: Note | null;
   /** 打开文件的唯一入口：App 按扩展名分发到编辑器/查看器，侧栏不再自己拼 Note */
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, jump?: { line?: number; query?: string }) => void;
   onNewNote: () => void;
   onOpenFolder: (dirPath: string) => void;
   onRefresh?: () => void;
@@ -872,7 +872,7 @@ export const Sidebar = ({
                 <button
                   key={`${result.filePath}-${i}`}
                   className="sidebar-file-item"
-                  onClick={() => onOpenFile(result.filePath)}
+                  onClick={() => onOpenFile(result.filePath, { line: result.line, query: searchQuery.trim() })}
                   style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>

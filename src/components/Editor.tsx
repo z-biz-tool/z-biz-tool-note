@@ -52,6 +52,7 @@ import { Minimap } from './Minimap';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { electronAPI, errText } from '../lib/electronAPI';
 import { notify } from '../lib/dialogs';
+import { readSearchState } from '../lib/SearchEnhancedExtension';
 import type { EditorMode, HeadingItem, WikiLinkItem, NoteStats } from '../types';
 
 import 'katex/dist/katex.min.css';
@@ -98,6 +99,9 @@ interface EditorProps {
   documentWide?: boolean;
   // `[[` 双链补全的候选笔记名（已去扩展名）
   wikiTargets?: string[];
+  // 从侧栏全文搜索结果点进来时：高亮这一篇里的所有匹配，并把光标落到第一处
+  searchJump?: { query: string; line: number } | null;
+  onSearchJumpDone?: () => void;
 }
 
 export const Editor = ({
@@ -106,6 +110,8 @@ export const Editor = ({
   title,
   onTitleChange,
   editorMode,
+  searchJump,
+  onSearchJumpDone,
   focusMode,
   typewriterMode,
   showFindReplace,
@@ -315,6 +321,19 @@ export const Editor = ({
       updateWikiLinksRef.current();
     }
   }, [content, editor, currentFilePath]);
+
+  // 搜索结果跳转：先让 SearchEnhanced 画好高亮，再把光标放到第一处匹配上。
+  // 侧栏那一行明明印着 L6，以前点击却只传路径 —— 打开后停在文首，行号等于假的。
+  useEffect(() => {
+    if (!editor || !searchJump || !searchJump.query) return;
+    // search/nextMatch 这些命令由 SearchEnhanced 以 as any 注册，类型上看不见，运行时在
+    (editor.commands as any).search(searchJump.query);
+    const first = readSearchState(editor.state).first;
+    if (first) {
+      editor.chain().focus().setTextSelection({ from: first.from, to: first.to }).scrollIntoView().run();
+    }
+    onSearchJumpDone?.();
+  }, [editor, searchJump, currentFilePath, onSearchJumpDone]);
 
   // 组件卸载时缓存当前状态
   useEffect(() => {

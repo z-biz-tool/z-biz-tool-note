@@ -164,6 +164,8 @@ const App = () => {
   const [focusMode, setFocusMode] = useState(false);
   const [typewriterMode, setTypewriterMode] = useState(false);
   const [showFindReplace, setShowFindReplace] = useState(false);
+  // 从侧栏搜索结果点进来时待定位的那一处（{query, line}），编辑器消费完清掉
+  const [searchJump, setSearchJump] = useState<{ path: string; query: string; line: number } | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [stats, setStats] = useState({ words: 0, characters: 0, blocks: 0, readingTime: 0 });
@@ -1164,6 +1166,17 @@ const App = () => {
   reopenTabRef.current = handleReopenTab;
 
   // 编辑器里 Cmd+点击 [[链接]] → 按标题/文件名解析并打开（主窗格与分屏共用同一份逻辑）
+  /**
+   * 侧栏搜索结果点进来：除了打开文件，还要把用户看见的那个行号兑现成"光标落在匹配处"。
+   * 只带查询词不带路径的话，同一条搜索结果点第二次（笔记已经开着）就再也不会重新定位了。
+   */
+  const handleSearchResultOpen = useCallback((filePath: string, jump?: { line?: number; query?: string }) => {
+    if (jump?.query) {
+      setSearchJump({ path: filePath, query: jump.query, line: jump.line || 0 });
+    }
+    handleOpenFile(filePath);
+  }, [handleOpenFile]);
+
   const handleWikiLinkNavigate = useCallback((href: string) => {
     const t = parseWikiLinkTarget(href);
     if (!t) return;
@@ -1280,6 +1293,10 @@ const App = () => {
             focusMode={focusMode}
             typewriterMode={typewriterMode}
             showFindReplace={showFindReplace}
+            searchJump={searchJump && currentNote?.filePath === searchJump.path
+              ? { query: searchJump.query, line: searchJump.line }
+              : null}
+            onSearchJumpDone={() => setSearchJump(null)}
             onToggleFindReplace={() => setShowFindReplace(false)}
             onStatsChange={setStats}
             onHeadingsChange={setHeadings}
@@ -1683,7 +1700,7 @@ const App = () => {
         isOpen={sidebarOpen}
         currentDir={currentDir}
         currentNote={currentNote}
-        onOpenFile={handleOpenFile}
+        onOpenFile={handleSearchResultOpen}
         onNewNote={handleNewNote}
         onOpenFolder={handleOpenFolder}
         refreshKey={treeVersion}
@@ -1744,7 +1761,7 @@ const App = () => {
             onOpenFolder={handleOpenFolderDialog}
             onCreateDaily={handleCreateDaily}
             onOpenGuide={openWelcomeGuide}
-            onOpenFile={handleOpenFile}
+            onOpenFile={handleSearchResultOpen}
             currentDir={currentDir}
           />
         ) : (

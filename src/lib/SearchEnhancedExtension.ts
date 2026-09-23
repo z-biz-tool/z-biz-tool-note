@@ -69,10 +69,14 @@ function findMatches(doc: any, query: string, options: { caseSensitive: boolean;
  * 免得界面自己再数一遍 —— 之前 FindReplace 就是自己写了一份正则匹配，
  * 于是总数对得上、文档里却一个高亮都没有（装饰只认这份插件状态）。
  */
-export function readSearchState(state: any): { query: string; total: number; index: number } {
+export function readSearchState(state: any): {
+  query: string; total: number; index: number; first: { from: number; to: number } | null;
+} {
   const s = searchKey.getState(state) as SearchState | undefined;
-  if (!s) return { query: '', total: 0, index: -1 };
-  return { query: s.query, total: s.matches.length, index: s.currentMatch };
+  if (!s) return { query: '', total: 0, index: -1, first: null };
+  // first 给"从侧栏搜索结果点进来"用：高亮已经画好，光标要落到第一处匹配
+  const first = s.matches.length ? { from: s.matches[0].from, to: s.matches[0].to } : null;
+  return { query: s.query, total: s.matches.length, index: s.currentMatch, first };
 }
 
 export const SearchEnhanced = Extension.create({
