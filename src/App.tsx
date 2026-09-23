@@ -1715,7 +1715,8 @@ const App = () => {
         />
       )}
 
-      {!rightPanelWide && outlineOpen && currentNote && (
+      {/* 右侧同一时刻只放一个面板，互斥规则就是上面 activeRightPanel 的优先级 */}
+      {!rightPanelWide && activeRightPanel === 'outline' && (
         <>
           {!rightPanelWide && (
             <Resizer
@@ -1761,7 +1762,7 @@ const App = () => {
         </>
       )}
 
-      {showBacklinks && currentNote && (
+      {activeRightPanel === 'backlinks' && (
         <>
           {!rightPanelWide && (
             <Resizer
@@ -1814,7 +1815,7 @@ const App = () => {
         </>
       )}
 
-      {showAIPanel && (
+      {activeRightPanel === 'ai' && (
         <>
           {!rightPanelWide && (
             <Resizer
@@ -1855,7 +1856,7 @@ const App = () => {
         </>
       )}
 
-      {showKnowledgeGraph && currentNote && (
+      {activeRightPanel === 'graph' && (
         <>
           {!rightPanelWide && (
             <Resizer
