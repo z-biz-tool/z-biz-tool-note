@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, FolderOpen, Calendar, BookOpen, Clock, Sparkles, FileText, ArrowRight } from 'lucide-react';
 import type { RecentFile } from '../types';
+import { modKeys } from '../lib/modifier';
 
 interface WelcomeProps {
   onNewNote: () => void;
@@ -96,10 +97,10 @@ export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, o
         </div>
 
         <div className="welcome-footer">
-          <span className="shortcut-hint"><kbd>Cmd+N</kbd> 新建笔记</span>
-          <span className="shortcut-hint"><kbd>Cmd+P</kbd> 快速切换</span>
-          <span className="shortcut-hint"><kbd>Cmd+Shift+P</kbd> 命令面板</span>
-          <span className="shortcut-hint"><kbd>Cmd+,</kbd> 设置</span>
+          <span className="shortcut-hint"><kbd>{modKeys('Cmd+N')}</kbd> 新建笔记</span>
+          <span className="shortcut-hint"><kbd>{modKeys('Cmd+P')}</kbd> 快速切换</span>
+          <span className="shortcut-hint"><kbd>{modKeys('Cmd+Shift+P')}</kbd> 命令面板</span>
+          <span className="shortcut-hint"><kbd>{modKeys('Cmd+,')}</kbd> 设置</span>
         </div>
       </div>
     </div>

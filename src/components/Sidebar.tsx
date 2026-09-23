@@ -10,6 +10,7 @@ import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
 import { FolderContextMenu } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
+import { modKeys, MOD } from '../lib/modifier';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
@@ -517,7 +518,7 @@ export const Sidebar = ({
   if (!isOpen) {
     return (
       <div className="sidebar-collapsed">
-        <button className="toolbar-btn" onClick={handleFolderSelect} title="打开文件夹（Cmd+Shift+O）">
+        <button className="toolbar-btn" onClick={handleFolderSelect} title={modKeys('打开文件夹（Cmd+Shift+O）')}>
           <Home size={18} />
         </button>
         <button className="toolbar-btn" onClick={onNewNote} title="新建笔记">
@@ -568,7 +569,7 @@ export const Sidebar = ({
         <button className={`sidebar-tab ${activeTab === 'recent' ? 'active' : ''}`} onClick={() => setActiveTab('recent')} title="最近打开" aria-label="最近打开">
           <Clock size={14} />
         </button>
-        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')} title="全文搜索（Cmd+K）" aria-label="全文搜索">
+        <button className={`sidebar-tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')} title={modKeys('全文搜索（Cmd+K）')} aria-label="全文搜索">
           <Search size={14} />
         </button>
         <button className={`sidebar-tab ${activeTab === 'tags' ? 'active' : ''}`} onClick={() => setActiveTab('tags')} title="标签" aria-label="标签">
@@ -590,7 +591,7 @@ export const Sidebar = ({
               gap: 8,
             }}
           >
-            <button className="toolbar-btn" onClick={handleFolderSelect} title="打开文件夹（Cmd+Shift+O）" style={{ width: 28, height: 28 }}>
+            <button className="toolbar-btn" onClick={handleFolderSelect} title={modKeys('打开文件夹（Cmd+Shift+O）')} style={{ width: 28, height: 28 }}>
               <Folder size={14} />
             </button>
             <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
@@ -724,7 +725,7 @@ export const Sidebar = ({
                     </div>
                   </div>
                 )}
-                <p className="sidebar-empty-hint"><kbd>Cmd</kbd><kbd>K</kbd> 直接跳到搜索框</p>
+                <p className="sidebar-empty-hint"><kbd>{MOD}</kbd><kbd>K</kbd> 直接跳到搜索框</p>
               </div>
             ) : searchResults.length === 0 ? (
               <div className="sidebar-empty">
@@ -809,17 +810,17 @@ export const Sidebar = ({
         }}
       >
         {onCreateDaily && (
-          <button className="toolbar-btn" onClick={onCreateDaily} title="今日日记（Cmd+Shift+D）">
+          <button className="toolbar-btn" onClick={onCreateDaily} title={modKeys('今日日记（Cmd+Shift+D）')}>
             <Calendar size={16} />
           </button>
         )}
         {onOpenAI && (
-          <button className="toolbar-btn" onClick={onOpenAI} title="AI 助手（Cmd+J）">
+          <button className="toolbar-btn" onClick={onOpenAI} title={modKeys('AI 助手（Cmd+J）')}>
             <Sparkles size={16} />
           </button>
         )}
         {onOpenSettings && (
-          <button className="toolbar-btn" onClick={onOpenSettings} title="设置（Cmd+,）">
+          <button className="toolbar-btn" onClick={onOpenSettings} title={modKeys('设置（Cmd+,）')}>
             <Settings size={16} />
           </button>
         )}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, SplitSquareHorizontal, FileText, MoreHorizontal } from 'lucide-react';
 import type { Note } from '../types';
+import { modKeys } from '../lib/modifier';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
@@ -153,7 +154,7 @@ export const TabsBar = React.memo(({
                   e.stopPropagation();
                   onClose(tab.id);
                 }}
-                title="关闭 (Cmd+W)"
+                title={modKeys('关闭 (Cmd+W)')}
               >
                 <X size={12} />
               </button>
@@ -164,7 +165,7 @@ export const TabsBar = React.memo(({
       <button
         className={`tab-split-btn ${isSplit ? 'active' : ''}`}
         onClick={onToggleSplit}
-        title={isSplit ? '关闭分屏 (Cmd+\\)' : '水平分屏 (Cmd+\\)'}
+        title={modKeys(isSplit ? '关闭分屏 (Cmd+\\)' : '水平分屏 (Cmd+\\)')}
         style={{
           background: isSplit ? brandGradient : 'transparent',
           color: isSplit ? 'white' : undefined,

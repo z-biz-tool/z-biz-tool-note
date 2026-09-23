@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, CornerDownLeft } from 'lucide-react';
 import type { Command } from '../types';
+import { modKeys } from '../lib/modifier';
 
 interface CommandPaletteProps {
   commands: Command[];
@@ -173,7 +174,7 @@ export const CommandPalette = ({ commands, onClose }: CommandPaletteProps) => {
                 <i className="command-item-dot" style={{ background: categoryColor(cmd.category) }} />
                 <span className="command-item-title">{cmd.title}</span>
                 <span className="modal-list-item-category">{cmd.category}</span>
-                {cmd.shortcut && <span className="modal-list-item-shortcut">{cmd.shortcut}</span>}
+                {cmd.shortcut && <span className="modal-list-item-shortcut">{modKeys(cmd.shortcut)}</span>}
               </button>
             ))
           )}

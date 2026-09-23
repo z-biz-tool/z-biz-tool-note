@@ -12,6 +12,7 @@ import type { Editor } from '@tiptap/react';
 import { promptDialog, validateUrl } from '../lib/dialogs';
 import type { EditorMode as _EditorMode } from '../types';
 import { useI18n } from '../lib/i18n';
+import { modKeys } from '../lib/modifier';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
@@ -43,7 +44,7 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
   if (!editor) return null;
 
   const btn = (onClick: () => void, active: boolean, icon: React.ReactNode, title: string) => (
-    <button className={`tb-btn ${active ? 'active' : ''}`} onClick={onClick} title={title}>
+    <button className={`tb-btn ${active ? 'active' : ''}`} onClick={onClick} title={modKeys(title)}>
       {icon}
     </button>
   );
@@ -54,7 +55,7 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
 
   const MenuButton = ({ id, icon, label, children }: { id: string; icon: React.ReactNode; label: string; children: React.ReactNode }) => (
     <div className="tb-menu-wrap" ref={openMenu === id ? menuRef : undefined}>
-      <button className={`tb-menu-btn ${openMenu === id ? 'active' : ''}`} onClick={() => toggleMenu(id)} title={label}>
+      <button className={`tb-menu-btn ${openMenu === id ? 'active' : ''}`} onClick={() => toggleMenu(id)} title={modKeys(label)}>
         {icon}
         <ChevronDown size={12} className="tb-chevron" />
       </button>
@@ -72,8 +73,8 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
       onClick={() => { onClick(); setOpenMenu(null); }}
     >
       <span className="tb-menu-item-icon">{icon}</span>
-      <span className="tb-menu-item-label">{label}</span>
-      {shortcut && <span className="tb-menu-item-shortcut">{shortcut}</span>}
+      <span className="tb-menu-item-label">{modKeys(label)}</span>
+      {shortcut && <span className="tb-menu-item-shortcut">{modKeys(shortcut)}</span>}
     </button>
   );
 
@@ -100,9 +101,9 @@ export const Toolbar = ({ editor, onEmojiClick, editorMode }: ToolbarProps) => {
         <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} icon={<span className="tb-heading-icon">H1</span>} label={t('toolbar', 'heading1')} shortcut="Ctrl+Alt+1" />
         <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} icon={<span className="tb-heading-icon">H2</span>} label={t('toolbar', 'heading2')} shortcut="Ctrl+Alt+2" />
         <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} icon={<span className="tb-heading-icon">H3</span>} label={t('toolbar', 'heading3')} shortcut="Ctrl+Alt+3" />
-        <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()} active={editor.isActive('heading', { level: 4 })} icon={<span className="tb-heading-icon">H4</span>} label={t('toolbar', 'heading4')} />
-        <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()} active={editor.isActive('heading', { level: 5 })} icon={<span className="tb-heading-icon">H5</span>} label={t('toolbar', 'heading5')} />
-        <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()} active={editor.isActive('heading', { level: 6 })} icon={<span className="tb-heading-icon">H6</span>} label={t('toolbar', 'heading6')} />
+        <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()} active={editor.isActive('heading', { level: 4 })} icon={<span className="tb-heading-icon">H4</span>} label={t('toolbar', 'heading4')} shortcut="Ctrl+Alt+4" />
+        <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()} active={editor.isActive('heading', { level: 5 })} icon={<span className="tb-heading-icon">H5</span>} label={t('toolbar', 'heading5')} shortcut="Ctrl+Alt+5" />
+        <MenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()} active={editor.isActive('heading', { level: 6 })} icon={<span className="tb-heading-icon">H6</span>} label={t('toolbar', 'heading6')} shortcut="Ctrl+Alt+6" />
       </MenuButton>
 
       {/* Inline formatting — always visible */}

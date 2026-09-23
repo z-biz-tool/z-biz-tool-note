@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { modKeys } from './modifier';
 
 /**
  * 解析 `[[目标#锚点|别名]]`，取出真正用于跳转的目标名。
@@ -45,7 +46,7 @@ export function buildWikiLinkDecorations(doc: any): DecorationSet {
           class: 'wiki-link wiki-link-plain',
           'data-wiki-target': target,
           // 普通点击留给"移动光标"，跳转要 Cmd/Ctrl+点击，见下方 handleClick
-          title: `Cmd+点击 跳转到「${target}」`,
+          title: modKeys(`Cmd+点击 跳转到「${target}」`),
         })
       );
     }
@@ -157,7 +158,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
           // 跳转逻辑只走下面的 handleClick。
           'data-href': node.attrs.href,
           'data-text': node.attrs.text,
-          title: `Cmd+点击 跳转到「${parseWikiLinkTarget(node.attrs.href || '') || node.attrs.text}」`,
+          title: modKeys(`Cmd+点击 跳转到「${parseWikiLinkTarget(node.attrs.href || '') || node.attrs.text}」`),
         },
         this.options.HTMLAttributes
       ),
