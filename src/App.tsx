@@ -739,8 +739,8 @@ const App = () => {
     try {
       await invoke('ensure_dir', { path: dir });
     } catch (e) { console.warn('创建目录失败:', dir, e); }
-    const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily/i.test(t.name));
-    const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## Plan\n- [ ]\n`, todayTitle());
+    const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily|日记|日志/i.test(t.name));
+    const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## 今日计划\n- [ ]\n`, todayTitle());
 
     try {
       await invoke('write_text_file', { path: filePath, content });

@@ -58,7 +58,7 @@ export const QuickInsert = ({ open, templates, currentDir, onInsert, onCreateDai
           <button className="quick-insert-item daily" onClick={handleDaily}>
             <Calendar size={16} />
             <div>
-              <div className="qi-title">Today's Daily Note</div>
+              <div className="qi-title">今日日记</div>
               <div className="qi-desc">{todayTitle()}.md</div>
             </div>
           </button>
@@ -67,12 +67,12 @@ export const QuickInsert = ({ open, templates, currentDir, onInsert, onCreateDai
               <FileText size={16} />
               <div>
                 <div className="qi-title">{t.name}</div>
-                <div className="qi-desc">{t.builtin ? 'Built-in template' : 'Custom template'}</div>
+                <div className="qi-desc">{t.builtin ? '内置模板' : '自定义模板'}</div>
               </div>
             </button>
           ))}
           {filtered.length === 0 && (
-            <div className="sidebar-empty">No templates match "{query}"</div>
+            <div className="sidebar-empty">没有匹配「{query}」的模板</div>
           )}
         </div>
       </div>
