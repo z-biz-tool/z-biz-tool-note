@@ -54,15 +54,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { electronAPI, errText } from '../lib/electronAPI';
 import { notify } from '../lib/dialogs';
 import type { EditorMode, HeadingItem, WikiLinkItem, NoteStats } from '../types';
-import mermaid from 'mermaid';
 
 import 'katex/dist/katex.min.css';
 
-
-mermaid.initialize({
-  theme: 'default',
-  startOnLoad: false,
-});
 
 const lowlight = createLowlight({
   html,
@@ -148,7 +142,6 @@ export const Editor = ({
   // 真实 LRU 需记录访问时间，鉴于切换频次不高，FIFO 已足够
   const stateCacheRef = useRef<Map<string, any>>(new Map());
   const EDITOR_CACHE_LIMIT = 30;
-  const mermaidCounterRef = useRef(0);
 
   // useEditor 的配置只在首次创建时生效，扩展里捕获的回调会一直是第一帧的闭包
   // （stale closure：onWikiLinkClick 里的 allFiles 永远不会更新，跳转只能找到首帧就存在的笔记）。
@@ -263,7 +256,6 @@ export const Editor = ({
         updateHeadingsRef.current();
         updateWikiLinksRef.current();
       }, 300);
-      setTimeout(renderMermaid, 100);
     },
     onSelectionUpdate: () => {
       updateHeadings();
@@ -316,13 +308,12 @@ export const Editor = ({
       docReplaced = true;
     }
 
-    // 字数/大纲/双链/mermaid 都只在 onUpdate 里刷新，而上面刻意不发 onUpdate 事件，
+    // 字数/大纲/双链都只在 onUpdate 里刷新，而上面刻意不发 onUpdate 事件，
     // 于是打开或切换笔记后状态栏仍是上一篇的数字、大纲是空的，要敲一个字才归位。
     if (docReplaced) {
       updateStatsRef.current();
       updateHeadingsRef.current();
       updateWikiLinksRef.current();
-      setTimeout(renderMermaid, 100);
     }
   }, [content, editor, currentFilePath]);
 
@@ -486,23 +477,6 @@ export const Editor = ({
     onWikiLinksChange(links);
   }, [editor, onWikiLinksChange, currentFilePath]);
   updateWikiLinksRef.current = updateWikiLinks;
-
-  // Render Mermaid diagrams
-  const renderMermaid = useCallback(() => {
-    if (!editor) return;
-    const mermaidContainers = editor.view.dom.querySelectorAll('.mermaid-container');
-    mermaidContainers.forEach((container) => {
-      const codeElement = container.querySelector('code');
-      if (codeElement && codeElement.textContent) {
-        const code = codeElement.textContent;
-        mermaid.render('mermaid-' + (++mermaidCounterRef.current), code).then((result) => {
-          container.innerHTML = result.svg;
-        }).catch(() => {
-          container.innerHTML = '<pre style="color: red;">Mermaid 语法有误</pre>';
-        });
-      }
-    });
-  }, [editor]);
 
   // 粘贴/拖进来的图片先试着存进笔记图库，拿到 images/xxx 相对路径；存不成才内嵌 base64。
   // 两种"存不成"必须分开：浏览器演示区本来就没有图库（内嵌是预期行为，不用打扰用户），

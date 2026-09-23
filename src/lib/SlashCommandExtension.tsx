@@ -33,7 +33,7 @@ const COMMANDS: CommandItem[] = [
   { title: '代码块', description: '代码高亮块', icon: <CodeOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleCodeBlock().run(); } },
   { title: '表格', description: '3x3表格', icon: <TableOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); } },
   { title: '数学公式', description: 'KaTeX公式', icon: <FunctionOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setMathematics().run(); } },
-  { title: 'Mermaid图表', description: '流程图/时序图', icon: <ApartmentOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setMermaid({ content: 'graph TD\n  A[开始] --> B[结束]' }).run(); } },
+  { title: 'Mermaid图表', description: '流程图/时序图', icon: <ApartmentOutlined />, category: '高级', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setMermaid('graph TD\n  A[开始] --> B[结束]').run(); } },
   // Callout
   { title: '信息提示', description: '蓝色信息框', icon: <InfoCircleOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'info' }).run(); } },
   { title: '警告提示', description: '橙色警告框', icon: <WarningOutlined />, category: '提示框', command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setCallout({ type: 'warning' }).run(); } },
