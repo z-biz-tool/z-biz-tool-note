@@ -964,14 +964,14 @@ const App = () => {
   }, []);
 
   const handleNewNote = useCallback(async () => {
-    // P3-13：新建即落盘（避免内存态笔记丢失）
     if (!currentDir) {
       showToast('请先打开一个文件夹');
       return;
     }
     try {
+      // 注意：这里只是内存态便签（filePath 为空），并没有落盘。
+      // ⌘S 会走"另存为"拿到真实路径；崩溃恢复 WAL 也只在有路径时才写。
       const created = createNewNote();
-      // createNewNote 已经返回了 Note（create_note 在 Rust 侧落盘）
       openNote(created);
       setLastSaved(null);
     } catch (e) {

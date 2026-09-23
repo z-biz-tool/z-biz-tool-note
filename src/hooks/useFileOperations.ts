@@ -56,6 +56,9 @@ export const useFileOperations = () => {
     title: 'Untitled',
     content: '',
     filePath: '',
+    // 新建的必定是 markdown 笔记；这里留空会让状态栏/ Frontmatter 面板
+    // （都按 fileType === 'markdown' 判定）在新笔记上整块消失。
+    fileType: 'markdown',
     lastModified: new Date().toISOString(),
     isDirty: false,
   });
