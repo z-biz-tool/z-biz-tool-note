@@ -269,9 +269,20 @@ fn import_note_blocks_sensitive_paths() {
 #[test]
 fn validate_path_allows_whitelisted() {
     use crate::commands::validate_path;
-    // 用 /tmp 直接（macOS 的 std::env::temp_dir() 是 /var/folders/...）
-    let dir = std::path::PathBuf::from("/tmp");
-    assert!(validate_path(&dir.to_string_lossy()).is_ok());
+    // 钉的是"临时目录一定在白名单里"这条不变量。原先只写死 `/tmp`：Windows 上没有这个目录，
+    // 整条断言在 windows runner 上直接红（实测），而它掩盖的真实问题是产品侧只允许 /tmp，
+    // Windows 用户导出临时文件会被判"路径不在允许范围内"。现在两侧各按各的平台量。
+    let tmp = std::env::temp_dir();
+    assert!(
+        validate_path(&tmp.to_string_lossy()).is_ok(),
+        "本平台临时目录 {} 必须被允许",
+        tmp.display()
+    );
+    #[cfg(unix)]
+    {
+        // macOS 的 temp_dir() 是 /var/folders/...，覆盖不到 /tmp 这条独立白名单
+        assert!(validate_path("/tmp").is_ok(), "unix 上 /tmp 必须被允许");
+    }
 
     // ~/.z-note 始终允许
     if let Some(home) = dirs::home_dir() {
@@ -285,11 +296,12 @@ fn validate_path_allows_whitelisted() {
 fn validate_nonexistent_path() {
     use crate::commands::validate_path_allow_nonexistent;
 
-    // 允许的位置 + 不存在的子路径
-    let allowed_new = "/tmp/test-zennote-nonexistent-12345.md";
+    // 允许的位置 + 不存在的子路径：用本平台 temp 目录，Windows 上 /tmp 不存在，写死必红
+    let allowed_new = std::env::temp_dir().join("test-zennote-nonexistent-12345.md");
     assert!(
-        validate_path_allow_nonexistent(allowed_new).is_ok(),
-        "应允许 /tmp 下新建文件"
+        validate_path_allow_nonexistent(&allowed_new.to_string_lossy()).is_ok(),
+        "应允许本平台临时目录（{}）下新建文件",
+        allowed_new.display()
     );
 
     // 危险位置 + 不存在路径 → 拒绝

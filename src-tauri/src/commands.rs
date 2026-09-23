@@ -6,13 +6,35 @@ use uuid::Uuid;
 
 use crate::atomic_write::{atomic_write, atomic_write_str};
 
+/// 允许的临时目录根：`/tmp` 与各平台的 `std::env::temp_dir()`。
+///
+/// 为什么两个都要：只写 `/tmp` 时 Windows 上没有任何临时目录能过校验，导出/新建临时文件
+/// 会被判"路径不在允许范围内"（note 的 Windows CI 腿实测红过两条用例）；而只写 temp_dir()
+/// 又会在 macOS 上漏掉 `/tmp` 本身（macOS 的 temp_dir 是 `/var/folders/...`）。
+/// 两者都是同一条口径：应用自己的临时落盘位置。
+fn temp_roots() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = vec![std::path::Path::new("/tmp")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))];
+    let platform = std::env::temp_dir();
+    let platform = platform.canonicalize().unwrap_or(platform);
+    if !roots.contains(&platform) {
+        roots.push(platform);
+    }
+    roots
+}
+
+fn in_temp_root(path: &Path) -> bool {
+    temp_roots().iter().any(|r| path.starts_with(r))
+}
+
 /// 验证路径是否在允许的目录范围内（防止路径遍历攻击）
 ///
 /// 允许的目录（按优先级）：
 /// 1. 当前打开的笔记库目录（运行时由 caller 注入；这里查不到则用 home）
 /// 2. 用户主目录下允许的子目录：`Documents/`、`Desktop/`、`Downloads/`、`Notes/`
 /// 3. `~/.z-note/`（应用自身数据）
-/// 4. `/tmp/`（导出临时文件）
+/// 4. `/tmp/` 与本平台的临时目录（导出临时文件）
 ///
 /// 设计取舍：
 /// - 仍允许主目录主要是为了兼容"~/Documents/MyNotes" 类典型笔记库位置
@@ -32,11 +54,8 @@ pub(crate) fn validate_path(path: &str) -> Result<PathBuf, String> {
         return Ok(canonical);
     }
 
-    // 2. /tmp（macOS 下 canonicalize 后变 /private/tmp，必须 canonical 比较）
-    let tmp = std::path::Path::new("/tmp")
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from("/tmp"));
-    if canonical.starts_with(&tmp) {
+    // 2. 临时目录（含 macOS 的 /private/tmp：一律用 canonical 前缀比较）
+    if in_temp_root(&canonical) {
         return Ok(canonical);
     }
 
@@ -100,10 +119,7 @@ pub(crate) fn validate_path_allow_nonexistent(path: &str) -> Result<PathBuf, Str
         return Ok(candidate_canonical);
     }
 
-    let tmp = std::path::Path::new("/tmp")
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from("/tmp"));
-    if candidate_canonical.starts_with(&tmp) {
+    if in_temp_root(&candidate_canonical) {
         return Ok(candidate_canonical);
     }
 
