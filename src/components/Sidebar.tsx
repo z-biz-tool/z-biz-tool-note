@@ -13,6 +13,7 @@ import { clearRecentFiles, formatRecentTime, listRecentFiles, mutateRecentFiles,
 import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
+import { useI18n } from '../lib/i18n';
 
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
@@ -80,6 +81,7 @@ export const Sidebar = ({
   isOpen, currentDir, currentNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
+  const { t: tr } = useI18n();
   const { listFiles, listFilesRecursive, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
@@ -130,7 +132,7 @@ export const Sidebar = ({
     });
     if (!ok) return;
     clearRecentFiles();
-    notify('已清空「最近打开」', 'success');
+    notify(tr('toast', 'clearedRecent'), 'success');
   }, []);
   
   // 快速搜索：Cmd/Ctrl+K 切到搜索页并聚焦输入框
@@ -341,10 +343,10 @@ export const Sidebar = ({
       remapPaths(item.path, newPath, !!item.isDirectory);
       onRename?.(item.path, newPath, newName, !!item.isDirectory);
       onRefresh?.();
-      notify(`已重命名为 ${displayName(newName)}`, 'success');
+      notify(tr('toast', 'renamedTo').replace('{name}', displayName(newName)), 'success');
     } catch (err) {
       console.error('重命名失败:', err);
-      notify('重命名失败: ' + err, 'error');
+      notify(tr('toast', 'renameFailed').replace('{err}', String(err)), 'error');
     }
   };
 
@@ -418,7 +420,7 @@ export const Sidebar = ({
     const newPath = pathJoin(targetDir, name);
     try {
       if (await electronAPI.invoke('file-exists', newPath)) {
-        notify(`目标文件夹里已有 ${name}`, 'error');
+        notify(tr('toast', 'targetHasFile').replace('{name}', name), 'error');
         return;
       }
       must(await electronAPI.invoke('rename-file', srcPath, newPath));
@@ -428,10 +430,10 @@ export const Sidebar = ({
       loadFileTree(currentDir, [targetDir]);
       onRename?.(srcPath, newPath, name, isDir);
       onRefresh?.();
-      notify(`已移动到 ${targetDir === currentDir ? '根目录' : pathBasename(targetDir)}`, 'success');
+      notify(tr('toast', 'movedTo').replace('{name}', targetDir === currentDir ? tr('toast', 'rootFolder') : pathBasename(targetDir)), 'success');
     } catch (err) {
       console.error('移动失败:', err);
-      notify('移动失败: ' + err, 'error');
+      notify(tr('toast', 'moveFailed').replace('{err}', String(err)), 'error');
     }
   };
 
@@ -446,7 +448,7 @@ export const Sidebar = ({
     if (!dirs) {
       const result = await listFilesRecursive(currentDir);
       if (!result.success || !result.files) {
-        notify('无法列出文件夹' + (result.error ? '：' + result.error : ''), 'error');
+        notify(tr('toast', 'listFolderFailed') + (result.error ? '：' + result.error : ''), 'error');
         dirs = [];
       } else {
         // 根目录也是合法目标（把东西拖回工作区根），列目录只给子节点，所以自己补上
@@ -498,10 +500,10 @@ export const Sidebar = ({
       // 交给 App 关掉对应标签：标签还活着的话，2 秒防抖自动保存会把刚进废纸篓的文件写回来
       onDelete?.(gone, dir);
       onRefresh?.();
-      notify(isDir ? '文件夹已移到废纸篓' : '笔记已移到废纸篓', 'success');
+      notify(tr('toast', isDir ? 'trashedFolder' : 'trashedNote'), 'success');
     } catch (err) {
       console.error('删除失败:', err);
-      notify('删除失败: ' + err, 'error');
+      notify(tr('toast', 'deleteFailed').replace('{err}', String(err)), 'error');
     }
   };
 

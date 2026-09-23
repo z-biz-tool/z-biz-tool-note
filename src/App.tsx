@@ -134,7 +134,7 @@ interface Note {
 这篇指南本身是内存态笔记，要留档得按 ⌘⇧S 存成文件。`;
 
 const App = () => {
-  const { t } = useI18n();
+  const { t: tr } = useI18n();
   const { writeFile, showSaveDialog, exportHtml, exportPdf, createNewNote, readFile, readFileBinary, getFileMeta } = useFileOperations();
 
   // 多标签 + 分屏：openTabs 为所有打开的笔记，activeTabId 为左窗格当前笔记，
@@ -681,7 +681,7 @@ const App = () => {
   }, []);
 
   const handleFileDeleted = useCallback((path: string, isDirectory: boolean) => {
-    if (closeTabsForDeletedPath(path, isDirectory)) showToast('已关闭指向被删除文件的标签');
+    if (closeTabsForDeletedPath(path, isDirectory)) showToast(tr('toast', 'closedDeletedTabs'));
     refreshFileTree();
     refreshNoteIndex();
   }, [closeTabsForDeletedPath, showToast, refreshFileTree, refreshNoteIndex]);
@@ -730,13 +730,13 @@ const App = () => {
     try {
       const result = await readFile(filePath);
       if (!result.success || result.content === undefined) {
-        showToast(`重新加载失败: ${result.error || '未知错误'}`, 'error');
+        showToast(tr('toast', 'reloadFailed').replace('{err}', result.error || tr('toast', 'unknownError')), 'error');
         return;
       }
       disk = result.content;
     } catch (e) {
       console.warn('重新加载失败:', e);
-      showToast(`重新加载失败: ${errText(e)}`, 'error');
+      showToast(tr('toast', 'reloadFailed').replace('{err}', errText(e)), 'error');
       return;
     }
     const tab = isCurrent ? cur : splitNoteRef.current;
@@ -760,7 +760,7 @@ const App = () => {
       if (!ok) {
         // 用户选择保留本地内容：仍要同步 mtime，否则下一次改动又会再弹一遍
         await syncMtime(filePath, { isCurrent, isSplit });
-        showToast('已保留本地未保存的修改', 'info');
+        showToast(tr('toast', 'keptLocal'), 'info');
         return;
       }
     }
@@ -769,7 +769,7 @@ const App = () => {
     } else {
       setSplitNote(prev => prev ? { ...prev, content: disk, isDirty: false } : null);
     }
-    showToast('已加载外部修改', 'success');
+    showToast(tr('toast', 'loadedExternal'), 'success');
     await syncMtime(filePath, { isCurrent, isSplit });
   }, [updateActiveTab, readFile, showToast, syncMtime]);
 
@@ -814,7 +814,7 @@ const App = () => {
     onRemoved: (filePath: string) => {
       const wasOpen = openTabsRef.current.some(t => t.filePath === filePath);
       closeTabsForDeletedPath(filePath, false);
-      if (wasOpen) showToast('文件已被外部删除，相关标签已关闭');
+      if (wasOpen) showToast(tr('toast', 'externalDeleted'));
       if (isMarkdownPath(filePath)) void unindexNote(filePath);
     },
     onCreated: (filePath: string) => {
@@ -869,12 +869,12 @@ const App = () => {
       mustSucceed(await electronAPI.invoke('ensure-dir', dir));
       mustSucceed(await electronAPI.invoke('write-text-file', filePath, content));
     } catch (e) {
-      showToast(`创建失败（${errText(e)}）`, 'error');
+      showToast(tr('toast', 'createFailed').replace('{err}', errText(e)), 'error');
       return;
     }
     const result = await readFile(filePath);
     if (!result.success || result.content === undefined) {
-      showToast(`创建失败（${result.error || '刚写入的文件读不回来'}）`, 'error');
+      showToast(tr('toast', 'createFailed').replace('{err}', result.error || tr('toast', 'createFailedRead')), 'error');
       return;
     }
     openNote({
@@ -892,13 +892,13 @@ const App = () => {
   // Create today's daily note
   const handleCreateDaily = useCallback(async () => {
     if (!currentDir) {
-      showToast('请先打开一个文件夹');
+      showToast(tr('toast', 'needFolder'));
       return;
     }
     const filePath = dailyNotePath(currentDir);
     const tpl = templates.find(t => t.id === 'tpl-daily') || templates.find(t => /daily|日记|日志/i.test(t.name));
     const content = applyTemplate(tpl?.content || `# ${todayTitle()}\n\n## 今日计划\n- [ ]\n`, todayTitle());
-    await createAndOpenNote(filePath, content, '已打开今日日记');
+    await createAndOpenNote(filePath, content, tr('toast', 'dailyOpened'));
     refreshFileList(currentDir);
     refreshKnowledgeIndex(currentDir);
   }, [currentDir, templates, createAndOpenNote, refreshFileList, refreshKnowledgeIndex, showToast]);
@@ -1109,7 +1109,7 @@ const App = () => {
 
   const handleNewNote = useCallback(async () => {
     if (!currentDir) {
-      showToast('请先打开一个文件夹');
+      showToast(tr('toast', 'needFolder'));
       return;
     }
     try {
@@ -1119,7 +1119,7 @@ const App = () => {
       openNote(created);
       setLastSaved(null);
     } catch (e) {
-      showToast(`创建失败: ${e}`, 'error');
+      showToast(tr('toast', 'createFailed').replace('{err}', String(e)), 'error');
     }
   }, [openNote, currentDir, createNewNote, showToast]);
 
@@ -1133,7 +1133,7 @@ const App = () => {
     setIsLoading(true);
     // 读不到文件只默默 return 的话：转圈停了、界面回到原样、一句提示都没有，
     // 从「最近打开」/图谱/双链点进来时看着就跟"鼠标没点上"一样，用户只会再点一次。
-    const fail = (reason: string) => showToast(`无法打开 ${displayName(filePath)}：${reason}`, 'error');
+    const fail = (reason: string) => showToast(tr('toast', 'openFailed').replace('{name}', displayName(filePath)).replace('{reason}', reason), 'error');
     try {
       // 通用打开:按文件类型路由,生成对应 Note
       const { kindOf, mimeOf, isEditable } = await import('./lib/fileTypes');
@@ -1205,7 +1205,7 @@ const App = () => {
   const handleReopenTab = useCallback(async () => {
     const last = closedTabsRef.current.pop();
     if (!last) {
-      showToast('没有最近关闭的标签可以恢复');
+      showToast(tr('toast', 'nothingToRestore'));
       return;
     }
     await handleOpenFile(last.path);
@@ -1235,7 +1235,7 @@ const App = () => {
       return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
     });
     if (m) handleOpenFile(m.path);
-    else showToast(`未找到笔记: ${t}`, 'error');
+    else showToast(tr('toast', 'noteNotFound').replace('{name}', t), 'error');
   }, [allFiles, handleOpenFile, showToast]);
 
   // `[[` 补全的候选：目录里的 markdown 笔记名。allFiles 的 name 在 refreshFileList 里
@@ -1425,7 +1425,7 @@ const App = () => {
     setActiveTabId(entry.filePath);
     walStore.clear(entry.filePath);
     refreshWal();
-    showToast('已恢复暂存内容，请检查后保存');
+    showToast(tr('toast', 'restoredStaged'));
   }, [openNote, refreshWal]);
 
   const restoreAllWal = useCallback(async () => {
@@ -1445,7 +1445,7 @@ const App = () => {
       walStore.clear(filePath);
     }
     refreshWal();
-    showToast('已丢弃本地暂存内容');
+    showToast(tr('toast', 'discardedStaged'));
   }, [refreshWal, showToast]);
 
   const handleSave = useCallback(async () => {
@@ -1459,7 +1459,7 @@ const App = () => {
         walStore.write(currentNote.filePath, currentNote.content);
         setMainSaveState('error');
         refreshWal();
-        showToast(`保存失败（${errText(e)}），内容已暂存，可在顶部横幅恢复`, 'error');
+        showToast(tr('toast', 'saveFailedStaged').replace('{err}', errText(e)), 'error');
         return;
       }
       // 写入成功后再清理 WAL（refreshWal：横幅读的是 state，不清的话它会一直挂着
@@ -1480,7 +1480,7 @@ const App = () => {
       }
       updateActiveTab({ isDirty: false });
       await syncMtime(currentNote.filePath, { isCurrent: true, afterSave: true });
-      showToast('已保存', 'success');
+      showToast(tr('toast', 'saved'), 'success');
       // Refresh knowledge index since tags/links may have changed
       if (currentDir) {
         refreshKnowledgeIndex(currentDir);
@@ -1502,7 +1502,7 @@ const App = () => {
       } catch (e) {
         // 没写成就不改标签指向：否则一条不存在的文件被当成已保存（脏标记清掉后
         // 关标签就全没了，WAL 又只在写失败那条路径里兜底）
-        showToast(`另存为失败（${errText(e)}），内容仍未保存`, 'error');
+        showToast(tr('toast', 'saveAsFailed').replace('{err}', errText(e)), 'error');
         return;
       }
       updateActiveTab({
@@ -1512,7 +1512,7 @@ const App = () => {
       });
       // 另存为之后也要对上时间戳：状态栏「已保存 HH:MM」和外部修改检测都读它
       await syncMtime(result.filePath, { isCurrent: true, afterSave: true });
-      showToast('已保存', 'success');
+      showToast(tr('toast', 'saved'), 'success');
     }
   }, [currentNote, writeFile, showSaveDialog, showToast, updateActiveTab, syncMtime]);
 
@@ -1521,9 +1521,9 @@ const App = () => {
     const filePath = currentNote.filePath || `~/Documents/${currentNote.title}.md`;
     const result = await exportHtml(currentNote.content, filePath);
     if (result.success) {
-      showToast(`已导出 HTML：${result.filePath}`, 'success');
+      showToast(tr('toast', 'exportedHtml').replace('{path}', String(result.filePath)), 'success');
     } else {
-      showToast(`导出失败: ${result.error || '未知错误'}`, 'error');
+      showToast(tr('toast', 'exportFailed').replace('{err}', result.error || tr('toast', 'unknownError')), 'error');
     }
   }, [currentNote, exportHtml, showToast]);
 
@@ -1532,9 +1532,9 @@ const App = () => {
     const filePath = currentNote.filePath || `~/Documents/${currentNote.title}.md`;
     const result = await exportPdf(currentNote.content, filePath);
     if (result.success) {
-      showToast(`已导出 PDF：${result.filePath}`, 'success');
+      showToast(tr('toast', 'exportedPdf').replace('{path}', String(result.filePath)), 'success');
     } else {
-      showToast(`导出失败: ${result.error || '未知错误'}`, 'error');
+      showToast(tr('toast', 'exportFailed').replace('{err}', result.error || tr('toast', 'unknownError')), 'error');
     }
   }, [currentNote, exportPdf, showToast]);
 
@@ -1559,7 +1559,7 @@ const App = () => {
       walStore.write(splitNote.filePath, splitNote.content);
       setSplitSaveState('error');
       refreshWal();
-      showToast(`分屏保存失败（${errText(e)}），内容已暂存，可在顶部横幅恢复`, 'error');
+      showToast(tr('toast', 'splitSaveFailed').replace('{err}', errText(e)), 'error');
       return;
     }
     walStore.clear(splitNote.filePath);
@@ -1927,14 +1927,14 @@ const App = () => {
           >
             <PanelHeader
               icon={<ListTree size={14} />}
-              title={t('panel', 'outline')}
+              title={tr('panel', 'outline')}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setOutlineOpen(false)}
             />
             <div className="outline-list">
               {headings.length === 0 ? (
-                <div className="outline-item">{t('panel', 'noHeadings')}</div>
+                <div className="outline-item">{tr('panel', 'noHeadings')}</div>
               ) : (
                 headings.map((heading) => (
                   <button
@@ -1973,7 +1973,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Link2 size={14} />}
-              title={t('panel', 'backlinks')}
+              title={tr('panel', 'backlinks')}
               badge={<span className="count-badge">{backlinks.length}</span>}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
@@ -2031,7 +2031,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Sparkles size={14} />}
-              title={t('panel', 'ai')}
+              title={tr('panel', 'ai')}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setShowAIPanel(false)}
@@ -2072,7 +2072,7 @@ const App = () => {
           >
             <PanelHeader
               icon={<Network size={14} />}
-              title={t('panel', 'graph')}
+              title={tr('panel', 'graph')}
               wide={rightPanelWide}
               onToggleWide={toggleRightPanelWide}
               onClose={() => setShowKnowledgeGraph(false)}
@@ -2108,7 +2108,7 @@ const App = () => {
           onSaveAI={(cfg) => {
             setAIConfig(cfg);
             localStorage.setItem('aiConfig', JSON.stringify(cfg));
-            showToast(cfg.enabled ? 'AI 助手已启用' : 'AI 助手已关闭');
+            showToast(tr('toast', cfg.enabled ? 'aiEnabled' : 'aiDisabled'));
           }}
           onSaveTemplates={(tpls) => {
             setTemplates(tpls);
@@ -2130,10 +2130,10 @@ const App = () => {
         onInsert={insertMarkdown}
         onCreateDaily={async (filePath, content) => {
           if (!filePath) {
-            showToast('请先打开一个文件夹');
+            showToast(tr('toast', 'needFolder'));
             return;
           }
-          await createAndOpenNote(filePath, content, '今日日记已创建');
+          await createAndOpenNote(filePath, content, tr('toast', 'dailyCreated'));
           refreshFileList(currentDir);
           refreshKnowledgeIndex(currentDir);
         }}

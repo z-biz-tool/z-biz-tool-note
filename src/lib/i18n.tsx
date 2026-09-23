@@ -44,6 +44,45 @@ interface Translations {
     imageUrl: string;
     linkUrl: string;
   };
+  toast: {
+    saved: string;
+    saveFailedStaged: string;
+    saveAsFailed: string;
+    unknownError: string;
+    reloadFailed: string;
+    keptLocal: string;
+    loadedExternal: string;
+    closedDeletedTabs: string;
+    externalDeleted: string;
+    needFolder: string;
+    createFailed: string;
+    createFailedRead: string;
+    openFailed: string;
+    noteNotFound: string;
+    nothingToRestore: string;
+    restoredStaged: string;
+    discardedStaged: string;
+    exportedHtml: string;
+    exportedPdf: string;
+    exportFailed: string;
+    splitSaveFailed: string;
+    aiEnabled: string;
+    aiDisabled: string;
+    dailyCreated: string;
+    dailyOpened: string;
+    templateCreated: string;
+    renamedTo: string;
+    movedTo: string;
+    trashedNote: string;
+    trashedFolder: string;
+    deleteFailed: string;
+    clearedRecent: string;
+    renameFailed: string;
+    targetHasFile: string;
+    moveFailed: string;
+    listFolderFailed: string;
+    rootFolder: string;
+  };
   settings: {
     title: string;
     tabAI: string;
@@ -179,6 +218,45 @@ const translations: Record<Language, Translations> = {
       imageUrl: 'Image URL:',
       linkUrl: 'Link URL:',
     },
+    toast: {
+      saved: 'Saved',
+      saveFailedStaged: 'Save failed ({err}); the content is staged — restore it from the banner above',
+      saveAsFailed: 'Save-as failed ({err}); your changes are still unsaved',
+      unknownError: 'unknown error',
+      reloadFailed: 'Could not reload: {err}',
+      keptLocal: 'Kept your unsaved local changes',
+      loadedExternal: 'Loaded the version on disk',
+      closedDeletedTabs: 'Closed tabs pointing at deleted files',
+      externalDeleted: 'The file was deleted on disk; related tabs were closed',
+      needFolder: 'Open a folder first',
+      createFailed: 'Could not create ({err})',
+      createFailedRead: 'the file just written cannot be read back',
+      openFailed: 'Cannot open {name}: {reason}',
+      noteNotFound: 'Note not found: {name}',
+      nothingToRestore: 'No recently closed tabs to restore',
+      restoredStaged: 'Restored the staged copy — review it and save',
+      discardedStaged: 'Discarded the staged copy',
+      exportedHtml: 'Exported HTML: {path}',
+      exportedPdf: 'Exported PDF: {path}',
+      exportFailed: 'Export failed: {err}',
+      splitSaveFailed: 'Split-pane save failed ({err}); the content is staged — restore it from the banner above',
+      aiEnabled: 'AI assistant enabled',
+      aiDisabled: 'AI assistant disabled',
+      dailyCreated: 'Daily note created',
+      dailyOpened: "Opened today's daily note",
+      templateCreated: 'Note created from template',
+      renamedTo: 'Renamed to {name}',
+      movedTo: 'Moved to {name}',
+      trashedNote: 'Note moved to trash',
+      trashedFolder: 'Folder moved to trash',
+      deleteFailed: 'Delete failed: {err}',
+      clearedRecent: 'Cleared "recently opened"',
+      renameFailed: 'Rename failed: {err}',
+      targetHasFile: 'The target folder already has {name}',
+      moveFailed: 'Move failed: {err}',
+      listFolderFailed: 'Cannot list the folder',
+      rootFolder: 'the root folder',
+    },
     settings: {
       title: 'Settings',
       tabAI: 'AI Services',
@@ -311,6 +389,45 @@ const translations: Record<Language, Translations> = {
     prompt: {
       imageUrl: '图片地址：',
       linkUrl: '链接地址：',
+    },
+    toast: {
+      saved: '已保存',
+      saveFailedStaged: '保存失败（{err}），内容已暂存，可在顶部横幅恢复',
+      saveAsFailed: '另存为失败（{err}），内容仍未保存',
+      unknownError: '未知错误',
+      reloadFailed: '重新加载失败: {err}',
+      keptLocal: '已保留本地未保存的修改',
+      loadedExternal: '已加载外部修改',
+      closedDeletedTabs: '已关闭指向被删除文件的标签',
+      externalDeleted: '文件已被外部删除，相关标签已关闭',
+      needFolder: '请先打开一个文件夹',
+      createFailed: '创建失败（{err}）',
+      createFailedRead: '刚写入的文件读不回来',
+      openFailed: '无法打开 {name}：{reason}',
+      noteNotFound: '未找到笔记: {name}',
+      nothingToRestore: '没有最近关闭的标签可以恢复',
+      restoredStaged: '已恢复暂存内容，请检查后保存',
+      discardedStaged: '已丢弃本地暂存内容',
+      exportedHtml: '已导出 HTML：{path}',
+      exportedPdf: '已导出 PDF：{path}',
+      exportFailed: '导出失败: {err}',
+      splitSaveFailed: '分屏保存失败（{err}），内容已暂存，可在顶部横幅恢复',
+      aiEnabled: 'AI 助手已启用',
+      aiDisabled: 'AI 助手已关闭',
+      dailyCreated: '今日日记已创建',
+      dailyOpened: '已打开今日日记',
+      templateCreated: '已从模板新建笔记',
+      renamedTo: '已重命名为 {name}',
+      movedTo: '已移动到 {name}',
+      trashedNote: '笔记已移到废纸篓',
+      trashedFolder: '文件夹已移到废纸篓',
+      deleteFailed: '删除失败: {err}',
+      clearedRecent: '已清空「最近打开」',
+      renameFailed: '重命名失败: {err}',
+      targetHasFile: '目标文件夹里已有 {name}',
+      moveFailed: '移动失败: {err}',
+      listFolderFailed: '无法列出文件夹',
+      rootFolder: '根目录',
     },
     settings: {
       title: '设置',
