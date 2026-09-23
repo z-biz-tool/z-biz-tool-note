@@ -50,7 +50,7 @@ import { parseFrontmatter } from './lib/frontmatter';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
 
-const DEMO_CONTENT = `# Welcome to ZenNote v2.0
+const DEMO_CONTENT = `# Welcome to ZenNote v${__APP_VERSION__}
 
 A powerful cross-platform WYSIWYG Markdown note-taking app, inspired by Typora, Obsidian, and Notion.
 

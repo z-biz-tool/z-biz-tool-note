@@ -118,7 +118,13 @@ export const StatusBar = React.memo(({
           {themeLabel(theme)}
         </button>
 
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>ZenNote v2.0</span>
+        <span
+          className="status-bar-version"
+          style={{ fontSize: 11, color: 'var(--text-muted)' }}
+          title={`ZenNote ${__APP_VERSION__}`}
+        >
+          v{__APP_VERSION__}
+        </span>
       </div>
     </div>
   );
