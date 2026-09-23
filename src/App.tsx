@@ -945,7 +945,7 @@ const App = () => {
         setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg');
       } else if (cmd && e.shiftKey && key === 'o') {
         e.preventDefault();
-        handleOpenFolderDialog();
+        menuActionsRef.current['open-folder']?.();
       } else if (cmd && key === 'j') {
         e.preventDefault();
         setShowAIPanel(prev => !prev);
@@ -956,7 +956,7 @@ const App = () => {
       } else if (cmd && e.shiftKey && key === 'd') {
         // 每日笔记移至 Cmd+Shift+D（Cmd+D 让给多光标）
         e.preventDefault();
-        handleCreateDaily();
+        menuActionsRef.current['create-daily']?.();
       } else if (cmd && e.shiftKey && key === 'g') {
         e.preventDefault();
         setShowKnowledgeGraph(prev => !prev);
@@ -990,7 +990,10 @@ const App = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-    // handleCreateDaily / handleOpenFolderDialog 声明在 effect 之后，但均为稳定 useCallback，捕获首帧即可
+    // 这个 effect 只在挂载时注册一次，闭包里直接调的 handler 永远是首帧那一份。
+    // 凡读 state 的（create-daily 要 currentDir）都会因此拿到过期值 —— 实测 Cmd+Shift+D
+    // 在已经打开 demo 目录的情况下弹「请先打开一个文件夹」。统一走 menuActionsRef，
+    // 它每次渲染都重新指向当前闭包（菜单事件通道本来就是这么接的）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeTab, switchTab, toggleSplit]);
 
