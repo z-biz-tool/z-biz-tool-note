@@ -50,91 +50,87 @@ import { parseFrontmatter } from './lib/frontmatter';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
 
-const DEMO_CONTENT = `# Welcome to ZenNote v${__APP_VERSION__}
+const DEMO_CONTENT = `# 使用指南
 
-A powerful cross-platform WYSIWYG Markdown note-taking app, inspired by Typora, Obsidian, and Notion.
+ZenNote 是本地 Markdown 笔记应用，思路来自 Typora / Obsidian / Notion：写下来就是最终样子，链接把笔记连成网，落到磁盘上的始终是普通 .md 文件，没有私有格式。
 
-## What's New
+> 下面写 ⌘ 的地方，Windows / Linux 换成 Ctrl。记不住键位就按 ⌘⇧P 打开命令面板，用中文搜「导出」「分屏」都找得到。
 
-### Editor Modes
-- **WYSIWYG Mode** — What you see is what you get
-- **Source Mode** — Toggle with Cmd+/ to edit raw Markdown
-- **Focus Mode** — Dim surrounding paragraphs for distraction-free writing
-- **Typewriter Mode** — Keep the cursor centered on screen
+## 一篇笔记四种看法
 
-### Rich Content
-- **Math Formulas** — Full KaTeX support for inline and block math
-- **Code Highlighting** — 12+ languages with syntax highlighting
-- **Tables** — Resizable tables with full editing
-- **Task Lists** — Interactive checkboxes
-- **Images** — Paste from clipboard or drag & drop
-- **Emoji Picker** — Built-in emoji selection
+- 富文本：默认状态，工具栏或敲 / 唤出块菜单。
+- 源码：⌘/ 切成 Markdown 原文，再按一次切回来。
+- 专注：只点亮光标所在的那一段，其余压暗。
+- 打字机：光标始终停在屏幕中间，不用手动挪视野。
 
-### File Management
-- **Recursive File Tree** — Browse nested folders
-- **Recent Files** — Quick access to recently opened notes
-- **Global Search** — Search across all notes in a folder
-- **Quick Switcher** — Press Cmd+P to jump between files
+底部状态栏能切换这四种，最右侧还能循环 6 个主题：浅色 / 深色 / 米黄 / 暖阳 / 暗夜 / 极地。
 
-### Productivity
-- **Outline Panel** — Navigate by headings
-- **Find & Replace** — Press Cmd+F to search within notes
-- **Command Palette** — Press Cmd+Shift+P for all commands
-- **6 Themes** — Light, Dark, Sepia, Solarized, Dracula, Nord
+## / 菜单能插入什么
 
-### Export
-- **HTML Export** — Export notes as styled HTML
-- **PDF Export** — Export notes as PDF documents
+标题 1–3、无序 / 有序 / 任务列表、引用、分割线、代码块、3×3 表格、数学公式、Mermaid 图、图片、嵌入另一篇笔记、高亮，以及 6 种提示框：信息、警告、成功、危险、小贴士、引用。
 
-## Math Example
-
-Inline math: $E = mc^2$
-
-Block math:
+行内公式 $E=mc^2$；独立公式用两个美元符号包住：
 
 $$
 \\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}
 $$
 
-## Code Example
-
 \`\`\`typescript
 interface Note {
   id: string;
   title: string;
-  content: string;
   tags?: string[];
-}
-
-function createNote(title: string): Note {
-  return {
-    id: crypto.randomUUID(),
-    title,
-    content: '',
-  };
 }
 \`\`\`
 
-## Task List
+代码块内置 12 种语言高亮：html、css、javascript、typescript、python、java、go、rust、json、bash、sql、cpp。
 
-- [x] WYSIWYG editor with Tiptap
-- [x] Source mode toggle
-- [x] Focus & typewriter modes
-- [x] Math formula support (KaTeX)
-- [x] Find & replace
-- [x] Outline panel
-- [x] Quick switcher (Cmd+P)
-- [x] Command palette (Cmd+Shift+P)
-- [x] 6 built-in themes
-- [x] Global search
-- [ ] Cloud sync
-- [ ] Plugin system
+- [x] 任务列表勾上就不会掉
+- [ ] 回车自动续下一条
 
-> "The palest ink is better than the best memory." — Chinese Proverb
+## 把笔记连起来
 
----
+- 输入两个左方括号 [[ 就能引用别的笔记，比如 [[某篇笔记]]。
+- 右侧「反向链接」面板会列出谁引用了本篇。
+- ![[笔记名]] 把另一篇就地嵌进来。
+- 正文里写 #标签 会归进侧边栏标签树，「一级/二级」这种嵌套也认。
+- ⌘⇧G 打开知识图谱看笔记之间的连线。
 
-*Start writing your notes now!*`;
+## 改块的姿势
+
+- 段落左侧的 ⠿ 手柄：按住拖动可以整块挪位置，点手柄上的折叠箭头收起这一节。
+- 选中一个词后 ⌘D 逐个加选下一处，⌘⇧L 一次选中所有匹配，⌘U 撤掉上一个选区，Esc 退出多光标。
+- ⌘F 在当前笔记里查找替换；⌘K 跳到侧边栏搜索，整个文件夹的正文都能搜。
+- 大纲面板按标题定位（默认开着，收起了就在命令面板里搜「大纲」）。
+
+## 日常动作
+
+| 想做的事 | 键 |
+| --- | --- |
+| 新建 / 保存 / 另存为 | ⌘N、⌘S、⌘⇧S |
+| 今日日记（存成 Daily/年-月-日.md） | ⌘⇧D |
+| 快捷插入日记或模板 | ⌘⇧I |
+| 打开文件夹 / 在笔记间快速切换 | ⌘⇧O、⌘P |
+| 左右分屏对照两篇 | ⌘ 加反斜杠 |
+| 关闭标签 / 上一个 / 下一个 | ⌘W、⌘⇧[、⌘⇧] |
+| 侧边栏 / AI 助手 / 设置 | ⌘B、⌘J、⌘, |
+| 版本历史 | ⌘⇧H |
+
+## 内容放在哪
+
+- 保存就是写进你打开的那个文件夹，路径显示在编辑器上方的面包屑里。
+- 写入失败或异常退出时，内容先暂存到本机 WAL，下次打开顶部会有横幅让你恢复。
+- 保存时会留一份快照（同一个文件 5 分钟内不重复），⌘⇧H 里可以对比、回滚。
+- 命令面板搜「导出」可以出 HTML 或 PDF。
+
+## 还没有的
+
+- [ ] 云同步、多设备
+- [ ] 插件系统
+
+> 最淡的墨水，也胜过最好的记忆。
+
+这篇指南本身是内存态笔记，要留档得按 ⌘⇧S 存成文件。`;
 
 const App = () => {
   const { writeFile, showSaveDialog, exportHtml, exportPdf, createNewNote, readFile, readFileBinary, getFileMeta } = useFileOperations();
@@ -1435,9 +1431,10 @@ const App = () => {
   const openWelcomeGuide = useCallback(() => {
     openNote({
       id: 'demo-welcome',
-      title: 'Welcome to ZenNote',
+      title: '使用指南',
       content: DEMO_CONTENT,
       filePath: '',
+      fileType: 'markdown',
       lastModified: new Date().toISOString(),
       isDirty: false,
     });
