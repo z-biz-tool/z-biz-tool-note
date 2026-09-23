@@ -319,3 +319,62 @@ fn ensure_dir_blocks_sensitive() {
     let result = ensure_dir("/etc/zennote-test".to_string());
     assert!(result.is_err(), "应拒绝在 /etc 下创建目录");
 }
+
+/// `.md` 与 `.markdown` 是同一类笔记，口径必须和前端 fileTypes.isMarkdownPath 对齐。
+/// Rust 侧原先六处过滤各自写死 `ext == "md"`，于是 `Changelog.markdown` 在文件树里看得到
+/// （list_dir_single 收 markdown）、点得开、改得动，却搜不到、进不了图谱和反链。
+#[tokio::test]
+async fn markdown_notes_cover_both_extensions() {
+    use std::path::Path;
+    use crate::commands::{find_backlinks, is_markdown_path, read_all_notes, search_in_files};
+
+    // 1. 纯函数口径：两种扩展名 + 大小写混排都算，其它一律不算
+    for name in ["a.md", "a.markdown", "NOTE.MD", "Note.Markdown"] {
+        assert!(is_markdown_path(Path::new(name)), "{} 应判为 markdown", name);
+    }
+    for name in ["a.txt", "a.png", "Makefile", "a.mdx"] {
+        assert!(!is_markdown_path(Path::new(name)), "{} 不该判为 markdown", name);
+    }
+
+    // 2. 真实目录：三篇笔记（含两篇 .markdown）+ 两个树里可见的非笔记文件
+    let dir = tempdir();
+    let marker = format!("zenmarkdown{}", test_nanos());
+    for name in ["plain.md", "alt.markdown", "UPPER.MARKDOWN"] {
+        fs::write(dir.join(name), format!("# {}\n\n{}\n", name, marker)).unwrap();
+    }
+    fs::write(dir.join("readme.txt"), format!("{}\n", marker)).unwrap();
+    fs::write(dir.join("pic.png"), format!("{}\n", marker)).unwrap();
+
+    let dir_str = dir.to_string_lossy().to_string();
+
+    let mut summaries = read_all_notes(dir_str.clone()).await.expect("read_all_notes");
+    summaries.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    let got: Vec<&str> = summaries.iter().map(|s| s.file_path.as_str()).collect();
+    assert_eq!(
+        got.len(),
+        3,
+        "图谱/摘要应正好收 3 篇笔记（readme.txt、pic.png 不能混进来）：{:?}",
+        got
+    );
+    assert!(got.iter().any(|p| p.ends_with("alt.markdown")), "缺 .markdown 笔记");
+    assert!(got.iter().any(|p| p.ends_with("UPPER.MARKDOWN")), "缺大写扩展名笔记");
+
+    let hits = search_in_files(dir_str.clone(), marker).await.expect("search_in_files");
+    let hit_paths: Vec<&str> = hits.iter().map(|h| h.file_path.as_str()).collect();
+    assert_eq!(hits.len(), 3, "全文搜索应命中 3 篇笔记，实际 {:?}", hit_paths);
+    assert!(hits.iter().any(|h| h.file_path.ends_with("alt.markdown")));
+    assert!(!hit_paths.iter().any(|p| p.ends_with(".txt") || p.ends_with(".png")));
+
+    // 3. 反链：引用方是 .markdown 也要算进来
+    fs::write(dir.join("source.markdown"), "# Source\n\n[[Target]]\n").unwrap();
+    let backlinks = find_backlinks(dir_str, "Target".into(), String::new())
+        .await
+        .expect("find_backlinks");
+    assert!(
+        backlinks.iter().any(|b| b.file_path.ends_with("source.markdown")),
+        "反链漏掉 .markdown 引用方：{:?}",
+        backlinks.iter().map(|b| &b.file_path).collect::<Vec<_>>()
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}

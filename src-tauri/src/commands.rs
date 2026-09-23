@@ -248,6 +248,19 @@ fn id_from_filename(filename: &str) -> String {
     filename.trim_end_matches(".md").to_string()
 }
 
+/// 这篇文件算不算 markdown 笔记。
+///
+/// 口径跟前端 `fileTypes.isMarkdownPath` 对齐（那里 kindOf 查表得到 'markdown'，
+/// 扩展名先 toLowerCase，所以 .md/.markdown、大小写混排都算）。之前 Rust 侧
+/// 六处过滤各自写死 `ext == "md"`，于是 `Changelog.markdown` 能在文件树里看到
+/// （list_dir_single 收 markdown）、能点开编辑、能改名，却搜不到、进不了图谱和反链。
+/// 备份文件名是 `{timestamp}.md` 那一套，不走这个判定。
+pub(crate) fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+}
+
 /// HTML 特殊字符转义（防止 XSS）
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -303,7 +316,7 @@ pub fn list_notes() -> Vec<NoteMeta> {
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "md") {
+            if is_markdown_path(&path) {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let id = id_from_filename(&filename);
 
@@ -465,7 +478,7 @@ pub fn list_trash() -> Vec<NoteMeta> {
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "md") {
+            if is_markdown_path(&path) {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let id = id_from_filename(&filename);
 
@@ -888,7 +901,7 @@ fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
     Ok(entries)
 }
 
-/// 递归搜索目录中所有.md文件的内容（旧版暴力搜索，已由 FTS5 替代）
+/// 递归搜索目录中所有 markdown 文件的内容（旧版暴力搜索，已由 FTS5 替代）
 #[tauri::command]
 pub async fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMatch>, String> {
     validate_path(&dir)?;
@@ -898,7 +911,7 @@ pub async fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMat
     Ok(results)
 }
 
-/// 递归搜索.md文件的内部实现
+/// 递归搜索 markdown 文件内容的内部实现
 fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec<SearchMatch>) -> Result<(), String> {
     let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
 
@@ -910,7 +923,7 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
             continue;
         }
 
-        if path.extension().is_none_or(|ext| ext != "md") {
+        if !is_markdown_path(&path) {
             continue;
         }
 
@@ -943,7 +956,7 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
     Ok(())
 }
 
-/// 递归读取目录中所有.md文件的摘要信息（用于知识图谱）
+/// 递归读取目录中所有 markdown 笔记的摘要信息（用于知识图谱）
 #[tauri::command]
 pub async fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
     validate_path(&dir)?;
@@ -964,7 +977,7 @@ fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Re
             continue;
         }
 
-        if path.extension().is_none_or(|ext| ext != "md") {
+        if !is_markdown_path(&path) {
             continue;
         }
 
@@ -1012,7 +1025,7 @@ fn extract_links(content: &str) -> Vec<String> {
     links
 }
 
-/// 查找反向链接：搜索所有.md文件中引用了指定笔记标题的文件
+/// 查找反向链接：搜索所有 markdown 文件中引用了指定笔记标题的文件
 #[tauri::command]
 pub async fn find_backlinks(dir: String, note_title: String, note_path: String) -> Result<Vec<BacklinkEntry>, String> {
     validate_path(&dir)?;
@@ -1036,7 +1049,7 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
             continue;
         }
 
-        if path.extension().is_none_or(|ext| ext != "md") {
+        if !is_markdown_path(&path) {
             continue;
         }
 
@@ -1474,7 +1487,7 @@ pub fn search_notes(
     index.search(&query, limit.unwrap_or(50))
 }
 
-/// 全量重建索引：扫描 dir 下所有 .md，按 mtime 与现有条目对比，仅 upsert 变化项。
+/// 全量重建索引：扫描 dir 下所有 markdown 笔记，按 mtime 与现有条目对比，仅 upsert 变化项。
 /// 返回最终状态。
 #[tauri::command]
 pub async fn rebuild_index(
@@ -1541,7 +1554,7 @@ pub async fn rebuild_index(
     Ok(index.status())
 }
 
-/// 递归扫描返回所有 .md 文件路径
+/// 递归扫描返回所有 markdown 文件路径
 fn scan_md_recursive(
     dir: &std::path::Path,
     out: &mut std::collections::HashSet<String>,
@@ -1558,7 +1571,7 @@ fn scan_md_recursive(
             scan_md_recursive(&path, out)?;
             continue;
         }
-        if path.extension().is_some_and(|e| e == "md") {
+        if is_markdown_path(&path) {
             out.insert(path.to_string_lossy().to_string());
         }
     }
