@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { sanitizeExport } from './sanitize';
 import { promptDialog } from './dialogs';
+import { displayName, isMarkdownPath } from './fileTypes';
 
 // 检测是否运行在 Tauri 环境
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -42,6 +43,9 @@ const demoSeedContents: Record<string, string> = {
   'demo/Getting Started.md': '# Getting Started\n\n按 Cmd+Shift+P 打开命令面板，输入「设置」可以直接进设置页。\n\n正文里可以引用 [[Welcome]]，反链面板会把它认出来。\n\n标签：demo\n',
   'demo/Examples/Code.md': '# Code\n\n行内代码用反引号包裹即可，代码块三反引号起头。\n\n    export const greet = (name: string) => `你好，${name}`;\n',
   'demo/Examples/Tables.md': '# Tables\n\n| 场景 | 命令 | 说明 |\n| --- | --- | --- |\n| 搜索 | Cmd+K | 跳到侧栏搜索框 |\n| 设置 | Cmd+, | 打开设置弹窗 |\n',
+  // 一篇 .markdown：Rust 侧 read_all_notes / search_in_files 现在按 commands::is_markdown_path
+  // 两种扩展名一起收，演示区要能验证同一条口径（改之前这篇整份进不了图谱和搜索）
+  'demo/Changelog.markdown': '# Changelog\n\n标签：demo\n\n.markdown 后缀的笔记和 .md 同等对待：能搜到、进图谱、有反链。\n引用 [[Welcome]] 用来验证 .markdown 文件里的双链被索引。\n',
 };
 
 function demoFs(): DemoFs {
@@ -128,14 +132,17 @@ function demoTrash(path: string) {
   saveDemoFs(fs);
 }
 
+/** 演示工作区里的"笔记"：与 Rust read_all_notes/search_in_files 同一条口径，非笔记文件不参与索引 */
+const demoNoteFiles = () => demoFs().files.filter(p => isMarkdownPath(p));
+
 /** 与 Rust read_all_notes 同构的摘要，让标签 / 图谱 / 反链在浏览器里也能验证 */
 function demoNoteSummaries() {
-  return demoFs().files.map(filePath => {
+  return demoNoteFiles().map(filePath => {
     const content = demoContentOf(filePath);
     return {
       filePath,
       content,
-      title: content.match(/^#\s+(.+)$/m)?.[1] ?? filePath.split('/').pop()?.replace(/\.md$/, '') ?? filePath,
+      title: content.match(/^#\s+(.+)$/m)?.[1] ?? displayName(filePath) ?? filePath,
       tags: (content.match(/^tags:\s*\[(.*?)\]/m)?.[1] ?? '')
         .split(',')
         .map(s => s.trim())
@@ -150,7 +157,7 @@ function demoSearch(query: unknown) {
   const q = String(query ?? '').trim().toLowerCase();
   if (!q) return [];
   const out: { filePath: string; line: number; preview: string }[] = [];
-  for (const filePath of demoFs().files) {
+  for (const filePath of demoNoteFiles()) {
     const content = demoContentOf(filePath);
     content.split('\n').forEach((line, i) => {
       if (out.length >= 50) return;
