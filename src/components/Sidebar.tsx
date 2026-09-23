@@ -371,6 +371,9 @@ export const Sidebar = ({
     && targetDir !== srcPath && !targetDir.startsWith(srcPath + '/');
 
   const handleDragStart = (e: React.DragEvent, item: FileItem) => {
+    // 展开的目录里，子行外面还套着目录自己的可拖拽 div；dragstart 会冒泡上去，
+    // 不截住的话"把笔记从文件夹里拖出来"会变成拖那个文件夹（实测过）。
+    e.stopPropagation();
     dragItemRef.current = { path: item.path, isDir: !!item.isDirectory };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', item.path);
@@ -384,6 +387,9 @@ export const Sidebar = ({
   };
 
   const handleDirDragOver = (e: React.DragEvent, dirPath: string) => {
+    // 目录行自己决定收不收；不冒泡到列表容器，否则"拖进一个不能放的目录"会被
+    // 容器接过去当成"放回根目录"。
+    e.stopPropagation();
     const src = dragItemRef.current;
     if (!src || !canDropInto(src.path, dirPath)) return;
     // 不 preventDefault 就是"这里不能放"，浏览器不会触发 drop
