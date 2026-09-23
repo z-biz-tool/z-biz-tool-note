@@ -83,6 +83,11 @@ export const Sidebar = ({
   const [loading, setLoading] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'file' | 'folder' | 'empty'; item?: FileItem } | null>(null);
 
+  // loadFileTree 要按"当前展开了哪些目录"补子节点，回调里读到最新展开集得靠 ref
+  const expandedRef = useRef<Set<string>>(expandedFolders);
+  expandedRef.current = expandedFolders;
+  const treeSeqRef = useRef(0);
+
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('recentFiles') || '[]');
@@ -126,11 +131,27 @@ export const Sidebar = ({
     }
   }, [currentDir, refreshKey]);
 
-  const loadFileTree = async (dir: string) => {
+  const loadFileTree = async (dir: string, extraExpand: string[] = []) => {
     setLoading(true);
+    const seq = ++treeSeqRef.current;
+    const expanded = new Set([...expandedRef.current, ...extraExpand]);
+    const visible = (files: FileItem[]) => files.filter((f: FileItem) => !f.name.startsWith('.'));
+    // list-files 只给一层。展开态还留在 expandedFolders 里，但刷新出来的目录节点没有
+    // children，渲染条件 (expanded && children) 直接不成立 —— 于是每次新建/改名/删除
+    // 之后整棵树"啪"地收起来，用户刚定位到的位置没了。这里把展开过的目录补齐。
+    const hydrate = async (nodes: FileItem[]): Promise<FileItem[]> =>
+      Promise.all(nodes.map(async (n) => {
+        if (!n.isDirectory || !expanded.has(n.path)) return n;
+        const r = await listFiles(n.path);
+        const kids = r.success && r.files ? visible(r.files) : [];
+        return { ...n, children: await hydrate(kids) } as FileItem;
+      }));
     const result = await listFiles(dir);
+    if (seq !== treeSeqRef.current) return;
     if (result.success && result.files) {
-      setFileTree(result.files.filter((f: FileItem) => !f.name.startsWith('.')));
+      const tree = await hydrate(visible(result.files));
+      if (seq !== treeSeqRef.current) return;
+      setFileTree(tree);
     }
     setLoading(false);
   };
@@ -233,7 +254,10 @@ export const Sidebar = ({
     }
     const filePath = pathJoin(parentDir, fileName);
     must(await electronAPI.invoke('write-text-file', filePath, '# Untitled\n\nStart writing...'));
-    loadFileTree(currentDir);
+    // 在某个文件夹里新建，就得让那个文件夹保持展开，否则刷新后新建项藏在收起的目录里，
+    // 界面上等于"点了没反应"
+    setExpandedFolders(prev => prev.has(parentDir!) ? prev : new Set(prev).add(parentDir!));
+    loadFileTree(currentDir, [parentDir]);
     onRefresh?.();
     setContextMenu(null);
   };
@@ -254,7 +278,8 @@ export const Sidebar = ({
     }
     const folderPath = pathJoin(parentDir, folderName);
     must(await electronAPI.invoke('ensure-dir', folderPath));
-    loadFileTree(currentDir);
+    setExpandedFolders(prev => prev.has(parentDir!) ? prev : new Set(prev).add(parentDir!));
+    loadFileTree(currentDir, [parentDir]);
     onRefresh?.();
     setContextMenu(null);
   };
@@ -296,9 +321,16 @@ export const Sidebar = ({
         }
         return f;
       });
+      if (item.isDirectory) {
+        // 展开态记的是路径：目录改了名不跟着搬，刷新时补齐子节点就会认不出来，整棵子树收起
+        setExpandedFolders(prev => {
+          const next = new Set<string>();
+          prev.forEach(p => next.add(p === renamedPath ? newPath : p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : p));
+          return next;
+        });
+      }
       onRename?.(item.path, newPath, newName, !!item.isDirectory);
-      onRefresh?.();
-    } catch (err) {
+      onRefresh?.();    } catch (err) {
       console.error('重命名失败:', err);
       alert('重命名失败: ' + err);
     }
