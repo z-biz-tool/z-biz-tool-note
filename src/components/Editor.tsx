@@ -283,6 +283,8 @@ export const Editor = ({
     // 注：之前用 rAF + opacity 0 做切换过渡，macOS 失焦时 rAF 被节流会导致容器
     // 永久 opacity 0（"白屏，要切到其他 app 再回来才恢复"）。已撤掉，简单 setContent
     // 反而不会卡住——marked.parse + ProseMirror 重建是同步的，浏览器下一帧就 paint 新内容。
+    // 是否刚刚程序性替换了整篇文档
+    let docReplaced = false;
     if (currentFilePath !== noteIdRef.current) {
       const cached = stateCacheRef.current.get(currentFilePath);
       if (cached) {
@@ -295,9 +297,20 @@ export const Editor = ({
         editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false });
       }
       noteIdRef.current = currentFilePath;
+      docReplaced = true;
     } else if (content !== editor.getMarkdown()) {
       // 同一笔记内容外部更新（罕见）：同上，程序性替换不应产生脏标记/自动保存
       editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false });
+      docReplaced = true;
+    }
+
+    // 字数/大纲/双链/mermaid 都只在 onUpdate 里刷新，而上面刻意不发 onUpdate 事件，
+    // 于是打开或切换笔记后状态栏仍是上一篇的数字、大纲是空的，要敲一个字才归位。
+    if (docReplaced) {
+      updateStatsRef.current();
+      updateHeadingsRef.current();
+      updateWikiLinksRef.current();
+      setTimeout(renderMermaid, 100);
     }
   }, [content, editor, currentFilePath]);
 
@@ -408,7 +421,7 @@ export const Editor = ({
     const words = cjkCount + nonCjkWords;
     const characters = text.length;
     const lines = text.split('\n').length;
-    const readingTime = Math.max(1, Math.ceil(words / 200)); // CJK 约 200 字/分钟
+    const readingTime = words === 0 ? 0 : Math.max(1, Math.ceil(words / 200)); // CJK 约 200 字/分钟；空文档别谎称"约 1 分钟"
     onStatsChange({ words, characters, lines, readingTime });
   }, [editor, onStatsChange]);
   updateStatsRef.current = updateStats;
