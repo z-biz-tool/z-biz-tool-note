@@ -76,6 +76,9 @@ export const QuickInsert = ({ open, templates, currentDir, onInsert, onCreateDai
   };
 
   const activeId = `qi-row-${selected}`;
+  // 日记那行的说明要写它真正落在哪儿：dailyNotePath 拼的是 <目录>/Daily/年-月-日.md，
+  // 以前只写文件名，看着像会落在目录根上（使用指南里写的又是"存成 Daily/年-月-日.md"）。
+  const dailyDesc = currentDir ? `Daily/${todayTitle()}.md` : '需要先打开一个文件夹';
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -118,7 +121,7 @@ export const QuickInsert = ({ open, templates, currentDir, onInsert, onCreateDai
                   <Calendar size={16} />
                   <div>
                     <div className="qi-title">今日日记</div>
-                    <div className="qi-desc">{todayTitle()}.md</div>
+                    <div className="qi-desc">{dailyDesc}</div>
                   </div>
                 </button>
               );
