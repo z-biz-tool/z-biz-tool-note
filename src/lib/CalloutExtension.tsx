@@ -154,6 +154,8 @@ export const Callout = Node.create({
   addKeyboardShortcuts() {
     return {
       'Mod-Shift-c': () => this.editor.commands.toggleCallout({ type: 'info' }),
+      // Shift 组合键在浏览器里 event.key 是大写，两种大小写都得绑才会真触发
+      'Mod-Shift-C': () => this.editor.commands.toggleCallout({ type: 'info' }),
     };
   },
 });

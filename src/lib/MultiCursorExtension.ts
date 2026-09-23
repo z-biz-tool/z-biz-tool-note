@@ -1,13 +1,12 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
-import type { Transaction, EditorState } from '@tiptap/pm/state';
-import type { ResolvedPos, Node as PmNode } from '@tiptap/pm/model';
-import { Slice } from '@tiptap/pm/model';
+import type { EditorState } from '@tiptap/pm/state';
+import type { ResolvedPos } from '@tiptap/pm/model';
+import type { Node as PmNode } from '@tiptap/pm/model';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { ReplaceStep } from '@tiptap/pm/transform';
 
 // 多光标插件：在 plugin state 中维护额外的选区（除原生 selection 外），
-// 通过 decorations 绘制；输入/删除时通过 appendTransaction 同步到所有光标。
+// 通过 decorations 绘制；打字由 handleTextInput 同步到所有额外选区，其它改动一律先清掉额外选区。
 const multiCursorKey = new PluginKey<MultiCursorState>('multiCursor');
 
 interface ExtraRange {
@@ -19,7 +18,7 @@ interface MultiCursorState {
   ranges: ExtraRange[]; // 额外选区（不含原生 selection）
 }
 
-const SYNC_META = 'multiCursorSynced'; // 标记本插件产生的同步事务，防止 appendTransaction 死循环
+const SYNC_META = 'multiCursorSynced'; // 本插件自己产生的那笔事务：额外选区不能顺手清掉（清了就打不了第二个字）
 
 // ---------- 工具函数 ----------
 
@@ -72,13 +71,11 @@ const multiCursorPlugin = new Plugin<MultiCursorState>({
         if (meta.type === 'add') return { ranges: [...value.ranges, meta.range as ExtraRange] };
         if (meta.type === 'undo') return { ranges: value.ranges.slice(0, -1) };
       }
-      // 文档变更且无显式 meta：通过 mapping 重映射额外选区位置
-      if (tr.docChanged && value.ranges.length > 0) {
-        const ranges = value.ranges
-          .map(r => ({ from: tr.mapping.map(r.from), to: tr.mapping.map(r.to) }))
-          .filter(r => r.from != null && r.to != null);
-        return { ranges };
-      }
+      // 文档一旦被改动又不是你我自己同步的那笔，就清掉额外选区。
+      // 以前这里"用 mapping 重映射 + appendTransaction 逐步重放"，实测两件事都会出事：
+      // ⌘⇧L 选中四处再插一个字符，把整段内容重复插进文档（"狗 狗 狗 狗狗 狗 狗 狗…"）；
+      // 整篇 setContent 时旧坐标越界直接 RangeError。把重放换成 handleTextInput 一次性做完。
+      if (tr.docChanged) return { ranges: [] };
       return value;
     },
   },
@@ -105,6 +102,28 @@ const multiCursorPlugin = new Plugin<MultiCursorState>({
       return DecorationSet.create(state.doc, decos);
     },
 
+    // 打字时同步到所有额外选区：每插一处就把后面的坐标过一遍 tr.mapping。
+    // （之前直接拿原始绝对坐标去插，原生那笔插入会把后面所有位置整体平移，
+    //  实测连打第二个字符会插到空格后面去 —— "狗! !狗 !狗 !狗"。）
+    handleTextInput(view, from, to, text) {
+      const ps = multiCursorKey.getState(view.state);
+      if (!ps || ps.ranges.length === 0) return false;
+      const tr = view.state.tr.insertText(text, from, to);
+      const next: ExtraRange[] = [];
+      for (const r of ps.ranges) {
+        if (r.from === from && r.to === to) continue;
+        const f = tr.mapping.map(r.from);
+        const t = tr.mapping.map(r.to);
+        tr.insertText(text, f, t);
+        // 插完之后光标落在刚插入文字的末尾，继续打字仍然同步
+        const caret = tr.mapping.map(t);
+        next.push({ from: caret, to: caret });
+      }
+      tr.setMeta(multiCursorKey, { type: 'set', ranges: next }).setMeta(SYNC_META, true);
+      view.dispatch(tr);
+      return true;
+    },
+
     // Alt+Click 添加光标
     handleClick(view, pos, event) {
       if (!event.altKey) return false;
@@ -122,64 +141,6 @@ const multiCursorPlugin = new Plugin<MultiCursorState>({
     },
   },
 
-  appendTransaction(transactions: readonly Transaction[], _oldState: EditorState, newState: EditorState): Transaction | null {
-    // 避免处理本插件自己产生的同步事务
-    if (transactions.some(tr => tr.getMeta(SYNC_META))) return null;
-
-    const ps = multiCursorKey.getState(newState);
-    if (!ps || ps.ranges.length === 0) return null;
-
-    const docChanged = transactions.some(tr => tr.docChanged);
-    if (!docChanged) return null;
-
-    const lastTr = transactions[transactions.length - 1];
-    const replaceSteps = lastTr.steps.filter(s => s instanceof ReplaceStep) as ReplaceStep[];
-    if (replaceSteps.length === 0) return null;
-
-    const tr = newState.tr;
-    // 额外光标按位置降序处理，避免先插入影响后续位置
-    const sortedCursors = [...ps.ranges].sort((a, b) => b.from - a.from);
-
-    for (const cursor of sortedCursors) {
-      let pos = lastTr.mapping.map(cursor.from);
-      const posEnd = lastTr.mapping.map(cursor.to);
-
-      for (const step of replaceSteps) {
-        if (step.from === step.to && step.slice.size > 0) {
-          // 纯插入：在 pos 处插入相同 slice
-          tr.step(new ReplaceStep(pos, pos, step.slice));
-          pos += step.slice.size;
-        } else if (step.from !== step.to && step.slice.size === 0) {
-          // 纯删除：删除 pos 到 posEnd 范围
-          tr.step(new ReplaceStep(pos, posEnd, Slice.empty));
-          pos = posEnd - (step.to - step.from);
-          if (pos < 0) pos = 0;
-        } else if (step.from !== step.to && step.slice.size > 0) {
-          // 替换型操作：先删除选区，再插入内容
-          tr.step(new ReplaceStep(pos, posEnd, step.slice));
-          pos = pos + step.slice.size - (step.to - step.from);
-        }
-      }
-    }
-
-    // 重映射额外光标到最终文档坐标（替换后都变成光标型）
-    const newRanges: ExtraRange[] = ps.ranges.map(r => {
-      let f = lastTr.mapping.map(r.from);
-      f = tr.mapping.map(f);
-      // 替换型操作后，光标应在插入内容末尾
-      let t = lastTr.mapping.map(r.to);
-      t = tr.mapping.map(t);
-      // 如果原始是选区型且发生了替换，光标在插入末尾
-      if (r.from !== r.to && replaceSteps.some(s => s.from !== s.to && s.slice.size > 0)) {
-        return { from: f, to: f };
-      }
-      return { from: f, to: t };
-    });
-
-    tr.setMeta(multiCursorKey, { type: 'set', ranges: newRanges });
-    tr.setMeta(SYNC_META, true);
-    return tr;
-  },
 });
 
 // ---------- Tiptap Extension ----------
@@ -280,7 +241,10 @@ export const MultiCursor = Extension.create({
 
     return {
       'Mod-d': cmdD,
+      // 按 Shift 时浏览器给的 event.key 是大写字母（实测 'L' 完全不触发、'l' 才触发），
+      // 两种写法都得绑；App 的全局快捷键那边早就为此统一 toLowerCase 了。
       'Mod-Shift-l': cmdShiftL,
+      'Mod-Shift-L': cmdShiftL,
       'Escape': escape,
       'Mod-u': cmdU,
     };

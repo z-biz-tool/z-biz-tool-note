@@ -160,6 +160,8 @@ export const Fold = Extension.create({
   addKeyboardShortcuts() {
     return {
       'Mod-Shift-arrowdown': () => this.editor.commands.toggleFold(),
+      // 方向键的 event.key 是 'ArrowDown'（实测只写小写名不触发），两种都留着
+      'Mod-Shift-ArrowDown': () => this.editor.commands.toggleFold(),
     };
   },
 
