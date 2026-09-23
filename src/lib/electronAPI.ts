@@ -5,7 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { sanitizeExport } from './sanitize';
 import { promptDialog } from './dialogs';
-import { displayName, isMarkdownPath } from './fileTypes';
+import { isMarkdownPath } from './fileTypes';
+import { extractTagsSmart, extractTitle } from './frontmatter';
 
 // 检测是否运行在 Tauri 环境
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -46,6 +47,9 @@ const demoSeedContents: Record<string, string> = {
   // 一篇 .markdown：Rust 侧 read_all_notes / search_in_files 现在按 commands::is_markdown_path
   // 两种扩展名一起收，演示区要能验证同一条口径（改之前这篇整份进不了图谱和搜索）
   'demo/Changelog.markdown': '# Changelog\n\n标签：demo\n\n.markdown 后缀的笔记和 .md 同等对待：能搜到、进图谱、有反链。\n引用 [[Welcome]] 用来验证 .markdown 文件里的双链被索引。\n',
+  // 一篇带 YAML 头的笔记：标题取自正文第一行（不是文件名、更不是 `---`），
+  // 标签来自 frontmatter 的块列表，正文里的 #顺手写的标签 不再参与（frontmatter 优先）。
+  'demo/读书笔记.md': '---\ntags:\n  - reading\n  - 长期计划\n---\n读书笔记：这篇带 YAML 头，标题取正文第一行。\n\n正文里的 #顺手写的标签 不该出现在标签页。\n引用 [[Welcome]] 验证带 frontmatter 的笔记也进图谱。\n',
 };
 
 function demoFs(): DemoFs {
@@ -142,11 +146,11 @@ function demoNoteSummaries() {
     return {
       filePath,
       content,
-      title: content.match(/^#\s+(.+)$/m)?.[1] ?? displayName(filePath) ?? filePath,
-      tags: (content.match(/^tags:\s*\[(.*?)\]/m)?.[1] ?? '')
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean),
+      // 标题和标签都走 frontmatter.ts 里那套（跟 Rust extract::extract_* 同口径）：
+      // 自己在这儿拼正则的话，带 YAML 头的笔记就会显示成 `---`、frontmatter 里的
+      // tags 也永远进不了侧栏标签页，浏览器里看到的跟 Tauri 里跑的不是同一套规则。
+      title: extractTitle(content),
+      tags: extractTagsSmart(content),
       links: [...content.matchAll(/\[\[([^\]]+)\]\]/g)].map(m => m[1].trim()),
     };
   });

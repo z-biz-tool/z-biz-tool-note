@@ -127,6 +127,8 @@ export function stringifyFrontmatter(data: Record<string, unknown>): string {
 
 /**
  * 提取标签：优先从 frontmatter.tags 读取，fallback 到正文 `#tag` 解析。
+ *
+ * 口径与 Rust `extract::extract_tags` 一致，改一边要同步另一边。
  */
 export function extractTagsSmart(raw: string): string[] {
   const { data, content } = parseFrontmatter(raw);
@@ -137,17 +139,56 @@ export function extractTagsSmart(raw: string): string[] {
   if (typeof fromFront === 'string' && fromFront) {
     return [fromFront];
   }
-  // fallback：解析正文 #tag
+  return inlineTags(content);
+}
+
+/** Rust `is_alphanumeric` 的对应物：字母、数字、连字符都留，标点/括号/引号才剥 */
+const TAG_KEEP = /[\p{L}\p{N}-]/u;
+
+function trimTagEdges(s: string): string {
+  let a = 0;
+  let b = s.length;
+  while (a < b && !TAG_KEEP.test(s[a])) a++;
+  while (b > a && !TAG_KEEP.test(s[b - 1])) b--;
+  return s.slice(a, b);
+}
+
+/** 正文里的 `#tag`：跟 Rust 一样两头剥标点、20 字符上限、结果排序 */
+function inlineTags(body: string): string[] {
   const tags = new Set<string>();
-  for (const line of content.split('\n')) {
+  for (const line of body.split('\n')) {
     for (const word of line.split(/\s+/)) {
-      if (word.startsWith('#') && word.length > 1) {
-        const tag = word.slice(1).replace(/[^\w\u4e00-\u9fff-]/g, '');
-        if (tag) tags.add(tag);
-      }
+      if (!word.startsWith('#') || word.length < 2) continue;
+      const tag = trimTagEdges(word.replace(/^#+/, ''));
+      // 上限按字符数算：按字节的话 7 个汉字的标签就被静默丢掉了
+      if (tag && [...tag].length < 20) tags.add(tag);
     }
   }
-  return Array.from(tags);
+  return Array.from(tags).sort();
+}
+
+/** 去掉 ATX 标题前缀（`#`~`######` 且紧跟空白）；`#标签` 没有空格，原样返回 */
+function stripHeadingPrefix(line: string): string {
+  let i = 0;
+  while (i < line.length && line[i] === '#') i++;
+  if (i === 0 || i > 6) return line;
+  const rest = line.slice(i);
+  if (rest === '') return '';
+  return /\s/.test(rest[0]) ? rest.trimStart() : line;
+}
+
+/**
+ * 提取标题：与 Rust `extract::extract_title` 同一条口径 ——
+ * 剥掉 frontmatter，取第一条「有内容」的行（空行和只写了井号的行跳过），超 50 字符截断。
+ */
+export function extractTitle(raw: string): string {
+  for (const line of parseFrontmatter(raw).content.split('\n')) {
+    const title = stripHeadingPrefix(line.trim());
+    if (!title) continue;
+    const chars = [...title];
+    return chars.length > 50 ? `${chars.slice(0, 50).join('')}...` : title;
+  }
+  return '无标题笔记';
 }
 
 /**
