@@ -6,6 +6,10 @@ use uuid::Uuid;
 
 use crate::atomic_write::{atomic_write, atomic_write_str};
 
+// 标题/标签/双链的提取只有 extract.rs 一份实现：commands.rs 里曾经复制过三个同名私有函数，
+// 索引（rebuild_index / note_updated）走 extract.rs、侧栏摘要走复制品，改一处漏一处。
+use crate::extract::{extract_links, extract_tags, extract_title};
+
 /// 允许的临时目录根：`/tmp` 与各平台的 `std::env::temp_dir()`。
 ///
 /// 为什么两个都要：只写 `/tmp` 时 Windows 上没有任何临时目录能过校验，导出/新建临时文件
@@ -268,43 +272,6 @@ fn escape_html(s: &str) -> String {
      .replace('>', "&gt;")
      .replace('"', "&quot;")
      .replace('\'', "&#39;")
-}
-
-/// 从笔记内容提取标题（第一行 # 标题 或 第一行文本）
-fn extract_title(content: &str) -> String {
-    content
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .map(|line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with("# ") {
-                trimmed.trim_start_matches("# ").to_string()
-            } else if trimmed.chars().count() > 50 {
-                let truncated: String = trimmed.chars().take(50).collect();
-                format!("{}...", truncated)
-            } else {
-                trimmed.to_string()
-            }
-        })
-        .unwrap_or_else(|| "无标题笔记".to_string())
-}
-
-/// 从笔记内容提取标签（#tag 格式）
-fn extract_tags(content: &str) -> Vec<String> {
-    let mut tags = std::collections::HashSet::new();
-    for line in content.lines() {
-        for word in line.split_whitespace() {
-            if word.starts_with('#') && word.len() > 1 {
-                let tag = word.trim_start_matches('#')
-                    .trim_matches(|c: char| !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c))
-                    .to_string();
-                if !tag.is_empty() && tag.len() < 20 {
-                    tags.insert(tag);
-                }
-            }
-        }
-    }
-    tags.into_iter().collect()
 }
 
 /// 列出所有笔记
@@ -740,9 +707,9 @@ pub async fn write_file(
     atomic_write_str(std::path::Path::new(&path), &content)?;
 
     // 写入成功后：解析摘要 → emit 增量事件 → upsert 索引
-    let title = ext::extract_title(&content);
-    let tags = ext::extract_tags(&content).join(",");
-    let links = ext::extract_links(&content).join(",");
+    let title = extract_title(&content);
+    let tags = extract_tags(&content).join(",");
+    let links = extract_links(&content).join(",");
 
     let _ = app.emit(
         "note-updated",
@@ -996,33 +963,6 @@ fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Re
     }
 
     Ok(())
-}
-
-/// 从笔记内容提取 [[link]] 格式的链接
-fn extract_links(content: &str) -> Vec<String> {
-    let mut links = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    // 手动匹配 [[link]] 或 [[link#heading]] 格式
-    let mut i = 0;
-    let bytes = content.as_bytes();
-    while i < content.len() {
-        if bytes[i] == b'[' && i + 1 < content.len() && bytes[i + 1] == b'[' {
-            // 找到 [[ 开始
-            let start = i + 2;
-            if let Some(end) = content[start..].find("]]") {
-                let raw_link = &content[start..start + end];
-                // 提取链接主体（去掉 #heading 部分）
-                let link = raw_link.split('#').next().unwrap_or(raw_link).trim().to_string();
-                if !link.is_empty() && seen.insert(link.clone()) {
-                    links.push(link);
-                }
-                i = start + end + 2;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    links
 }
 
 /// 查找反向链接：搜索所有 markdown 文件中引用了指定笔记标题的文件
@@ -1437,7 +1377,6 @@ fn guess_mime_from_ext(ext: &str) -> String {
 
 // ==================== Phase 2: 搜索索引 / 文件监听 / 增量图谱 ====================
 
-use crate::extract as ext;
 use crate::index::{IndexStatus, IndexStore, IndexedMatch};
 use crate::watcher::WatcherState;
 use tauri::{Emitter, State};
@@ -1451,9 +1390,9 @@ pub fn index_upsert_note(
 ) -> Result<(), String> {
     validate_path(&path)?;
     let content = fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
-    let title = ext::extract_title(&content);
-    let tags = ext::extract_tags(&content).join(",");
-    let links = ext::extract_links(&content).join(",");
+    let title = extract_title(&content);
+    let tags = extract_tags(&content).join(",");
+    let links = extract_links(&content).join(",");
     let meta = fs::metadata(&path).map_err(|e| format!("元信息失败: {}", e))?;
     let mtime = meta
         .modified()
@@ -1535,9 +1474,9 @@ pub async fn rebuild_index(
     for path in &to_upsert {
         let result: Result<(), String> = (|| {
             let content = fs::read_to_string(path).map_err(|e| format!("读取失败: {}", e))?;
-            let title = ext::extract_title(&content);
-            let tags = ext::extract_tags(&content).join(",");
-            let links = ext::extract_links(&content).join(",");
+            let title = extract_title(&content);
+            let tags = extract_tags(&content).join(",");
+            let links = extract_links(&content).join(",");
             let meta = fs::metadata(path).map_err(|e| format!("元信息失败: {}", e))?;
             let mtime = meta
                 .modified()
