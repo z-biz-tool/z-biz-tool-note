@@ -318,11 +318,30 @@ pub fn list_notes() -> Vec<NoteMeta> {
     notes
 }
 
-/// 读取笔记内容
+/// 把笔记 id 解析成笔记库里的路径，顺手挡住想跳出库的 id。
+///
+/// id 直接来自正文里的 `![[...]]`，等于用户可控输入：写 `../../.ssh/config` 这种
+/// 原样 join 出去就能读到笔记库外的文件（后缀 .md 限制了面，但不该靠它兜底）。
+/// 空串、带分隔符、带 `..` 都返回 None，让调用方按"没有这篇"处理。
+fn note_path_in(dir: &Path, id: &str) -> Option<PathBuf> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return None;
+    }
+    Some(dir.join(format!("{}.md", id)))
+}
+
+/// 读取笔记内容。
+///
+/// 返回 `Option` 而不是 `unwrap_or_default()` 吞成空串：那样"库里没这篇"和"这篇是空的"
+/// 长得一样，嵌入块只能画一片空白，用户不知道是写错了 id 还是笔记真没内容。
 #[tauri::command]
-pub fn read_note(id: String) -> String {
-    let path = notes_dir().join(format!("{}.md", id));
-    fs::read_to_string(&path).unwrap_or_default()
+pub fn read_note(id: String) -> Option<String> {
+    read_note_in(&notes_dir(), &id)
+}
+
+fn read_note_in(dir: &Path, id: &str) -> Option<String> {
+    let path = note_path_in(dir, id)?;
+    fs::read_to_string(path).ok()
 }
 
 /// 保存笔记（写入失败必须显式返回错误，前端不允许静默吞错）
@@ -1539,4 +1558,57 @@ pub fn start_watch(
 pub fn stop_watch(watcher: State<'_, WatcherState>) -> Result<(), String> {
     watcher.unwatch();
     Ok(())
+}
+
+#[cfg(test)]
+mod read_note_tests {
+    use super::{note_path_in, read_note_in};
+    use std::fs;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "zennote-read-note-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            tag
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    /// "没这篇"和"这篇是空的"必须是两个不同的返回值——改之前两者都是 ""，
+    /// 嵌入块于是永远分不清该提示"找不到"还是渲染空内容。
+    #[test]
+    fn missing_and_empty_are_distinguishable() {
+        let dir = temp_dir("shape");
+        fs::write(dir.join("empty.md"), "").unwrap();
+        fs::write(dir.join("hello.md"), "# Hello\n").unwrap();
+
+        assert_eq!(read_note_in(&dir, "empty"), Some(String::new()));
+        assert_eq!(read_note_in(&dir, "hello"), Some("# Hello\n".to_string()));
+        assert_eq!(read_note_in(&dir, "nope"), None);
+        assert_eq!(read_note_in(&dir, ""), None);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// id 来自正文里的 `![[...]]`，是用户可控输入：不能顺着它跳出笔记库。
+    /// 对照组证明这不是"文件本来就读不到"：同一个 secret 用笔记库根去读是能读到的。
+    #[test]
+    fn traversal_ids_are_rejected() {
+        let base = temp_dir("guard");
+        let library = base.join("notes");
+        fs::create_dir_all(&library).unwrap();
+        fs::write(base.join("secret.md"), "leaked").unwrap();
+
+        for bad in ["../secret", "..\\secret", "a/b", "sub/../secret", ".."] {
+            assert_eq!(note_path_in(&library, bad), None, "id {bad:?} 不该解析成路径");
+            assert_eq!(read_note_in(&library, bad), None, "id {bad:?} 读到了库外内容");
+        }
+        assert_eq!(read_note_in(&base, "secret"), Some("leaked".to_string()));
+        fs::remove_dir_all(&base).ok();
+    }
 }

@@ -270,6 +270,21 @@ function demoNoteSummaries() {
   });
 }
 
+/**
+ * 按 id 取一篇笔记，对应 Rust 的 `read_note`（那边是 `~/.z-note/notes/{id}.md`）。
+ * 演示区没有那份旧存储 —— 工作区里的 .md 文件就是笔记本体，所以同一条语义落成
+ * "文件名剥掉 markdown 后缀等于 id"。返回 null 表示没这篇，与 Rust 的 `Option::None`
+ * 对齐：不能退化成空串，否则 UI 分不清"写错了 id"和"这篇本来就是空的"。
+ */
+function demoNoteById(id: unknown): string | null {
+  const key = String(id ?? '').trim();
+  if (!key) return null;
+  const files = demoNoteFiles();
+  const hit = files.find(p => (p.split('/').pop() || '').replace(/\.(md|markdown)$/i, '') === key)
+    || files.find(p => p === key);
+  return hit ? demoContentOf(hit) : null;
+}
+
 /** 演示工作区的暴力搜索，产出与 Rust 一致的结构（preview 里用 <mark> 包命中词） */
 function demoSearch(query: unknown) {
   const q = String(query ?? '').trim().toLowerCase();
@@ -500,6 +515,8 @@ export const electronAPI = {
           return { success: true, notes: demoNoteSummaries() };
         case 'find-backlinks':
           return { success: true, backlinks: demoBacklinks(args[0], args[1], args[2]) };
+        case 'read-note':
+          return { success: true, content: demoNoteById(args[0]) };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
         default:
@@ -633,6 +650,13 @@ export const electronAPI = {
             preview: bl.preview,
           }));
           return { success: true, backlinks };
+        }
+        // 嵌入块的数据源。以前是组件里裸调 invoke('read_note')：浏览器模式恒抛，
+        // Tauri 模式又把"库里没这篇"吞成空串，于是两种模式各渲染出一种空白。
+        // 现在桥层两侧都返回 {success, content: string|null}，null 专表示"没这篇"。
+        case 'read-note': {
+          const content = await invoke<string | null>('read_note', { id: args[0] });
+          return { success: true, content };
         }
         // 文件树mutations：走桥层而不是组件里裸调 invoke，浏览器模式才有同一条链路可测
         case 'file-exists':

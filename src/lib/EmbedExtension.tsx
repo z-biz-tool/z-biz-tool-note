@@ -2,36 +2,52 @@ import { Node, mergeAttributes, InputRule } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useEffect } from 'react';
 import { FileTextOutlined, ReloadOutlined } from '@ant-design/icons';
-import { invoke } from '@tauri-apps/api/core';
+import { electronAPI, mustSucceed, errText } from './electronAPI';
+import { extractTitle, stripFrontmatter } from './frontmatter';
 
-function EmbedComponent({ node, updateAttributes }: any) {
-  const [content, setContent] = useState('');
+// 未指定 / 加载中 / 找不到 / 空内容 / 读取失败 / 有内容：这六种得能分开说，
+// 之前只有一句"笔记不存在"和一片空白，写错 id 和笔记真没内容长得一样。
+type EmbedState = 'no-id' | 'loading' | 'missing' | 'empty' | 'failed' | 'ready';
+
+const EMBED_PREVIEW_CHARS = 500;
+
+function EmbedComponent({ node }: any) {
+  const [body, setBody] = useState('');
   const [title, setTitle] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [state, setState] = useState<EmbedState>('loading');
+  const [loadError, setLoadError] = useState('');
   const noteId = node.attrs.noteId || '';
 
   const loadNote = async () => {
-    if (!noteId) { setError('未指定笔记ID'); setLoading(false); return; }
-    setLoading(true);
-    setError('');
+    if (!noteId) { setState('no-id'); return; }
+    setState('loading');
+    setLoadError('');
     try {
-      const md = await invoke('read_note', { id: noteId });
-      // Extract title from first line
-      const lines = (md as string).split('\n');
-      const firstLine = lines[0] || '';
-      setTitle(firstLine.replace(/^#+\s*/, '') || noteId);
-      // Show first 500 chars
-      const preview = (md as string).slice(0, 500);
-      setContent(preview + ((md as string).length > 500 ? '\n...' : ''));
+      // content === null 才是"没这篇"；'' 是"有这篇但还没写内容"，两者不能混
+      const result = mustSucceed(await electronAPI.invoke('read-note', noteId)) as { content: string | null };
+      if (result.content === null || result.content === undefined) {
+        setState('missing');
+        return;
+      }
+      const raw = result.content;
+      // 标题跟其它地方一样只认 frontmatter.ts 那一套：再写一条"取首行去井号"，
+      // 带 YAML 头的笔记就会把 `---` 当标题嵌出来。
+      setTitle(extractTitle(raw));
+      const text = stripFrontmatter(raw).trim();
+      if (!text) { setState('empty'); setBody(''); return; }
+      const chars = [...text];
+      setBody(chars.length > EMBED_PREVIEW_CHARS ? `${chars.slice(0, EMBED_PREVIEW_CHARS).join('')}\n...` : text);
+      setState('ready');
     } catch (e) {
-      setError('笔记不存在: ' + noteId);
-    } finally {
-      setLoading(false);
+      setLoadError(errText(e));
+      setState('failed');
     }
   };
 
   useEffect(() => { loadNote(); }, [noteId]);
+
+  const hint = (text: string) => <span style={{ color: '#999' }}>{text}</span>;
+  const problem = (text: string) => <span style={{ color: '#ff4d4f' }}>{text}</span>;
 
   return (
     <NodeViewWrapper>
@@ -54,16 +70,41 @@ function EmbedComponent({ node, updateAttributes }: any) {
         }} contentEditable={false}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#1677ff' }}>
             <FileTextOutlined />
-            <span style={{ fontWeight: 500 }}>{title || noteId}</span>
+            <span style={{ fontWeight: 500 }}>{noteId || '未命名嵌入'}</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <ReloadOutlined style={{ cursor: 'pointer', color: '#999' }} onClick={loadNote} />
+            <ReloadOutlined
+              style={{ cursor: 'pointer', color: '#999' }}
+              title="重新读取"
+              role="button"
+              tabIndex={0}
+              aria-label="重新读取嵌入的笔记"
+              onClick={loadNote}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadNote(); } }}
+            />
             <span style={{ color: '#999' }}>嵌入笔记</span>
           </div>
         </div>
         {/* Content */}
         <div style={{ padding: '8px 12px', fontSize: 13, color: '#666', whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto' }}>
-          {loading ? '加载中...' : error ? <span style={{ color: '#ff4d4f' }}>{error}</span> : content}
+          {state === 'loading' && hint('加载中...')}
+          {state === 'no-id' && hint('还没指定要嵌入哪篇笔记：正文里写 ![[笔记名]] 就能嵌进来')}
+          {state === 'missing' && problem(`找不到这篇笔记：${noteId}`)}
+          {state === 'empty' && hint('这篇笔记还没有内容')}
+          {state === 'failed' && (
+            <>
+              {problem(`读取失败：${loadError}`)}
+              <span style={{ marginLeft: 8, color: '#999' }}>点右上角的刷新可以重试</span>
+            </>
+          )}
+          {state === 'ready' && (
+            <>
+              {title && title !== '无标题笔记' && (
+                <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>{title}</div>
+              )}
+              {body}
+            </>
+          )}
         </div>
       </div>
     </NodeViewWrapper>
@@ -108,12 +149,9 @@ export const Embed = Node.create({
       // 匹配 ![[noteId]] 模式
       new InputRule({
         find: /!\[\[([^\]]+)\]\]$/,
-        handler: ({ state, range, match, commands }) => {
+        handler: ({ match, commands }) => {
           const noteId = match[1];
-          const node = state.schema.nodes.embed.create({ noteId });
-          const tr = state.tr.replaceWith(range.from, range.to, node);
-          // tiptap InputRule 会自动 dispatch 传入的 transaction
-          // 此处通过 commands.insertContent 插入节点
+          // 只管插节点：InputRule 会自己 dispatch 这条 transaction
           commands.insertContent({ type: 'embed', attrs: { noteId } });
         },
       }),
