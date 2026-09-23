@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } fro
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { electronAPI } from './lib/electronAPI';
-import { DialogHost, ToastHost, notify, type ToastKind } from './lib/dialogs';
+import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, type ToastKind } from './lib/dialogs';
 import { applyTheme, THEMES } from './lib/themes';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -274,10 +274,16 @@ const App = () => {
   }, []);
 
   // 关闭标签（含未保存提示）
-  const closeTab = useCallback((id: string) => {
+  const closeTab = useCallback(async (id: string) => {
     const tab = openTabsRef.current.find(t => t.id === id);
-    if (tab?.isDirty && !window.confirm(`"${tab.title}" 有未保存的更改，确定关闭吗？`)) {
-      return;
+    if (tab?.isDirty) {
+      const ok = await confirmDialog({
+        title: '关闭未保存的标签',
+        message: `"${tab.title}" 有未保存的更改，关闭后这些改动会丢失。`,
+        confirmText: '丢弃并关闭',
+        danger: true,
+      });
+      if (!ok) return;
     }
     setOpenTabs(prev => {
       const idx = prev.findIndex(t => t.id === id);
@@ -295,10 +301,16 @@ const App = () => {
   }, []);
 
   // 关闭其他标签（保留指定标签）
-  const closeOtherTabs = useCallback((keepId: string) => {
+  const closeOtherTabs = useCallback(async (keepId: string) => {
     const dirtyTabs = openTabsRef.current.filter(t => t.id !== keepId && t.isDirty);
     if (dirtyTabs.length > 0) {
-      if (!window.confirm(`${dirtyTabs.length} 个标签有未保存的更改，确定关闭吗？`)) return;
+      const ok = await confirmDialog({
+        title: '关闭其他标签',
+        message: `其余 ${dirtyTabs.length} 个标签有未保存的更改，关闭后这些改动会丢失。`,
+        confirmText: '丢弃并关闭',
+        danger: true,
+      });
+      if (!ok) return;
     }
     setOpenTabs(prev => prev.filter(t => t.id === keepId));
     setActiveTabId(keepId);
@@ -306,16 +318,28 @@ const App = () => {
   }, []);
 
   // 关闭右侧标签
-  const closeTabsToRight = useCallback((tabId: string) => {
+  const closeTabsToRight = useCallback(async (tabId: string) => {
+    // 确认必须在 setState 之外做：更新函数在 StrictMode 下会跑两遍，
+    // 原先把 confirm 写在里面，关一次右侧标签要弹两次
+    const tabs = openTabsRef.current;
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx < 0) return;
+    const closing = tabs.slice(idx + 1);
+    if (closing.length === 0) return;
+    const dirtyCount = closing.filter(t => t.isDirty).length;
+    if (dirtyCount > 0) {
+      const ok = await confirmDialog({
+        title: '关闭右侧标签',
+        message: `右侧 ${dirtyCount} 个标签有未保存的更改，关闭后这些改动会丢失。`,
+        confirmText: '丢弃并关闭',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setOpenTabs(prev => {
-      const idx = prev.findIndex(t => t.id === tabId);
-      if (idx < 0) return prev;
-      const closing = prev.slice(idx + 1);
-      const dirtyCount = closing.filter(t => t.isDirty).length;
-      if (dirtyCount > 0 && !window.confirm(`${dirtyCount} 个标签有未保存的更改，确定关闭吗？`)) {
-        return prev;
-      }
-      const kept = prev.slice(0, idx + 1);
+      const at = prev.findIndex(t => t.id === tabId);
+      if (at < 0) return prev;
+      const kept = prev.slice(0, at + 1);
       // 如果活跃标签在关闭范围内，切换到最后一个保留的标签
       const currentActiveId = activeTabIdRef.current;
       if (!kept.some(t => t.id === currentActiveId)) {
@@ -606,17 +630,41 @@ const App = () => {
     const isSplit = splitNoteRef.current?.filePath === filePath;
     if (!isCurrent && !isSplit) return;
 
-    if (window.confirm(`"${filePath.split('/').pop()}" 已被外部修改，是否重新加载？`)) {
-      try {
-        const result = await invoke<string>('read_file', { path: filePath });
-        if (isCurrent) {
-          updateActiveTab({ content: result, isDirty: false });
-        } else if (isSplit) {
-          setSplitNote(prev => prev ? { ...prev, content: result, isDirty: false } : null);
-        }
-      } catch (e) {
-        console.warn('重新加载失败:', e);
+    // 本地没改动时重新加载不会丢东西，直接刷并提示一句；有未保存改动才需要问，
+    // 而且要说清楚"会被替换"，原来的文案只写"是否重新加载"，看不出会丢工作
+    if (cur?.isDirty || (isSplit && splitNoteRef.current?.isDirty)) {
+      const ok = await confirmDialog({
+        title: '文件已被外部修改',
+        message: `"${filePath.split('/').pop()}" 在磁盘上被改过了，而标签里有未保存的修改。重新加载会丢弃本地改动。`,
+        confirmText: '丢弃本地并重新加载',
+        danger: true,
+      });
+      if (!ok) {
+        // 用户选择保留本地内容：仍要同步 mtime，否则下一次改动又会再弹一遍
+        try {
+          const mtime = await invoke<string>('get_file_modified', { path: filePath });
+          if (isCurrent) setLastSaved(mtime);
+          if (isSplit) setLastSavedSplit(mtime);
+        } catch {}
+        showToast('已保留本地未保存的修改', 'info');
+        return;
       }
+    }
+    try {
+      const result = await readFile(filePath);
+      if (result.success && result.content !== undefined) {
+        if (isCurrent) {
+          updateActiveTab({ content: result.content, isDirty: false });
+        } else if (isSplit) {
+          setSplitNote(prev => prev ? { ...prev, content: result.content!, isDirty: false } : null);
+        }
+        showToast('已加载外部修改', 'success');
+      } else {
+        showToast(`重新加载失败: ${result.error || '未知错误'}`, 'error');
+      }
+    } catch (e) {
+      console.warn('重新加载失败:', e);
+      showToast(`重新加载失败: ${e}`, 'error');
     }
     // 同步 mtime 记录，避免同一修改重复弹窗
     try {
@@ -624,7 +672,7 @@ const App = () => {
       if (isCurrent) setLastSaved(mtime);
       if (isSplit) setLastSavedSplit(mtime);
     } catch {}
-  }, [updateActiveTab]);
+  }, [updateActiveTab, readFile, showToast]);
 
   // 启动 notify watcher（监听 currentDir 整个目录树）
   useFileWatcher({
@@ -743,12 +791,22 @@ const App = () => {
       'quick-switch': () => setShowQuickSwitcher(true),
       'command-palette': () => setShowCommandPalette(true),
       'insert-table': () => editorRef.current?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
-      'insert-image': () => {
-        const url = window.prompt('Image URL:');
+      'insert-image': async () => {
+        const url = await promptDialog({
+          title: '插入图片',
+          placeholder: 'https://… 或图片的相对路径',
+          confirmText: '插入',
+          validate: v => (!v ? '地址不能为空' : /\s/.test(v) ? '地址不能包含空格' : null),
+        });
         if (url) editorRef.current?.chain().focus().setImage({ src: url }).run();
       },
-      'insert-link': () => {
-        const url = window.prompt('Link URL:');
+      'insert-link': async () => {
+        const url = await promptDialog({
+          title: '插入链接',
+          placeholder: 'https://… 或 [[双链目标]]',
+          confirmText: '插入',
+          validate: v => (!v ? '地址不能为空' : /\s/.test(v) ? '地址不能包含空格' : null),
+        });
         if (url) editorRef.current?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
       },
       'insert-code-block': () => editorRef.current?.chain().focus().toggleCodeBlock().run(),
