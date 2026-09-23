@@ -143,6 +143,13 @@ const App = () => {
   const [splitNote, setSplitNote] = useState<Note | null>(null);
   const currentNote = openTabs.find(t => t.id === activeTabId) || null;
 
+  // 标题跟随当前笔记：多标签应用里"窗口标题永远是仓库名"等于没有信息。
+  // 未保存是这里唯一需要抢眼的状态，所以它进标题而不是只靠标签页上的小圆点。
+  const windowTitle = currentNote
+    ? `${currentNote.title || '未命名'}${currentNote.isDirty ? ' · 未保存' : ''} — ZenNote`
+    : 'ZenNote';
+  useEffect(() => { document.title = windowTitle; }, [windowTitle]);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // TOC（Outline）默认打开：notes app 的大纲是核心导航体验
   const [outlineOpen, setOutlineOpen] = useState(true);
