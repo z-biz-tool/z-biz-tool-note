@@ -9,7 +9,7 @@ import { electronAPI } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
 import { displayName, isMarkdownPath } from '../lib/fileTypes';
-import { listRecentFiles, mutateRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
+import { formatRecentTime, listRecentFiles, mutateRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
 import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
@@ -113,6 +113,16 @@ export const Sidebar = ({
   // 真源在 lib/recentFiles（App 记、这里读）：谁写都会广播，侧栏只要跟着刷新，
   // 不再自己读写 localStorage、自己拼显示名
   useEffect(() => subscribeRecentFiles(() => setRecentFiles(listRecentFiles())), []);
+
+  // 相对时间的参照点：不跟着走的话"刚刚"能一直挂一小时。
+  // 只在「最近打开」这一页开着时掐表，别的页不养定时器。
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (activeTab !== 'recent') return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [activeTab]);
   
   // 快速搜索：Cmd/Ctrl+K 切到搜索页并聚焦输入框
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -759,6 +769,7 @@ export const Sidebar = ({
               >
                 <Clock size={14} />
                 <span>{file.name}</span>
+                <span className="sidebar-item-meta">{formatRecentTime(file.lastOpened, now)}</span>
               </button>
             ))
           )}

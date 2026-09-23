@@ -60,3 +60,22 @@ export function recordRecentFile(path: string): void {
 export function mutateRecentFiles(change: (entry: RecentEntry) => RecentEntry | null): void {
   writeEntries(readEntries().map(change).filter((e): e is RecentEntry => e !== null));
 }
+
+/**
+ * 相对时间：列表里光有名字分不出"刚看过的"和"上周那篇"。
+ * now 由调用方传进来（渲染层自己掐表），这里保持纯函数好测。
+ */
+export function formatRecentTime(ts: number, now: number = Date.now()): string {
+  if (!ts) return '';
+  const diff = Math.max(0, now - ts);
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return '刚刚';
+  if (min < 60) return `${min} 分钟前`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour} 小时前`;
+  const day = Math.floor(hour / 24);
+  if (day === 1) return '昨天';
+  if (day < 7) return `${day} 天前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}

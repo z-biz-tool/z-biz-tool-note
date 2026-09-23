@@ -383,6 +383,11 @@ body {
   flex: 1; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
+/* 「最近打开」右侧的时间：靠右钉住，不参与名字那侧的伸缩（写在上面那条之后才能盖掉 flex:1） */
+.sidebar-file-item > .sidebar-item-meta {
+  flex: none; margin-left: auto; padding-left: 8px;
+  font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
 .sidebar-folder-item {
   width: 100%; display: flex; align-items: center; gap: 6px;
   padding: 5px 12px; border: none; background: transparent;
