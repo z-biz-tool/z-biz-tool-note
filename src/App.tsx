@@ -45,7 +45,7 @@ import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './l
 import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hooks/useAutoSave';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
-import { parseFrontmatter, setFrontmatterTags, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
+import { parseFrontmatter, setFrontmatterAliases, setFrontmatterTags, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
 import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
@@ -1184,6 +1184,9 @@ const App = () => {
         editable
         onTagsChange={(tags) => (isSplit ? handleSplitContentChange : handleContentChange)(
           setFrontmatterTags(note.content, tags),
+        )}
+        onAliasesChange={(aliases) => (isSplit ? handleSplitContentChange : handleContentChange)(
+          setFrontmatterAliases(note.content, aliases),
         )}
       />
     ) : null;

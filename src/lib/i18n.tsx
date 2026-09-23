@@ -49,6 +49,8 @@ interface Translations {
     fields: string;
     addTag: string;
     removeTag: string;
+    addAlias: string;
+    removeAlias: string;
   };
   panel: {
     outline: string;
@@ -138,6 +140,8 @@ const translations: Record<Language, Translations> = {
       fields: 'fields',
       addTag: 'Add tag',
       removeTag: 'Remove tag {tag}',
+      addAlias: 'Add alias',
+      removeAlias: 'Remove alias {alias}',
     },
     panel: {
       outline: 'Outline',
@@ -225,6 +229,8 @@ const translations: Record<Language, Translations> = {
       fields: '个字段',
       addTag: '加标签',
       removeTag: '移除标签 {tag}',
+      addAlias: '加别名',
+      removeAlias: '移除别名 {alias}',
     },
     panel: {
       outline: '大纲',

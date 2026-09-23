@@ -51,25 +51,23 @@ export const sanitizeTag = (s: string) =>
     .replace(/^[-/]+/, '')
     .trim();
 
-/**
- * 就地换掉 frontmatter 里的 `tags:` 那一段，其它行一个字不动。
- *
- * Why 不用 stringifyFrontmatter 整块重排：那套序列化写的是裸值
- * （`title: 会议: 周会`、带 `#` 的日期说明都会被写坏成非法 YAML 或被 stripQuotes 吃掉），
- * 而"改一个标签"不该顺手把别人的元数据全重排一遍。
- *
- * 认三种既有写法：块列表（`tags:` + `- x`，中间可以隔空行，与 parseYamlBlock 同口径）、
- * 内联（`tags: [a, b]`）、标量（`tags: 阅读`）。原来没有 tags 这一项就在块尾追加。
- */
-export function setFrontmatterTags(raw: string, tags: string[]): string {
-  const cleaned = Array.from(new Set(tags.map(sanitizeTag).filter(Boolean)));
+/** 别名允许空格和常见标点，但引号没法安全地写进再读回来（自己那套 stripQuotes 不认转义），直接去掉 */
+export const sanitizeAlias = (s: string) => s.replace(/["']/g, '').trim();
+
+// 只有这些形状 plain scalar 才写得下去；其余一律加引号（stripQuotes 读得回来）
+const NEEDS_QUOTE = /[:#'[\]{},&*!|>%@`]|^-|^\s|\s$/;
+const yamlListItem = (v: string) => (NEEDS_QUOTE.test(v) ? `"${v}"` : v);
+
+/** setFrontmatterTags / setFrontmatterAliases 共用：就地换掉某个列表字段 */
+function setFrontmatterList(raw: string, key: string, values: string[], sanitize: (s: string) => string): string {
+  const cleaned = Array.from(new Set(values.map(sanitize).filter(Boolean)));
   const open = /^---\r?\n/.exec(raw);
   const block = open ? FRONTMATTER_RE.exec(raw) : null;
-  const lines: string[] = cleaned.length ? ['tags:'] : ['tags: []'];
-  for (const t of cleaned) lines.push(`  - ${t}`);
+  const lines: string[] = cleaned.length ? [`${key}:`] : [`${key}: []`];
+  for (const v of cleaned) lines.push(`  - ${yamlListItem(v)}`);
 
   if (!open || !block) {
-    // 没有 frontmatter：空标签集就不无中生有，有则补一块
+    // 没有 frontmatter：空列表就不无中生有，有则补一块
     if (!cleaned.length) return raw;
     return `---\n${lines.join('\n')}\n---\n\n${raw}`;
   }
@@ -78,12 +76,12 @@ export function setFrontmatterTags(raw: string, tags: string[]): string {
   const yaml = block[1];
   const eol = yaml.includes('\r\n') ? '\r\n' : '\n';
   const yamlLines = yaml.split(/\r?\n/);
-  const start = yamlLines.findIndex((l) => /^tags\s*:/.test(l));
+  const start = yamlLines.findIndex((l) => new RegExp(`^${key}\\s*:`).test(l));
   let next: string[];
   if (start < 0) {
     next = [...yamlLines, ...lines];
   } else {
-    // tags 的取值可能是紧跟的几行 - 条目（也允许中间隔空行），整段一起换掉
+    // 该字段的取值可能是紧跟的几行 - 条目（也允许中间隔空行），整段一起换掉
     let end = start + 1;
     let j = end;
     while (j < yamlLines.length && !yamlLines[j].trim()) j++;
@@ -97,6 +95,25 @@ export function setFrontmatterTags(raw: string, tags: string[]): string {
     next = [...yamlLines.slice(0, start), ...lines, ...yamlLines.slice(end)];
   }
   return raw.slice(0, yamlStart) + next.join(eol) + raw.slice(yamlStart + yaml.length);
+}
+
+/**
+ * 就地换掉 frontmatter 里的 `tags:` 那一段，其它行一个字不动。
+ *
+ * Why 不用 stringifyFrontmatter 整块重排：那套序列化写的是裸值
+ * （`title: 会议: 周会`、带 `#` 的日期说明都会被写坏成非法 YAML 或被 stripQuotes 吃掉），
+ * 而"改一个标签"不该顺手把别人的元数据全重排一遍。
+ *
+ * 认三种既有写法：块列表（`tags:` + `- x`，中间可以隔空行，与 parseYamlBlock 同口径）、
+ * 内联（`tags: [a, b]`）、标量（`tags: 阅读`）。原来没有这一项就在块尾追加。
+ */
+export function setFrontmatterTags(raw: string, tags: string[]): string {
+  return setFrontmatterList(raw, 'tags', tags, sanitizeTag);
+}
+
+/** 同 setFrontmatterTags，只是别名的取值允许空格和更多标点（必要时加引号写回） */
+export function setFrontmatterAliases(raw: string, aliases: string[]): string {
+  return setFrontmatterList(raw, 'aliases', aliases, sanitizeAlias);
 }
 
 /** 行式 YAML 解析：仅支持 key: value、数组内联、数组多行三种形态 */
@@ -133,7 +150,8 @@ function parseYamlBlock(yaml: string): Record<string, unknown> {
         for (let k = j; k < lines.length; k++) {
           if (!lines[k].trim()) continue;
           if (!/^\s*-\s/.test(lines[k])) break;
-          arr.push(lines[k].replace(/^\s*-\s*/, '').trim());
+          // 条目也可能是带引号的（setFrontmatterList 给含 `:` `#` 的值加引号），要按同样口径剥掉
+          arr.push(stripQuotes(lines[k].replace(/^\s*-\s*/, '').trim()));
           lastItem = k;
         }
         result[key] = arr;
@@ -147,7 +165,7 @@ function parseYamlBlock(yaml: string): Record<string, unknown> {
       result[key] = valuePart
         .slice(1, -1)
         .split(',')
-        .map(s => s.trim())
+        .map(s => stripQuotes(s.trim()))
         .filter(Boolean);
       i++;
       continue;

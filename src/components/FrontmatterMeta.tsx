@@ -1,32 +1,130 @@
 import { useState, type KeyboardEvent } from 'react';
 import { ChevronDown, ChevronRight, Hash, Calendar, FileText, X } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
-import { sanitizeTag } from '../lib/frontmatter';
+import { sanitizeAlias, sanitizeTag } from '../lib/frontmatter';
 
 interface FrontmatterMetaProps {
   meta: Record<string, unknown>;
-  /** 允许编辑标签（改完由调用方写回文件） */
+  /** 允许编辑标签与别名（改完由调用方写回文件） */
   editable?: boolean;
   onTagsChange?: (tags: string[]) => void;
+  onAliasesChange?: (aliases: string[]) => void;
+}
+
+/** 一排 chip + 一个加号输入框；标签和别名共用这一套交互 */
+function ChipEditor({
+  items,
+  editable,
+  onChange,
+  addLabel,
+  removeLabel,
+  sanitize,
+}: {
+  items: string[];
+  editable: boolean;
+  onChange?: (next: string[]) => void;
+  addLabel: string;
+  removeLabel: (item: string) => string;
+  sanitize: (s: string) => string;
+}) {
+  const [draft, setDraft] = useState('');
+  const canEdit = editable && !!onChange;
+
+  const commit = () => {
+    const next = sanitize(draft);
+    setDraft('');
+    if (!next || !onChange || items.includes(next)) return;
+    onChange([...items, next]);
+  };
+
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+      {items.map(item => (
+        <span
+          key={item}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 2,
+            padding: '1px 6px',
+            borderRadius: 4,
+            background: 'var(--tag-bg, rgba(102,126,234,0.1))',
+            color: 'var(--tag-color, #667eea)',
+          }}
+        >
+          {item}
+          {canEdit && (
+            <button
+              type="button"
+              aria-label={removeLabel(item)}
+              title={removeLabel(item)}
+              onClick={() => onChange!(items.filter(x => x !== item))}
+              style={{
+                border: 'none',
+                background: 'none',
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              <X size={10} />
+            </button>
+          )}
+        </span>
+      ))}
+      {canEdit && (
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+            // 逗号/中文逗号也能提交：一口气打「读书, 笔记」是常见输入法
+            if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
+              e.preventDefault();
+              commit();
+              return;
+            }
+            // 空输入框上按退格删掉最后一个（和多数笔记应用的标签框一致）
+            if (e.key === 'Backspace' && !draft && items.length) {
+              e.preventDefault();
+              onChange!(items.slice(0, -1));
+            }
+          }}
+          aria-label={addLabel}
+          placeholder={addLabel}
+          style={{
+            width: 96,
+            border: '1px dashed var(--border-color, rgba(0,0,0,0.12))',
+            borderRadius: 4,
+            background: 'transparent',
+            color: 'inherit',
+            fontSize: 12,
+            padding: '1px 6px',
+          }}
+        />
+      )}
+    </span>
+  );
 }
 
 /**
  * 顶部元数据卡片：把 frontmatter 字段以可折叠形式展示在编辑器上方。
  *
  * 默认展示 title / date / tags / aliases 四个常用字段；其它字段折叠在"更多"里，
- * 避免干扰笔记正文。可编辑的只有标签 —— 它是最常改、且能安全写回的一项
- * （写回走 frontmatter.setFrontmatterTags，只动 `tags:` 那几行）。
+ * 避免干扰笔记正文。可编辑的是标签与别名 —— 它们是最常改、且能安全写回的两项
+ * （写回走 frontmatter.setFrontmatter* ，只动对应那几行）。
  */
-export function FrontmatterMeta({ meta, editable = false, onTagsChange }: FrontmatterMetaProps) {
+export function FrontmatterMeta({ meta, editable = false, onTagsChange, onAliasesChange }: FrontmatterMetaProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState('');
 
   // 提取常用字段
   const title = (meta.title as string) || '';
   const date = (meta.date as string) || (meta.created as string) || '';
   const tags = Array.isArray(meta.tags) ? (meta.tags as string[]).map(String) : [];
-  const aliases = Array.isArray(meta.aliases) ? (meta.aliases as string[]) : [];
+  const aliases = Array.isArray(meta.aliases) ? (meta.aliases as string[]).map(String) : [];
   const otherKeys = Object.keys(meta).filter(
     k => !['title', 'date', 'created', 'tags', 'aliases'].includes(k),
   );
@@ -34,28 +132,6 @@ export function FrontmatterMeta({ meta, editable = false, onTagsChange }: Frontm
   const hasContent = title || date || tags.length > 0 || aliases.length > 0 || otherKeys.length > 0
     || editable;
   if (!hasContent) return null;
-
-  const commitDraft = () => {
-    const next = sanitizeTag(draft);
-    setDraft('');
-    if (!next || !onTagsChange) return;
-    if (tags.includes(next)) return;
-    onTagsChange([...tags, next]);
-  };
-
-  const onDraftKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    // 逗号/中文逗号也能提交：一口气打「读书, 笔记」是常见输入法
-    if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
-      e.preventDefault();
-      commitDraft();
-      return;
-    }
-    // 空输入框上按退格删掉最后一个标签（和多数笔记应用的标签框一致）
-    if (e.key === 'Backspace' && !draft && tags.length && onTagsChange) {
-      e.preventDefault();
-      onTagsChange(tags.slice(0, -1));
-    }
-  };
 
   return (
     <div
@@ -82,67 +158,29 @@ export function FrontmatterMeta({ meta, editable = false, onTagsChange }: Frontm
           </span>
         )}
         {(tags.length > 0 || editable) && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <Hash size={12} />
-            {tags.map(tag => (
-              <span
-                key={tag}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  padding: '1px 6px',
-                  borderRadius: 4,
-                  background: 'var(--tag-bg, rgba(102,126,234,0.1))',
-                  color: 'var(--tag-color, #667eea)',
-                }}
-              >
-                {tag}
-                {editable && onTagsChange && (
-                  <button
-                    type="button"
-                    aria-label={t('meta', 'removeTag').replace('{tag}', tag)}
-                    title={t('meta', 'removeTag').replace('{tag}', tag)}
-                    onClick={() => onTagsChange(tags.filter(x => x !== tag))}
-                    style={{
-                      border: 'none',
-                      background: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      padding: 0,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <X size={10} />
-                  </button>
-                )}
-              </span>
-            ))}
-            {editable && onTagsChange && (
-              <input
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={onDraftKeyDown}
-                onBlur={commitDraft}
-                aria-label={t('meta', 'addTag')}
-                placeholder={t('meta', 'addTag')}
-                style={{
-                  width: 88,
-                  border: '1px dashed var(--border-color, rgba(0,0,0,0.12))',
-                  borderRadius: 4,
-                  background: 'transparent',
-                  color: 'inherit',
-                  fontSize: 12,
-                  padding: '1px 6px',
-                }}
-              />
-            )}
+            <ChipEditor
+              items={tags}
+              editable={editable}
+              onChange={onTagsChange}
+              addLabel={t('meta', 'addTag')}
+              removeLabel={(v) => t('meta', 'removeTag').replace('{tag}', v)}
+              sanitize={sanitizeTag}
+            />
           </span>
         )}
-        {aliases.length > 0 && (
-          <span style={{ fontStyle: 'italic' }}>
-            {t('meta', 'aliases')}: {aliases.join(', ')}
+        {(aliases.length > 0 || editable) && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontStyle: 'italic' }}>{t('meta', 'aliases')}</span>
+            <ChipEditor
+              items={aliases}
+              editable={editable}
+              onChange={onAliasesChange}
+              addLabel={t('meta', 'addAlias')}
+              removeLabel={(v) => t('meta', 'removeAlias').replace('{alias}', v)}
+              sanitize={sanitizeAlias}
+            />
           </span>
         )}
         {otherKeys.length > 0 && (
