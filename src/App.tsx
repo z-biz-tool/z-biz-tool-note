@@ -49,6 +49,7 @@ import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hoo
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
 import { parseFrontmatter, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
+import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
 
@@ -655,15 +656,49 @@ const App = () => {
   }, [closeTabsForDeletedPath, showToast, refreshFileTree, refreshNoteIndex]);
 
   // 文件监听：替换旧的 5s 轮询，notify crate 推送事件
+  // 状态栏那句「已保存 HH:MM」读的是 lastSaved，处理完事件顺手把 mtime 对上，
+  // 免得同一次修改被重复处理时又弹一遍
+  const syncMtime = useCallback(async (filePath: string, isCurrent: boolean, isSplit: boolean) => {
+    try {
+      const mtime = await invoke<string>('get_file_modified', { path: filePath });
+      if (isCurrent) setLastSaved(mtime);
+      if (isSplit) setLastSavedSplit(mtime);
+    } catch {}
+  }, []);
+
   const handleExternalChange = useCallback(async (filePath: string) => {
     const cur = openTabsRef.current.find(t => t.id === activeTabIdRef.current);
     const isCurrent = cur?.filePath === filePath;
     const isSplit = splitNoteRef.current?.filePath === filePath;
     if (!isCurrent && !isSplit) return;
 
+    // 先读盘对账：watcher 不认人，我们自己 write_file 的那一笔半秒后也会广播回来。
+    // 对得上就是回声 —— 不重载、不弹框、不打扰（决策口径见 lib/selfWrites.ts）
+    let disk: string;
+    try {
+      const result = await readFile(filePath);
+      if (!result.success || result.content === undefined) {
+        showToast(`重新加载失败: ${result.error || '未知错误'}`, 'error');
+        return;
+      }
+      disk = result.content;
+    } catch (e) {
+      console.warn('重新加载失败:', e);
+      showToast(`重新加载失败: ${errText(e)}`, 'error');
+      return;
+    }
+    const tab = isCurrent ? cur : splitNoteRef.current;
+    const action = decideExternalChange({
+      disk,
+      local: tab?.content ?? null,
+      recorded: selfWriteOf(filePath) ?? null,
+      isDirty: tab?.isDirty === true,
+    });
+    if (action === 'ignore') return;
+
     // 本地没改动时重新加载不会丢东西，直接刷并提示一句；有未保存改动才需要问，
     // 而且要说清楚"会被替换"，原来的文案只写"是否重新加载"，看不出会丢工作
-    if (cur?.isDirty || (isSplit && splitNoteRef.current?.isDirty)) {
+    if (action === 'confirm') {
       const ok = await confirmDialog({
         title: '文件已被外部修改',
         message: `"${filePath.split('/').pop()}" 在磁盘上被改过了，而标签里有未保存的修改。重新加载会丢弃本地改动。`,
@@ -672,38 +707,19 @@ const App = () => {
       });
       if (!ok) {
         // 用户选择保留本地内容：仍要同步 mtime，否则下一次改动又会再弹一遍
-        try {
-          const mtime = await invoke<string>('get_file_modified', { path: filePath });
-          if (isCurrent) setLastSaved(mtime);
-          if (isSplit) setLastSavedSplit(mtime);
-        } catch {}
+        await syncMtime(filePath, isCurrent, isSplit);
         showToast('已保留本地未保存的修改', 'info');
         return;
       }
     }
-    try {
-      const result = await readFile(filePath);
-      if (result.success && result.content !== undefined) {
-        if (isCurrent) {
-          updateActiveTab({ content: result.content, isDirty: false });
-        } else if (isSplit) {
-          setSplitNote(prev => prev ? { ...prev, content: result.content!, isDirty: false } : null);
-        }
-        showToast('已加载外部修改', 'success');
-      } else {
-        showToast(`重新加载失败: ${result.error || '未知错误'}`, 'error');
-      }
-    } catch (e) {
-      console.warn('重新加载失败:', e);
-      showToast(`重新加载失败: ${e}`, 'error');
+    if (isCurrent) {
+      updateActiveTab({ content: disk, isDirty: false });
+    } else {
+      setSplitNote(prev => prev ? { ...prev, content: disk, isDirty: false } : null);
     }
-    // 同步 mtime 记录，避免同一修改重复弹窗
-    try {
-      const mtime = await invoke<string>('get_file_modified', { path: filePath });
-      if (isCurrent) setLastSaved(mtime);
-      if (isSplit) setLastSavedSplit(mtime);
-    } catch {}
-  }, [updateActiveTab, readFile, showToast]);
+    showToast('已加载外部修改', 'success');
+    await syncMtime(filePath, isCurrent, isSplit);
+  }, [updateActiveTab, readFile, showToast, syncMtime]);
 
   // 启动 notify watcher（监听 currentDir 整个目录树）
   useFileWatcher({

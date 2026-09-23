@@ -1,5 +1,6 @@
 import { electronAPI, mustSucceed } from '../lib/electronAPI';
 import { prepareMarkdownForWrite } from '../lib/markdownWrite';
+import { markSelfWrite } from '../lib/selfWrites';
 import type { Note } from '../types';
 
 export const useFileOperations = () => {
@@ -19,8 +20,11 @@ export const useFileOperations = () => {
     const prepared = prepareMarkdownForWrite(filePath, content);
     // mustSucceed：保存路径全靠 try/catch 决定"要不要清 WAL、要不要 toast 已保存"，
     // 桥层把 Rust 报错咽成 {success:false} 的话，写盘失败会被当成保存成功（内容就此丢掉）
-    const result = await electronAPI.invoke('write-file', filePath, prepared);
-    return mustSucceed(result);
+    const result = mustSucceed(await electronAPI.invoke('write-file', filePath, prepared));
+    // 记下真正写出去的字节：不到一秒后 watcher 会把这一笔广播回来，不对账的话
+    // 每次保存都会被当成"外部修改了文件"（见 lib/selfWrites.ts）。失败不记：没落盘就没有回声
+    markSelfWrite(filePath, prepared);
+    return result;
   };
 
   const showSaveDialog = async (defaultPath: string) => {
