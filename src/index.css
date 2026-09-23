@@ -65,6 +65,9 @@ body {
 
 .ProseMirror > *:first-child { margin-top: 0; }
 
+/* 折叠起来的正文。这条规则以前根本没有：点 ▼ 只换了下箭头，一个字都没藏 */
+.ProseMirror .folded-content { display: none; }
+
 /* Focus Mode */
 .ProseMirror.focus-mode .ProseMirror > * {
   opacity: 0.3;
