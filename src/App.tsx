@@ -18,6 +18,7 @@ import { BinaryViewer } from './components/Viewers/BinaryViewer';
 import type { FileKind } from './lib/fileTypes';
 import { isMarkdownPath, displayName } from './lib/fileTypes';
 import { disambiguateTabTitles } from './lib/tabTitles';
+import { recordRecentFile } from './lib/recentFiles';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { StatusBar } from './components/StatusBar';
@@ -255,6 +256,13 @@ const App = () => {
   splitNoteRef.current = splitNote;
   const currentDirRef = useRef(currentDir);
   currentDirRef.current = currentDir;
+
+  // 「最近打开」只有一个记录点：谁成为当前标签，谁就被记一笔。
+  // 挂在侧栏各个点击处会漏掉双链 Cmd+点、快速切换、图谱节点、恢复暂存这几条入口。
+  useEffect(() => {
+    const note = openTabsRef.current.find(t => t.id === activeTabId);
+    if (note?.filePath) recordRecentFile(note.filePath);
+  }, [activeTabId]);
 
   // ---------- 多标签 / 分屏 辅助函数 ----------
   // 打开（或聚焦）一篇笔记到左窗格
@@ -1432,18 +1440,6 @@ const App = () => {
     // no-op: graph is rebuilt by refreshKnowledgeIndex after save / folder open
   }, []);
 
-  const handleSelectNote = useCallback((note: Note) => {
-    openNote(note);
-    // 记录文件修改时间（用于外部修改检测）
-    if (note.filePath) {
-      invoke('get_file_modified', { path: note.filePath }).then((mtime: string) => {
-        setLastSaved(mtime);
-      }).catch(() => {});
-    } else {
-      setLastSaved(null);
-    }
-  }, [openNote]);
-
   const handleJumpToHeading = useCallback((pos: number) => {
     editorRef.current?.jumpToHeading?.(pos);
   }, []);
@@ -1592,7 +1588,6 @@ const App = () => {
         isOpen={sidebarOpen}
         currentDir={currentDir}
         currentNote={currentNote}
-        onSelectNote={handleSelectNote}
         onOpenFile={handleOpenFile}
         onNewNote={handleNewNote}
         onOpenFolder={handleOpenFolder}

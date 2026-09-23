@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, FolderOpen, Calendar, BookOpen, Clock, Sparkles, FileText, ArrowRight } from 'lucide-react';
 import type { RecentFile } from '../types';
+import { listRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
 import { modKeys } from '../lib/modifier';
 
 interface WelcomeProps {
@@ -14,17 +15,13 @@ interface WelcomeProps {
 
 /**
  * VS Code 风格欢迎首屏：左侧「开始」快速操作，右侧「最近打开」。
- * 每次挂载时从 localStorage 读取最近文件（Sidebar 打开文件时会更新）。
+ * 最近列表只从 lib/recentFiles 读（记录点在 App），显示名也在那儿统一推导，
+ * 免得侧栏叫「Welcome」、这里却叫「Welcome.md」。
  */
 export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, onOpenFile, currentDir }: WelcomeProps) => {
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(listRecentFiles);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('recentFiles');
-      if (saved) setRecentFiles(JSON.parse(saved));
-    } catch { /* 忽略损坏的 localStorage 数据 */ }
-  }, []);
+  useEffect(() => subscribeRecentFiles(() => setRecentFiles(listRecentFiles())), []);
 
   return (
     <div className="welcome-page">

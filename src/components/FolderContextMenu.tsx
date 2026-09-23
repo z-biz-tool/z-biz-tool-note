@@ -92,8 +92,9 @@ export const FolderContextMenu = ({
     if (onMoveTo) {
       items.push({ key: 'move', label: '移到文件夹', icon: <FolderInput size={16} />, action: openMove, hasSubmenu: true });
     }
-    // 分隔线放在删除前：把破坏性动作和上面的常规动作隔开，少一次手滑
-    items.push({ key: 'delete', label: label(type === 'folder' ? '删除' : '删除笔记'), icon: <Trash2 size={16} />, action: onDelete, danger: true, dividerBefore: items.length > 0 });
+    // 分隔线放在删除前：把破坏性动作和上面的常规动作隔开，少一次手滑。
+    // 文件项不写"删除笔记"：树里 .txt/.png 同样能右键，叫"笔记"对不上（文件夹那侧仍带类型，避免和"移到文件夹"混）
+    items.push({ key: 'delete', label: label('删除'), icon: <Trash2 size={16} />, action: onDelete, danger: true, dividerBefore: items.length > 0 });
   }
 
   return (

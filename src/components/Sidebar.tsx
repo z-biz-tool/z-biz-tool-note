@@ -8,7 +8,8 @@ import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
-import { displayName } from '../lib/fileTypes';
+import { displayName, isMarkdownPath } from '../lib/fileTypes';
+import { listRecentFiles, mutateRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
 import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
@@ -62,8 +63,8 @@ interface SidebarProps {
   /** 唯一的目录来源：App 打开/切换文件夹后由这里下发，Sidebar 不再自己存一份 */
   currentDir: string;
   currentNote: Note | null;
-  onSelectNote: (note: Note) => void;
-  onOpenFile?: (path: string) => void;
+  /** 打开文件的唯一入口：App 按扩展名分发到编辑器/查看器，侧栏不再自己拼 Note */
+  onOpenFile: (path: string) => void;
   onNewNote: () => void;
   onOpenFolder: (dirPath: string) => void;
   onRefresh?: () => void;
@@ -83,15 +84,15 @@ interface SidebarProps {
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
-  isOpen, currentDir, currentNote, onSelectNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
+  isOpen, currentDir, currentNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
   tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
 }: SidebarProps) => {
-  const { listFiles, listFilesRecursive, readFile, showOpenDialog } = useFileOperations();
+  const { listFiles, listFilesRecursive, showOpenDialog } = useFileOperations();
   const [activeTab, setActiveTab] = useState<TabType>('files');
   const [fileTree, setFileTree] = useState<FileItem[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(listRecentFiles);
   const [searchResults, setSearchResults] = useState<Array<{ filePath: string; fileName: string; snippet: string; line: number }>>([]);
   const [loading, setLoading] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'file' | 'folder' | 'empty'; item?: FileItem } | null>(null);
@@ -109,20 +110,9 @@ export const Sidebar = ({
   const dirsCacheRef = useRef<{ key: string; dirs: MoveTarget[] } | null>(null);
   const moveSeqRef = useRef(0);
 
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('recentFiles') || '[]');
-      // 老数据里的 name 可能带 .md：按当前规则重算，别让同一篇笔记在两个列表里两种叫法
-      if (Array.isArray(saved)) {
-        setRecentFiles(saved
-          .filter((f: any) => f && typeof f.path === 'string')
-          .map((f: any) => ({ ...f, name: displayName(f.path) || f.name })));
-      }
-    } catch {
-      // 历史数据坏了就丢掉，不能让侧栏白屏
-      localStorage.removeItem('recentFiles');
-    }
-  }, []);
+  // 真源在 lib/recentFiles（App 记、这里读）：谁写都会广播，侧栏只要跟着刷新，
+  // 不再自己读写 localStorage、自己拼显示名
+  useEffect(() => subscribeRecentFiles(() => setRecentFiles(listRecentFiles())), []);
   
   // 快速搜索：Cmd/Ctrl+K 切到搜索页并聚焦输入框
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -182,27 +172,6 @@ export const Sidebar = ({
     setLoading(false);
   };
 
-  // 显示名只有一种算法（fileTypes.displayName：笔记不带 .md，其它类型留扩展名）。
-  // 之前各列表各写一份 split/replace，结果是同一篇笔记在标签页叫「Welcome」、在「最近打开」叫「Welcome.md」。
-  const addRecentFile = useCallback((path: string) => {
-    setRecentFiles(prev => {
-      const filtered = prev.filter(f => f.path !== path);
-      const updated = [{ path, name: displayName(path) || path, lastOpened: Date.now() }, ...filtered].slice(0, 20);
-      localStorage.setItem('recentFiles', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  // 重命名/删除后，「最近打开」里指向旧路径的条目必须跟着改：
-  // 否则点下去 readFile 失败、界面上没有任何反馈，看起来像应用坏了。
-  const mutateRecent = useCallback((change: (f: RecentFile) => RecentFile | null) => {
-    setRecentFiles(prev => {
-      const updated = prev.map(change).filter((f): f is RecentFile => f !== null);
-      localStorage.setItem('recentFiles', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
   const handleFolderSelect = async () => {
     const result = await showOpenDialog();
     if (!result.canceled && result.filePath) {
@@ -228,27 +197,9 @@ export const Sidebar = ({
         }
       }
     } else if (file.isFile) {
-      // 任意文件类型都走 App 的统一打开逻辑(按 fileTypes 路由分发)
-      if (onOpenFile) {
-        addRecentFile(file.path);
-        onOpenFile(file.path);
-      } else {
-        // 回退:仅处理 .md
-        if (file.name.endsWith('.md') || file.name.endsWith('.markdown')) {
-          const result = await readFile(file.path);
-          if (result.success && result.content !== undefined) {
-            addRecentFile(file.path);
-            onSelectNote({
-              id: file.path,
-              title: displayName(file.path),
-              content: result.content,
-              filePath: file.path,
-              lastModified: new Date().toISOString(),
-              isDirty: false,
-            });
-          }
-        }
-      }
+      // 任意文件类型都走 App 的统一打开逻辑(按 fileTypes 路由分发)；
+      // 「最近打开」由 App 在笔记成为当前标签时记，这里不再自己记
+      onOpenFile(file.path);
     }
   };
 
@@ -368,7 +319,7 @@ export const Sidebar = ({
 
     try {
       must(await electronAPI.invoke('rename-file', item.path, newPath));
-      remapPaths(item.path, newPath, !!item.isDirectory, newName);
+      remapPaths(item.path, newPath, !!item.isDirectory);
       onRename?.(item.path, newPath, newName, !!item.isDirectory);
       onRefresh?.();
       notify(`已重命名为 ${displayName(newName)}`, 'success');
@@ -379,16 +330,15 @@ export const Sidebar = ({
   };
 
   /** 路径变了要一起搬的地方：最近列表、目录展开态（重命名与拖拽移动共用一套） */
-  const remapPaths = (oldPath: string, newPath: string, isDirectory: boolean, newName: string) => {
+  const remapPaths = (oldPath: string, newPath: string, isDirectory: boolean) => {
     const oldPrefix = oldPath + '/';
     const newPrefix = newPath + '/';
-    mutateRecent(f => {
-      if (f.path === oldPath) return { ...f, path: newPath, name: displayName(newPath) || newName };
-      if (isDirectory && f.path.startsWith(oldPrefix)) {
-        const path = newPrefix + f.path.slice(oldPrefix.length);
-        return { ...f, path, name: displayName(path) || path };
+    mutateRecentFiles(e => {
+      if (e.path === oldPath) return { ...e, path: newPath };
+      if (isDirectory && e.path.startsWith(oldPrefix)) {
+        return { ...e, path: newPrefix + e.path.slice(oldPrefix.length) };
       }
-      return f;
+      return e;
     });
     if (!isDirectory) return;
     // 展开态记的是路径：目录改了名不跟着搬，刷新时补齐子节点就会认不出来，整棵子树收起
@@ -453,7 +403,7 @@ export const Sidebar = ({
         return;
       }
       must(await electronAPI.invoke('rename-file', srcPath, newPath));
-      remapPaths(srcPath, newPath, isDir, name);
+      remapPaths(srcPath, newPath, isDir);
       // 目标目录展开着才看得见移过去的东西，否则像"文件凭空消失了"
       setExpandedFolders(prev => prev.has(targetDir) ? prev : new Set(prev).add(targetDir));
       loadFileTree(currentDir, [targetDir]);
@@ -508,11 +458,12 @@ export const Sidebar = ({
     setContextMenu(null);
 
     const isDir = item.isDirectory;
+    // 树里任何类型都能右键删除：给 .txt 说"笔记"、还把 .md 摊给用户看，
+    // 和树里/标签里看到的名字对不上（显示名规则统一在 fileTypes.displayName）
+    const what = isDir ? '文件夹' : (isMarkdownPath(item.path) ? '笔记' : '文件');
     const ok = await confirmDialog({
-      title: isDir ? '删除文件夹' : '删除笔记',
-      message: isDir
-        ? `确定将文件夹 "${item.name}" 移到废纸篓吗？`
-        : `确定将笔记 "${item.name}" 移到废纸篓吗？`,
+      title: `删除${what}`,
+      message: `确定将${what} "${displayName(item.name)}" 移到废纸篓吗？`,
       confirmText: '移到废纸篓',
       danger: true,
     });
@@ -522,7 +473,9 @@ export const Sidebar = ({
       must(await electronAPI.invoke('move-to-trash', item.path));
       const gone = item.path;
       const dir = !!item.isDirectory;
-      mutateRecent(f => (f.path === gone || (dir && f.path.startsWith(gone + '/')) ? null : f));
+      // 重命名/删除后，「最近打开」里指向旧路径的条目必须跟着改或清掉：
+      // 否则点下去 readFile 失败、界面上没有任何反馈，看起来像应用坏了。
+      mutateRecentFiles(e => (e.path === gone || (dir && e.path.startsWith(gone + '/')) ? null : e));
       // 交给 App 关掉对应标签：标签还活着的话，2 秒防抖自动保存会把刚进废纸篓的文件写回来
       onDelete?.(gone, dir);
       onRefresh?.();
@@ -533,19 +486,10 @@ export const Sidebar = ({
     }
   };
 
-  const handleRecentClick = async (file: RecentFile) => {
-    const result = await readFile(file.path);
-    if (result.success && result.content !== undefined) {
-      addRecentFile(file.path);
-      onSelectNote({
-        id: file.path,
-        title: displayName(file.path),
-        content: result.content,
-        filePath: file.path,
-        lastModified: new Date().toISOString(),
-        isDirty: false,
-      });
-    }
+  const handleRecentClick = (file: RecentFile) => {
+    // 也走 App 的分发：最近列表里可能有 .txt / .png，自己 readFile 拼 Note 会丢掉 fileType，
+    // 于是图片、代码被当成 markdown 塞进编辑器（树里点同一个文件却是对的，两边不一致）
+    onOpenFile(file.path);
   };
 
   // 搜索 debounce + 取消令牌（避免前次响应覆盖后次结果）
@@ -792,7 +736,7 @@ export const Sidebar = ({
           }}
         >
           {recentFiles.length === 0 ? (
-            <div className="sidebar-empty">还没有最近打开的笔记</div>
+            <div className="sidebar-empty">还没有最近打开的文件</div>
           ) : (
             recentFiles.map(file => (
               <button
@@ -895,20 +839,7 @@ export const Sidebar = ({
                 <button
                   key={`${result.filePath}-${i}`}
                   className="sidebar-file-item"
-                  onClick={async () => {
-                    const res = await readFile(result.filePath);
-                    if (res.success && res.content !== undefined) {
-                      addRecentFile(result.filePath);
-                      onSelectNote({
-                        id: result.filePath,
-                        title: displayName(result.filePath),
-                        content: res.content,
-                        filePath: result.filePath,
-                        lastModified: new Date().toISOString(),
-                        isDirty: false,
-                      });
-                    }
-                  }}
+                  onClick={() => onOpenFile(result.filePath)}
                   style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
