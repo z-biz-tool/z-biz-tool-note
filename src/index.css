@@ -195,6 +195,14 @@ body {
 .ProseMirror .image-resizer:hover .resize-trigger { opacity: 1; }
 .ProseMirror .resize-trigger { opacity: 0; position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--accent-color); border-radius: 50%; cursor: nwse-resize; transition: opacity 0.2s ease; }
 
+/* 选中的原子块（嵌入笔记、图片）：退格第一下只是把它选中，不描这圈边的话按键毫无反应，
+   用户以为"没反应"就再按一次 —— 整块内容就这么没了 */
+.ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
 /* Tables */
 .ProseMirror table { width: 100%; border-collapse: collapse; margin: 1em 0; overflow: hidden; border-radius: var(--radius-md); }
 .ProseMirror th, .ProseMirror td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
