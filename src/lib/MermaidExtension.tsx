@@ -3,6 +3,7 @@ import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useEffect, useState } from 'react';
 import { ApartmentOutlined, EditOutlined, CheckOutlined } from '@ant-design/icons';
 import mermaid from 'mermaid';
+import { insertBlockWithCaret } from './blockInsert';
 
 export interface MermaidOptions {
   HTMLAttributes: Record<string, any>;
@@ -225,8 +226,12 @@ export const Mermaid = Node.create<MermaidOptions>({
     return {
       // 参数是源码字符串；斜杠菜单之前传的是 { content: '...' }，insertContent 拿到一个
       // 对象当文字，实测点"Mermaid图表"什么都不插入（整条命令是死的）。
-      setMermaid: (code: string) => ({ commands }: any) => {
-        return commands.insertContent({ type: this.name, attrs: { code: code || '' } });
+      // 插入也走同一个 tr + 光标落到块后面，不然插完图是选中态，下一个字符把它顶掉。
+      setMermaid: (code: string) => ({ tr, dispatch, state }: any) => {
+        if (!dispatch) return true;
+        if (!insertBlockWithCaret(tr, state.schema, 'mermaid', { code: code || '' })) return false;
+        dispatch(tr);
+        return true;
       },
     };
   },

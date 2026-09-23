@@ -3,6 +3,7 @@ import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { AlignLeftOutlined, AlignCenterOutlined, AlignRightOutlined } from '@ant-design/icons';
 import { electronAPI, errText } from './electronAPI';
+import { insertBlockWithCaret } from './blockInsert';
 
 // `![alt](src "title")`：alt 支持 \] 转义，src 允许 <含空格的路径> 形式
 const IMAGE_MD_RE = /^!\[((?:\\.|[^\]\\])*)\]\(\s*(<[^>\n]*>|[^)\s]*)(?:\s+"((?:\\.|[^"\\])*)")?\s*\)/;
@@ -292,8 +293,19 @@ export const ImageEnhanced = Node.create({
 
   addCommands() {
     return {
-      setImage: (attrs: { src: string; alt?: string; align?: string; width?: string }) => ({ commands }: any) => {
-        return commands.insertContent({ type: this.name, attrs });
+      // 在同一个 tr 上插节点并把光标落到图片后面：走 commands.insertContent 的话插完图片是
+      // 选中态（实测 selAfterInsert=_NodeSelection），用户接着打的下一个字符会把刚插的图片顶掉。
+      setImage: (attrs: { src: string; alt?: string; align?: string; width?: string }) => ({ tr, dispatch, state }: any) => {
+        if (!dispatch) return true;
+        const payload = {
+          src: attrs?.src || '',
+          alt: attrs?.alt || '',
+          align: attrs?.align,
+          width: attrs?.width,
+        };
+        if (!insertBlockWithCaret(tr, state.schema, 'image', payload)) return false;
+        dispatch(tr);
+        return true;
       },
     } as any;
   },

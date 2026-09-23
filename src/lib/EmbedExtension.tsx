@@ -1,9 +1,9 @@
 import { Node, mergeAttributes, InputRule } from '@tiptap/core';
-import { TextSelection } from '@tiptap/pm/state';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useEffect } from 'react';
 import { FileTextOutlined, ReloadOutlined } from '@ant-design/icons';
 import { electronAPI, mustSucceed, errText } from './electronAPI';
+import { insertBlockWithCaret } from './blockInsert';
 import { extractTitle, stripFrontmatter } from './frontmatter';
 
 // 未指定 / 加载中 / 找不到 / 空内容 / 读取失败 / 有内容：这六种得能分开说，
@@ -11,36 +11,6 @@ import { extractTitle, stripFrontmatter } from './frontmatter';
 type EmbedState = 'no-id' | 'loading' | 'missing' | 'empty' | 'failed' | 'ready';
 
 const EMBED_PREVIEW_CHARS = 500;
-
-/**
- * 把光标放到离 nearPos 最近的那个嵌入块**之后**，并保证那里有地方能打字。
- * Why: 插入 atom 块之后光标会留在节点前面（实测节点占 7..8、光标停在 6），用户接着打的字
- * 全跑到上一段里，看起来就像刚插的嵌入块"跑到文字后面去了"。位置不能靠 range.from+1 猜
- * —— 块节点插入会把段落切开，节点起点比插入点多 1；所以直接扫 tr.doc 找节点的真实末尾。
- * 调用方必须在同一个 tr 上用 tr.insert 插节点：走 chain().insertContent() 的话它会另起
- * 一次 dispatch，这一步扫不到刚插入的节点（实测 end<0），改动就被丢掉了。
- */
-function placeCaretAfterEmbed(tr: any, nearPos: number) {
-  let end = -1;
-  let bestDist = Infinity;
-  tr.doc.forEach((n: any, offset: number) => {
-    if (n.type.name !== 'embed') return;
-    const dist = Math.abs(offset - nearPos);
-    if (dist < bestDist) {
-      bestDist = dist;
-      end = offset + n.nodeSize;
-    }
-  });
-  if (end < 0) return;
-  // 嵌入块后面什么都没有时（它正好是最后一块）补一个空段落，否则光标无处可去，
-  // near() 只会被拽回节点前面那段文字里，用户就没法在嵌入块之后继续写。
-  const after = tr.doc.resolve(end).nodeAfter;
-  // 段落类型只能从 doc 自己的 schema 上取：Transaction 上没有 .schema，写成
-  // tr.schema.nodes.paragraph 会在这里抛异常，整个 InputRule 被带崩（实测过）。
-  if (!after || !after.isTextblock) tr.insert(end, tr.doc.type.schema.nodes.paragraph.create());
-  // bias 1 = 往后找，正好落到节点后面那个段落开头
-  tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(end, tr.doc.content.size)), 1));
-}
 
 function EmbedComponent({ node }: any) {
   const [body, setBody] = useState('');
@@ -199,15 +169,9 @@ export const Embed = Node.create({
     return {
       // 斜杠命令走的是这条，和 InputRule 一样在同一个 tr 上插节点再挪光标。
       setEmbed: (attrs: { noteId: string }) => ({ state, tr, dispatch }: any) => {
-        const embed = state.schema.nodes.embed;
-        if (!embed) return false;
-        const at = state.selection.from;
-        if (dispatch) {
-          tr.insert(at, embed.create({ noteId: attrs?.noteId ?? '' }));
-          placeCaretAfterEmbed(tr, at);
-          tr.scrollIntoView();
-          dispatch(tr);
-        }
+        if (!dispatch) return true;
+        if (!insertBlockWithCaret(tr, state.schema, 'embed', { noteId: attrs?.noteId ?? '' })) return false;
+        dispatch(tr);
         return true;
       },
     } as any;
@@ -223,9 +187,7 @@ export const Embed = Node.create({
           // 得像 tiptap 自己的 nodeInputRule 那样先删掉命中的 ![[id]] 文本：InputRule 的
           // run() 只负责匹配，不会替 handler 删 range。
           tr.delete(range.from, range.to);
-          tr.insert(range.from, state.schema.nodes.embed.create({ noteId: match[1] }));
-          placeCaretAfterEmbed(tr, range.from);
-          tr.scrollIntoView();
+          insertBlockWithCaret(tr, state.schema, 'embed', { noteId: match[1] }, range.from);
         },
       }),
     ];
