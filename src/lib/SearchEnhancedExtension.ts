@@ -177,6 +177,17 @@ export const SearchEnhanced = Extension.create({
           apply(tr, prev) {
             const meta = tr.getMeta(searchKey);
             if (meta) return meta;
+            // 文档一变就按同一个查询词重算匹配。以前这里直接 return prev，坐标全是旧文档上的位置：
+            // 换一篇笔记后高亮还留在上一处的偏移上（实测切到 Welcome 仍亮着一块），打字之后也会整体错位。
+            if (tr.docChanged) {
+              if (!prev.query) return { ...prev, matches: [], currentMatch: -1 };
+              const matches = findMatches(tr.doc, prev.query, prev);
+              return {
+                ...prev,
+                matches,
+                currentMatch: matches.length ? Math.min(Math.max(prev.currentMatch, 0), matches.length - 1) : -1,
+              };
+            }
             return prev;
           },
         },
