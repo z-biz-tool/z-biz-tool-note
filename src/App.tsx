@@ -45,7 +45,7 @@ import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './l
 import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hooks/useAutoSave';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
-import { parseFrontmatter, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
+import { parseFrontmatter, setFrontmatterTags, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
 import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
@@ -1165,20 +1165,6 @@ const App = () => {
     }
   }, [refreshFileList, refreshKnowledgeIndex]);
 
-  // 根据文件类型路由渲染:markdown → tiptap 编辑器,其他 → 专用 viewer
-  // 编辑器 Frontmatter 解析（轻量、不引入 gray-matter）
-  const [frontmatterMeta, setFrontmatterMeta] = useState<Record<string, unknown>>({});
-  useEffect(() => {
-    if (currentNote?.fileType === 'markdown') {
-      const { data } = parseFrontmatter(currentNote.content);
-      setFrontmatterMeta(data);
-    }
-  }, [currentNote?.content, currentNote?.fileType]);
-
-  const fmElement = currentNote?.fileType === 'markdown' ? (
-    <FrontmatterMeta meta={frontmatterMeta} editable={false} />
-  ) : null;
-
   const renderFileContent = (note: Note, isSplit = false) => {
     const kind = note.fileType || 'markdown';
     const fp = note.filePath || '';
@@ -1189,6 +1175,18 @@ const App = () => {
     // 顶部的元数据卡片显示的还是同一份 frontmatter。
     const editableBody = stripFrontmatter(note.content);
     const writeBack = (body: string) => withFrontmatter(note.content, body);
+    // 元数据卡片读的是**这一格里那篇笔记**：早前它复用一份只跟 currentNote 走的 state，
+    // 分屏右窗顶着的其实是左边那篇的标签卡。
+    // 标签写回只换 `tags:` 那几行，正文一字节不动，所以编辑器不会因为改标签被重载（光标不丢）。
+    const fmElement = kind === 'markdown' ? (
+      <FrontmatterMeta
+        meta={parseFrontmatter(note.content).data}
+        editable
+        onTagsChange={(tags) => (isSplit ? handleSplitContentChange : handleContentChange)(
+          setFrontmatterTags(note.content, tags),
+        )}
+      />
+    ) : null;
 
     // markdown 走原 tiptap 编辑器(主/分屏参数不同)
     if (kind === 'markdown') {

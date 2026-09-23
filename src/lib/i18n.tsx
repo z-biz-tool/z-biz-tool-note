@@ -44,6 +44,12 @@ interface Translations {
     imageUrl: string;
     linkUrl: string;
   };
+  meta: {
+    aliases: string;
+    fields: string;
+    addTag: string;
+    removeTag: string;
+  };
   panel: {
     outline: string;
     backlinks: string;
@@ -127,6 +133,12 @@ const translations: Record<Language, Translations> = {
       imageUrl: 'Image URL:',
       linkUrl: 'Link URL:',
     },
+    meta: {
+      aliases: 'Aliases',
+      fields: 'fields',
+      addTag: 'Add tag',
+      removeTag: 'Remove tag {tag}',
+    },
     panel: {
       outline: 'Outline',
       backlinks: 'Backlinks',
@@ -207,6 +219,12 @@ const translations: Record<Language, Translations> = {
     prompt: {
       imageUrl: '图片地址：',
       linkUrl: '链接地址：',
+    },
+    meta: {
+      aliases: '别名',
+      fields: '个字段',
+      addTag: '加标签',
+      removeTag: '移除标签 {tag}',
     },
     panel: {
       outline: '大纲',

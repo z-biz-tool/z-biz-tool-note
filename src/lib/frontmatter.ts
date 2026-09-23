@@ -44,6 +44,61 @@ export function parseFrontmatter(raw: string): FrontmatterResult {
   };
 }
 
+/** 只用于标签这类受控字段的字符合法性（与 TagExtension 的 TAG_REGEX 同一套字符集） */
+export const sanitizeTag = (s: string) =>
+  s
+    .replace(/[^\w\u4e00-\u9fa5/-]/g, '')
+    .replace(/^[-/]+/, '')
+    .trim();
+
+/**
+ * 就地换掉 frontmatter 里的 `tags:` 那一段，其它行一个字不动。
+ *
+ * Why 不用 stringifyFrontmatter 整块重排：那套序列化写的是裸值
+ * （`title: 会议: 周会`、带 `#` 的日期说明都会被写坏成非法 YAML 或被 stripQuotes 吃掉），
+ * 而"改一个标签"不该顺手把别人的元数据全重排一遍。
+ *
+ * 认三种既有写法：块列表（`tags:` + `- x`，中间可以隔空行，与 parseYamlBlock 同口径）、
+ * 内联（`tags: [a, b]`）、标量（`tags: 阅读`）。原来没有 tags 这一项就在块尾追加。
+ */
+export function setFrontmatterTags(raw: string, tags: string[]): string {
+  const cleaned = Array.from(new Set(tags.map(sanitizeTag).filter(Boolean)));
+  const open = /^---\r?\n/.exec(raw);
+  const block = open ? FRONTMATTER_RE.exec(raw) : null;
+  const lines: string[] = cleaned.length ? ['tags:'] : ['tags: []'];
+  for (const t of cleaned) lines.push(`  - ${t}`);
+
+  if (!open || !block) {
+    // 没有 frontmatter：空标签集就不无中生有，有则补一块
+    if (!cleaned.length) return raw;
+    return `---\n${lines.join('\n')}\n---\n\n${raw}`;
+  }
+
+  const yamlStart = open[0].length;
+  const yaml = block[1];
+  const eol = yaml.includes('\r\n') ? '\r\n' : '\n';
+  const yamlLines = yaml.split(/\r?\n/);
+  const start = yamlLines.findIndex((l) => /^tags\s*:/.test(l));
+  let next: string[];
+  if (start < 0) {
+    next = [...yamlLines, ...lines];
+  } else {
+    // tags 的取值可能是紧跟的几行 - 条目（也允许中间隔空行），整段一起换掉
+    let end = start + 1;
+    let j = end;
+    while (j < yamlLines.length && !yamlLines[j].trim()) j++;
+    if (/^\s*-\s/.test(yamlLines[j] || '')) {
+      for (let k = j; k < yamlLines.length; k++) {
+        if (!yamlLines[k].trim()) continue;
+        if (!/^\s*-\s/.test(yamlLines[k])) break;
+        end = k + 1;
+      }
+    }
+    next = [...yamlLines.slice(0, start), ...lines, ...yamlLines.slice(end)];
+  }
+  return raw.slice(0, yamlStart) + next.join(eol) + raw.slice(yamlStart + yaml.length);
+}
+
 /** 行式 YAML 解析：仅支持 key: value、数组内联、数组多行三种形态 */
 function parseYamlBlock(yaml: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
