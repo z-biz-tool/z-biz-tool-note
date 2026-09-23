@@ -411,6 +411,17 @@ body {
   background-color: color-mix(in srgb, var(--accent-color) 10%, transparent);
 }
 /* 「最近打开」一行 = 打开按钮 + 右侧悬停才显形的移除按钮（两个兄弟 button） */
+.sidebar-recent-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 2px 4px 8px; font-size: 11px; color: var(--text-muted);
+}
+/* 清空是常驻按钮，不能复用 .sidebar-row-action（那类靠行悬停才现身） */
+.sidebar-recent-clear {
+  flex: none; border: none; border-radius: 6px; background: transparent;
+  color: var(--text-muted); font-size: 11px; padding: 2px 7px; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sidebar-recent-clear:hover { background: rgba(239, 68, 68, 0.14); color: #ef4444; }
 .sidebar-recent-row {
   display: flex; align-items: center; gap: 2px; margin: 2px;
 }

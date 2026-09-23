@@ -61,6 +61,11 @@ export function mutateRecentFiles(change: (entry: RecentEntry) => RecentEntry | 
   writeEntries(readEntries().map(change).filter((e): e is RecentEntry => e !== null));
 }
 
+/** 整列划走：只动这份列表，磁盘上的笔记一篇不碰（所以入口文案与确认框都得说清这点） */
+export function clearRecentFiles(): void {
+  writeEntries([]);
+}
+
 /**
  * 相对时间：列表里光有名字分不出"刚看过的"和"上周那篇"。
  * now 由调用方传进来（渲染层自己掐表），这里保持纯函数好测。

@@ -9,7 +9,7 @@ import { electronAPI, mustSucceed as must } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
 import { displayName, isMarkdownPath } from '../lib/fileTypes';
-import { formatRecentTime, listRecentFiles, mutateRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
+import { clearRecentFiles, formatRecentTime, listRecentFiles, mutateRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
 import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
@@ -116,6 +116,22 @@ export const Sidebar = ({
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, [activeTab]);
+
+  // 一条条 X 掉太慢：列表攒到 20 篇后想清掉得点 20 次。确认框里把"不删文件"写明白，
+  // 因为这批人正是怕误删笔记才不敢点清空。
+  const handleClearRecent = useCallback(async () => {
+    const count = listRecentFiles().length;
+    if (!count) return;
+    const ok = await confirmDialog({
+      title: '清空「最近打开」',
+      message: `${count} 条记录会从列表里划走，磁盘上的笔记一篇不碰。`,
+      confirmText: '清空',
+      danger: true,
+    });
+    if (!ok) return;
+    clearRecentFiles();
+    notify('已清空「最近打开」', 'success');
+  }, []);
   
   // 快速搜索：Cmd/Ctrl+K 切到搜索页并聚焦输入框
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -738,6 +754,15 @@ export const Sidebar = ({
             padding: 8,
           }}
         >
+          {recentFiles.length > 0 && (
+            <div className="sidebar-recent-head">
+              {/* 条数放这儿：光是"最近打开"看不出这堆是从哪儿攒来的、有多少条要清 */}
+              <span>最近打开 {recentFiles.length} 条</span>
+              <button className="sidebar-recent-clear" onClick={handleClearRecent} title="清空列表（不删除笔记文件）" aria-label="清空最近打开">
+                清空
+              </button>
+            </div>
+          )}
           {recentFiles.length === 0 ? (
             <div className="sidebar-empty">还没有最近打开的文件</div>
           ) : (
