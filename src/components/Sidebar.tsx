@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
-import { electronAPI } from '../lib/electronAPI';
+import { electronAPI, mustSucceed as must } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
 import { displayName, isMarkdownPath } from '../lib/fileTypes';
@@ -17,13 +17,6 @@ import { modKeys, MOD } from '../lib/modifier';
 // 渐变色主题常量
 const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
 const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
-
-// 桥层把 Rust 报错包成 {success:false,error} 而不是抛异常，这里还原成异常，
-// 好让调用点的 try/catch 仍能给出「重命名失败 / 删除失败」的提示。
-function must(r: any) {
-  if (r && r.success === false) throw new Error(r.error || '操作失败');
-  return r;
-}
 
 /** 递归树里挑出所有能当放置目标的目录，depth 用来在子菜单里缩进 */
 function collectDirs(nodes: FileItem[], depth: number, out: MoveTarget[] = []): MoveTarget[] {

@@ -52,6 +52,12 @@ import { parseFrontmatter, stripFrontmatter, withFrontmatter } from './lib/front
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
 
+/**
+ * 拼进 toast 的错误文案：抛出来的是 Error，直接 ${e} 会带上 "Error: " 前缀，
+ * 而这条是保存失败时用户唯一看得到的原因，得干净可读。
+ */
+const errText = (e: unknown): string => String((e as Error | null)?.message || e || '未知错误').slice(0, 60);
+
 const DEMO_CONTENT = `# 使用指南
 
 ZenNote 是本地 Markdown 笔记应用，思路来自 Typora / Obsidian / Notion：写下来就是最终样子，链接把笔记连成网，落到磁盘上的始终是普通 .md 文件，没有私有格式。
@@ -1312,11 +1318,13 @@ const App = () => {
         walStore.write(currentNote.filePath, currentNote.content);
         setMainSaveState('error');
         refreshWal();
-        showToast('保存失败，内容已暂存，可在顶部横幅恢复', 'error');
+        showToast(`保存失败（${errText(e)}），内容已暂存，可在顶部横幅恢复`, 'error');
         return;
       }
-      // 写入成功后再清理 WAL
+      // 写入成功后再清理 WAL（refreshWal：横幅读的是 state，不清的话它会一直挂着
+      // 一条已经落盘的"未写入"提示，点「恢复」还会把旧内容盖回编辑器）
       walStore.clear(currentNote.filePath);
+      refreshWal();
       setMainSaveState('saved');
       // 创建备份（版本历史）—— 节流：同文件 5 分钟内不重复备份
       if (shouldCreateBackup(currentNote.filePath)) {
@@ -1350,7 +1358,14 @@ const App = () => {
     const title = currentNote.title || '未命名';
     const result = await showSaveDialog(`~/Documents/${title}.md`);
     if (!result.canceled && result.filePath) {
-      await writeFile(result.filePath, currentNote.content);
+      try {
+        await writeFile(result.filePath, currentNote.content);
+      } catch (e) {
+        // 没写成就不改标签指向：否则一条不存在的文件被当成已保存（脏标记清掉后
+        // 关标签就全没了，WAL 又只在写失败那条路径里兜底）
+        showToast(`另存为失败（${errText(e)}），内容仍未保存`, 'error');
+        return;
+      }
       updateActiveTab({
         filePath: result.filePath,
         isDirty: false,
@@ -1408,10 +1423,11 @@ const App = () => {
       walStore.write(splitNote.filePath, splitNote.content);
       setSplitSaveState('error');
       refreshWal();
-      showToast('分屏保存失败，内容已暂存，可在顶部横幅恢复', 'error');
+      showToast(`分屏保存失败（${errText(e)}），内容已暂存，可在顶部横幅恢复`, 'error');
       return;
     }
     walStore.clear(splitNote.filePath);
+    refreshWal();
     setSplitSaveState('saved');
     // 分屏同样需要版本历史（之前漏掉，P0 缺陷）
     if (shouldCreateBackup(splitNote.filePath)) {

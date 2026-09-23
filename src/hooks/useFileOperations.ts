@@ -1,4 +1,4 @@
-import { electronAPI } from '../lib/electronAPI';
+import { electronAPI, mustSucceed } from '../lib/electronAPI';
 import { prepareMarkdownForWrite } from '../lib/markdownWrite';
 import type { Note } from '../types';
 
@@ -16,7 +16,11 @@ export const useFileOperations = () => {
   };
 
   const writeFile = async (filePath: string, content: string) => {
-    return electronAPI.invoke('write-file', filePath, prepareMarkdownForWrite(filePath, content));
+    const prepared = prepareMarkdownForWrite(filePath, content);
+    // mustSucceed：保存路径全靠 try/catch 决定"要不要清 WAL、要不要 toast 已保存"，
+    // 桥层把 Rust 报错咽成 {success:false} 的话，写盘失败会被当成保存成功（内容就此丢掉）
+    const result = await electronAPI.invoke('write-file', filePath, prepared);
+    return mustSucceed(result);
   };
 
   const showSaveDialog = async (defaultPath: string) => {

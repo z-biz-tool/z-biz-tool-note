@@ -11,6 +11,18 @@ import { extractTagsSmart, extractTitle } from './frontmatter';
 // 检测是否运行在 Tauri 环境
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+/**
+ * 桥层的错误约定：Rust 侧报错时返回 {success:false,error} 而不是抛异常，好让每个通道
+ * 都能给 UI 一个统一形状。代价是调用点的 try/catch 形同虚设 —— 需要区分"真写进去了"
+ * 和"没写进去"的地方（保存、改名、删除）必须先用这个函数把失败还原成异常，否则会走
+ * 成功分支：清掉 WAL、toast「已保存」，而盘上其实一个字都没写。
+ */
+export function mustSucceed<T>(result: T): T {
+  const r = result as unknown as { success?: boolean; error?: string } | null;
+  if (r && r.success === false) throw new Error(r.error || '操作失败');
+  return result;
+}
+
 // 对话框插件（懒加载，可能不可用）
 let _dialogLoaded = false;
 let dialogSave: ((opts: any) => Promise<string | string[] | null>) | null = null;
