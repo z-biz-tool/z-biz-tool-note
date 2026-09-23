@@ -299,6 +299,43 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/**
+ * 反向链接，逐条对齐 Rust find_backlinks：只在 Markdown 笔记里找 `[[标题]]` / `[[标题#锚点]]`，
+ * 一个文件最多出一条（Rust 侧靠 found 标志位），预览取命中行的前 100 个字符。
+ * 浏览器回退原先固定返回空数组，等于反链面板在演示区里永远是空的 —— 面板改没改对，
+ * 不开 Tauri 就根本无从验证，所以这里补齐同一条口径而不是继续糊一个 [] 。
+ */
+function demoBacklinks(dir: unknown, noteTitle: unknown, notePath: unknown) {
+  const title = String(noteTitle ?? '');
+  const self = String(notePath ?? '');
+  const root = String(dir ?? '');
+  const out: { noteId: string; title: string; preview: string }[] = [];
+  if (!title) return out;
+  for (const filePath of demoFs().files) {
+    if (!isMarkdownPath(filePath)) continue;
+    if (root && filePath !== root && !filePath.startsWith(`${root}/`)) continue;
+    if (filePath === self) continue;
+    const content = demoContentOf(filePath);
+    for (const line of content.split('\n')) {
+      const at = line.indexOf(`[[${title}`);
+      if (at < 0) continue;
+      const after = line.slice(at + 2);
+      const end = after.indexOf(']]');
+      if (end < 0) continue;
+      const link = after.slice(0, end);
+      if (link !== title && !link.startsWith(`${title}#`)) continue;
+      const chars = [...line];
+      out.push({
+        noteId: filePath,
+        title: extractTitle(content),
+        preview: chars.length > 100 ? `${chars.slice(0, 100).join('')}...` : line,
+      });
+      break;
+    }
+  }
+  return out;
+}
+
 // 将 Rust FileEntry 的 snake_case 字段（is_dir/is_file）归一化为前端 FileItem 的 camelCase 字段（isDirectory/isFile）。
 // 单层列目录时 children 为空数组，转为 undefined 以便 Sidebar 通过 !file.children 触发按需加载
 function normalizeFileEntry(entry: any): any {
@@ -452,7 +489,7 @@ export const electronAPI = {
         case 'read-all-notes':
           return { success: true, notes: demoNoteSummaries() };
         case 'find-backlinks':
-          return { success: true, backlinks: [] };
+          return { success: true, backlinks: demoBacklinks(args[0], args[1], args[2]) };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
         default:

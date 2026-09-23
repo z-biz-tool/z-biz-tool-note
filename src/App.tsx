@@ -1872,15 +1872,20 @@ const App = () => {
                 backlinks.map(b => (
                   <button
                     key={b.noteId}
-                    className="sidebar-file-item"
+                    className="backlink-item"
                     onClick={() => {
                       handleOpenFile(b.noteId);
                       setShowBacklinks(false);
                     }}
                     title={b.noteId}
                   >
-                    <FileText size={14} />
-                    <span>{b.title}</span>
+                    <div className="backlink-title">
+                      <FileText size={13} />
+                      <span>{b.title}</span>
+                    </div>
+                    {/* preview 是后端按命中行算出来的那一条，只留标题的话等于把结果丢掉：
+                        三篇笔记都能反链到 Welcome 时，光看标题根本分不出哪条是自己刚写的。 */}
+                    <div className="backlink-snippet">{b.preview}</div>
                   </button>
                 ))
               )}
