@@ -8,6 +8,7 @@ import { useFileOperations } from '../hooks/useFileOperations';
 import { electronAPI } from '../lib/electronAPI';
 import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
+import { displayName } from '../lib/fileTypes';
 import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
@@ -111,7 +112,12 @@ export const Sidebar = ({
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('recentFiles') || '[]');
-      if (Array.isArray(saved)) setRecentFiles(saved);
+      // 老数据里的 name 可能带 .md：按当前规则重算，别让同一篇笔记在两个列表里两种叫法
+      if (Array.isArray(saved)) {
+        setRecentFiles(saved
+          .filter((f: any) => f && typeof f.path === 'string')
+          .map((f: any) => ({ ...f, name: displayName(f.path) || f.name })));
+      }
     } catch {
       // 历史数据坏了就丢掉，不能让侧栏白屏
       localStorage.removeItem('recentFiles');
@@ -176,10 +182,12 @@ export const Sidebar = ({
     setLoading(false);
   };
 
-  const addRecentFile = useCallback((path: string, name: string) => {
+  // 显示名只有一种算法（fileTypes.displayName：笔记不带 .md，其它类型留扩展名）。
+  // 之前各列表各写一份 split/replace，结果是同一篇笔记在标签页叫「Welcome」、在「最近打开」叫「Welcome.md」。
+  const addRecentFile = useCallback((path: string) => {
     setRecentFiles(prev => {
       const filtered = prev.filter(f => f.path !== path);
-      const updated = [{ path, name, lastOpened: Date.now() }, ...filtered].slice(0, 20);
+      const updated = [{ path, name: displayName(path) || path, lastOpened: Date.now() }, ...filtered].slice(0, 20);
       localStorage.setItem('recentFiles', JSON.stringify(updated));
       return updated;
     });
@@ -222,17 +230,17 @@ export const Sidebar = ({
     } else if (file.isFile) {
       // 任意文件类型都走 App 的统一打开逻辑(按 fileTypes 路由分发)
       if (onOpenFile) {
-        addRecentFile(file.path, file.name);
+        addRecentFile(file.path);
         onOpenFile(file.path);
       } else {
         // 回退:仅处理 .md
         if (file.name.endsWith('.md') || file.name.endsWith('.markdown')) {
           const result = await readFile(file.path);
           if (result.success && result.content !== undefined) {
-            addRecentFile(file.path, file.name.replace(/\.md$|\.markdown$/, ''));
+            addRecentFile(file.path);
             onSelectNote({
               id: file.path,
-              title: file.name.replace(/\.md$|\.markdown$/, ''),
+              title: displayName(file.path),
               content: result.content,
               filePath: file.path,
               lastModified: new Date().toISOString(),
@@ -373,9 +381,10 @@ export const Sidebar = ({
     const oldPrefix = oldPath + '/';
     const newPrefix = newPath + '/';
     mutateRecent(f => {
-      if (f.path === oldPath) return { ...f, path: newPath, name: newName };
+      if (f.path === oldPath) return { ...f, path: newPath, name: displayName(newPath) || newName };
       if (isDirectory && f.path.startsWith(oldPrefix)) {
-        return { ...f, path: newPrefix + f.path.slice(oldPrefix.length) };
+        const path = newPrefix + f.path.slice(oldPrefix.length);
+        return { ...f, path, name: displayName(path) || path };
       }
       return f;
     });
@@ -525,10 +534,10 @@ export const Sidebar = ({
   const handleRecentClick = async (file: RecentFile) => {
     const result = await readFile(file.path);
     if (result.success && result.content !== undefined) {
-      addRecentFile(file.path, file.name);
+      addRecentFile(file.path);
       onSelectNote({
         id: file.path,
-        title: file.name,
+        title: displayName(file.path),
         content: result.content,
         filePath: file.path,
         lastModified: new Date().toISOString(),
@@ -583,7 +592,7 @@ export const Sidebar = ({
           if (seq !== searchSeqRef.current) return;
           setSearchResults(indexed.map(m => ({
             filePath: m.file_path,
-            fileName: m.file_path.split('/').pop() || m.file_path,
+            fileName: displayName(m.file_path) || m.file_path,
             // snippet 内已含 <mark> 高亮；前端直接渲染（注意 XSS 用 dangerouslySetInnerHTML）
             snippet: m.snippet,
             line: m.line,
@@ -598,7 +607,7 @@ export const Sidebar = ({
         if (result.success && result.matches) {
           setSearchResults(result.matches.map((m: any) => ({
             filePath: m.filePath,
-            fileName: m.filePath.split('/').pop() || m.filePath,
+            fileName: displayName(m.filePath) || m.filePath,
             snippet: m.preview || '',
             line: m.line || 0,
           })));
@@ -652,7 +661,7 @@ export const Sidebar = ({
             onDragOver={(e) => e.stopPropagation()}
           >
             <FileText size={14} />
-            <span>{file.name.replace(/\.md$|\.markdown$/, '')}</span>
+            <span>{displayName(file.path)}</span>
           </button>
         )}
       </div>
@@ -887,10 +896,10 @@ export const Sidebar = ({
                   onClick={async () => {
                     const res = await readFile(result.filePath);
                     if (res.success && res.content !== undefined) {
-                      addRecentFile(result.filePath, result.fileName);
+                      addRecentFile(result.filePath);
                       onSelectNote({
                         id: result.filePath,
-                        title: result.fileName,
+                        title: displayName(result.filePath),
                         content: res.content,
                         filePath: result.filePath,
                         lastModified: new Date().toISOString(),

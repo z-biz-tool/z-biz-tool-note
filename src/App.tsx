@@ -16,7 +16,7 @@ import { DocxViewer } from './components/Viewers/DocxViewer';
 import { XlsxViewer } from './components/Viewers/XlsxViewer';
 import { BinaryViewer } from './components/Viewers/BinaryViewer';
 import type { FileKind } from './lib/fileTypes';
-import { isMarkdownPath } from './lib/fileTypes';
+import { isMarkdownPath, displayName } from './lib/fileTypes';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { StatusBar } from './components/StatusBar';
@@ -528,9 +528,9 @@ const App = () => {
       if (p === oldPath) return newPath;
       return isDirectory && p.startsWith(`${oldPath}/`) ? newPath + p.slice(oldPath.length) : p;
     };
-    // 标签标题按 file.name 原样带扩展名（Sidebar 开标签就是这样），改名后同理，
-    // 不能再剥掉 .md，否则同一个标签会和其余标签长得不一样
-    const titleOf = (p: string, fallback: string) => p.split('/').pop() || fallback;
+    // 标签标题与文件树、双链目标同一套形态：笔记不带 .md/.markdown，其它类型留扩展名
+    // （fileTypes.displayName 定的规则，改名/移动后要按同样的规则重算，不能各写一份）
+    const titleOf = (p: string, fallback: string) => displayName(p) || fallback;
     setOpenTabs(prev => prev.map(tab => {
       const filePath = reroot(tab.filePath);
       if (!filePath || filePath === tab.filePath) return tab;
@@ -996,9 +996,9 @@ const App = () => {
     setIsLoading(true);
     try {
       // 通用打开:按文件类型路由,生成对应 Note
-      const { kindOf, baseName, mimeOf, isEditable } = await import('./lib/fileTypes');
+      const { kindOf, mimeOf, isEditable } = await import('./lib/fileTypes');
       const kind = kindOf(filePath);
-      const title = baseName(filePath);
+      const title = displayName(filePath);
       const mime = mimeOf(filePath);
 
       // 拿文件元信息
@@ -1227,12 +1227,12 @@ const App = () => {
         t.id === entry.filePath ? { ...t, content: entry.content, isDirty: true } : t
       ));
     } else {
-      const { kindOf, baseName, isEditable } = await import('./lib/fileTypes');
+      const { kindOf, isEditable } = await import('./lib/fileTypes');
       const kind = kindOf(entry.filePath);
       openNote({
         id: entry.filePath,
         filePath: entry.filePath,
-        title: baseName(entry.filePath),
+        title: displayName(entry.filePath),
         content: entry.content,
         fileType: kind,
         isReadonly: !isEditable(kind),
@@ -1318,7 +1318,7 @@ const App = () => {
       updateActiveTab({
         filePath: result.filePath,
         isDirty: false,
-        title: result.filePath.split('/').pop()?.replace(/\.md$/, '') || title,
+        title: displayName(result.filePath) || title,
       });
       // 保存后记录文件修改时间（用于外部修改检测）
       try {
@@ -1565,7 +1565,7 @@ const App = () => {
         .flatMap(t => t.notes)
     )).map(p => ({
       path: p,
-      name: p.split('/').pop()?.replace(/\.md$|\.markdown$/, '') || p,
+      name: displayName(p) || p,
       lastModified: Date.now(),
     }));
   }, [activeTag, tags, allFiles]);

@@ -82,6 +82,17 @@ export function baseName(filename: string): string {
   return slash >= 0 ? filename.substring(slash + 1) : filename;
 }
 
+/**
+ * 标签/列表里显示的名字。
+ * 笔记统一去掉 .md/.markdown —— 文件树、最近列表、双链目标都是无扩展名的形态，
+ * 标签留着扩展名会让同一个文件有两种叫法，[[Getting Started]] 也匹配不到已打开的标签。
+ * 其它类型（图片/代码/表格）保留扩展名，因为那正是"点开会用什么查看器"的线索。
+ */
+export function displayName(filePath: string): string {
+  const name = baseName(filePath);
+  return isMarkdownPath(name) ? name.replace(/\.md$|\.markdown$/i, '') : name;
+}
+
 export function kindOf(filename: string): FileKind {
   const ext = extOf(filename);
   return EXT_MAP[ext] ?? 'binary';

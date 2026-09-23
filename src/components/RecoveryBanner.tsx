@@ -1,5 +1,6 @@
 import { TriangleAlert, X } from 'lucide-react';
 import type { WalEntry } from '../hooks/useAutoSave';
+import { displayName } from '../lib/fileTypes';
 
 interface RecoveryBannerProps {
   entries: WalEntry[];
@@ -9,7 +10,8 @@ interface RecoveryBannerProps {
   onDiscardAll: () => void;
 }
 
-const nameOf = (filePath: string) => filePath.split('/').pop() || filePath;
+// 恢复之后标签就叫这个名，所以沿用同一套显示名规则
+const nameOf = (filePath: string) => displayName(filePath) || filePath;
 
 const formatAgo = (ts: number): string => {
   const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
