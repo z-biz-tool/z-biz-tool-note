@@ -100,7 +100,10 @@ export const TabsBar = React.memo(({
   // 右键菜单处理
   const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+    // 键盘唤起的 contextmenu 坐标是 0,0，直接钉在屏幕上会把菜单甩到左上角；落到当前标签下方
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const keyboard = !e.clientX && !e.clientY;
+    setContextMenu({ x: keyboard ? rect.left : e.clientX, y: keyboard ? rect.bottom : e.clientY, tabId });
   };
 
   // 点击外部关闭右键菜单

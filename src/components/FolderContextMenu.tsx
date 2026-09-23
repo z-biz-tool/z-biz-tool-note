@@ -105,13 +105,15 @@ export const FolderContextMenu = ({
       style={{ left: pos.left, top: pos.top }}
       onClick={handleClickOutside}
     >
-      {items.map(item => (
+      {items.map((item, index) => (
         <React.Fragment key={item.key}>
           {item.dividerBefore && <div className="context-menu-divider" role="separator" />}
           <button
             className={`context-menu-item${item.danger ? ' danger' : ''}`}
             role="menuitem"
             tabIndex={0}
+            // 焦点进到菜单里，键盘用户才能直接 Enter/方向键操作；否则还得把整棵文件树 Tab 一遍
+            autoFocus={index === 0}
             aria-haspopup={item.hasSubmenu || undefined}
             aria-expanded={item.hasSubmenu ? moveOpen : undefined}
             onClick={(e) => {

@@ -251,8 +251,14 @@ export const Sidebar = ({
     // 每次右键都是一次新的提问：作废上一次子菜单的候选和仍在飞的列目录结果
     moveSeqRef.current++;
     setMoveTargets(null);
-    // 用视口坐标而不是容器坐标：菜单是 position: fixed，按容器算会整体偏掉工具栏那段高度
-    setContextMenu({ x: e.clientX, y: e.clientY, type, item: file || undefined });
+    // 用视口坐标而不是容器坐标：菜单是 position: fixed，按容器算会整体偏掉工具栏那段高度。
+    // 键盘（Mac 上 Fn+Control+Space / Shift+F10）触发的事件 clientX/Y 都是 0，
+    // 那样菜单会飞到窗口左上角，改成钉在当前行的左下角。
+    const keyboard = !e.clientX && !e.clientY;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = keyboard ? rect.left : e.clientX;
+    const y = keyboard ? rect.bottom : e.clientY;
+    setContextMenu({ x, y, type, item: file || undefined });
   };
 
   // 路径工具函数（替代 Node.js path 模块）
