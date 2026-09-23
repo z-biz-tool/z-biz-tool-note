@@ -64,16 +64,27 @@ function parseYamlBlock(yaml: string): Record<string, unknown> {
     const key = line.slice(0, colonIdx).trim();
     const valuePart = line.slice(colonIdx + 1).trim();
 
-    // 数组多行：`tags:` 下一行是 `  - xxx`
-    if (valuePart === '' && i + 1 < lines.length && /^\s*-\s/.test(lines[i + 1])) {
-      const arr: string[] = [];
-      i++;
-      while (i < lines.length && /^\s*-\s/.test(lines[i])) {
-        arr.push(lines[i].replace(/^\s*-\s*/, '').trim());
-        i++;
+    // 数组多行：`tags:` 后面（可以隔着空行）是 `- xxx`
+    //
+    // 必须容得下空行：所见即所得把这篇笔记存一次，YAML 会被重新序列化成
+    // `tags:` + 空行 + `- reading`（合法 YAML），按"下一行必须是条目"判就会把
+    // 整个列表读没，编辑一次标签就全丢。
+    if (valuePart === '') {
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length && /^\s*-\s/.test(lines[j])) {
+        const arr: string[] = [];
+        let lastItem = j;
+        for (let k = j; k < lines.length; k++) {
+          if (!lines[k].trim()) continue;
+          if (!/^\s*-\s/.test(lines[k])) break;
+          arr.push(lines[k].replace(/^\s*-\s*/, '').trim());
+          lastItem = k;
+        }
+        result[key] = arr;
+        i = lastItem + 1;
+        continue;
       }
-      result[key] = arr;
-      continue;
     }
 
     // 数组内联：`tags: [a, b, c]`
