@@ -729,7 +729,10 @@ body {
 .emoji-picker-search { width: 100%; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 5px 8px; font-size: 13px; background: var(--bg-primary); color: var(--text-primary); outline: none; }
 .emoji-picker-grid { flex: 1; overflow-y: auto; padding: 8px; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .emoji-picker-item { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: transparent; cursor: pointer; border-radius: var(--radius-sm); font-size: 20px; }
-.emoji-picker-item:hover { background: var(--bg-tertiary); }
+.emoji-picker-item:hover,
+/* 键盘当前格要和悬停一个观感，再加一圈描边，否则方向键停在哪看不出来 */
+.emoji-picker-item.selected { background: var(--bg-tertiary); box-shadow: inset 0 0 0 1px var(--accent-color); }
+.emoji-picker-empty { grid-column: 1 / -1; padding: 16px 8px; font-size: 13px; color: var(--text-muted); text-align: center; }
 
 /* ===== Title Input ===== */
 .title-input {

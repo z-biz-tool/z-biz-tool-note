@@ -210,8 +210,10 @@ interface EmojiPickerProps {
 
 export const EmojiPicker = ({ onSelect, onClose }: EmojiPickerProps) => {
   const [search, setSearch] = useState('');
+  const [cursor, setCursor] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     searchInputRef.current?.focus();
@@ -232,10 +234,45 @@ export const EmojiPicker = ({ onSelect, onClose }: EmojiPickerProps) => {
     ? allEmojis.filter((e) => e.name.includes(search.toLowerCase()))
     : allEmojis;
 
+  // 换了搜索词就把"当前格"退回左上角，否则光标会停在一个已经不存在的下标上
+  useEffect(() => {
+    setCursor(0);
+  }, [search]);
+
+  useEffect(() => {
+    gridRef.current?.querySelector('[data-cursor="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [cursor]);
+
+  const columnsOf = () => {
+    const grid = gridRef.current;
+    if (!grid) return 8;
+    const n = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+    return n > 0 ? n : 8;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
+      return;
+    }
+    // 网格方向键：左右走一格、上下走一列，Enter 选当前格（原来只有鼠标）
+    const cols = columnsOf();
+    const last = filtered.length - 1;
+    if (last < 0) return;
+    const step: Record<string, number> = {
+      ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols,
+    };
+    if (e.key in step) {
+      e.preventDefault();
+      setCursor((i) => Math.min(Math.max(i + step[e.key], 0), last));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = filtered[Math.min(cursor, last)];
+      if (pick) {
+        onSelect(pick.char);
+        onClose();
+      }
     }
   };
 
@@ -252,20 +289,31 @@ export const EmojiPicker = ({ onSelect, onClose }: EmojiPickerProps) => {
           onKeyDown={handleKeyDown}
         />
       </div>
-      <div className="emoji-picker-grid">
-        {filtered.map((emoji, i) => (
-          <button
-            key={`${emoji.char}-${i}`}
-            className="emoji-picker-item"
-            onClick={() => {
-              onSelect(emoji.char);
-              onClose();
-            }}
-            title={emoji.name}
-          >
-            {emoji.char}
-          </button>
-        ))}
+      <div className="emoji-picker-grid" ref={gridRef} role="listbox" aria-label="表情">
+        {filtered.map((emoji, i) => {
+          const on = i === cursor;
+          return (
+            <button
+              key={`${emoji.char}-${i}`}
+              role="option"
+              aria-selected={on}
+              data-cursor={on ? 'true' : undefined}
+              className={`emoji-picker-item${on ? ' selected' : ''}`}
+              onClick={() => {
+                onSelect(emoji.char);
+                onClose();
+              }}
+              onMouseEnter={() => setCursor(i)}
+              title={emoji.name}
+              aria-label={emoji.name}
+            >
+              {emoji.char}
+            </button>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="emoji-picker-empty">没有匹配「{search}」的表情</div>
+        )}
       </div>
     </div>
   );
