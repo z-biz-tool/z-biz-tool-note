@@ -14,20 +14,29 @@ interface SearchState {
   currentMatch: number;
 }
 
+// 全词匹配的"词"：中日韩韩文和字母数字下划线连字符都算词内字符
+const WORD_CHARS = 'A-Za-z0-9_\\u4e00-\\u9fa5\\u3040-\\u30ff\\uff66-\\uff9d-';
+
 function findMatches(doc: any, query: string, options: { caseSensitive: boolean; wholeWord: boolean; regex: boolean }): { from: number; to: number }[] {
   if (!query) return [];
   const matches: { from: number; to: number }[] = [];
   let searchRegex: RegExp;
+  // 全词时真正的命中在第一个捕获组里（前后各吃一个"非词字符"），要用它算位置
+  let wordMatch = false;
 
   try {
+    const flags = options.caseSensitive ? 'g' : 'gi';
     if (options.regex) {
-      const flags = options.caseSensitive ? 'g' : 'gi';
       searchRegex = new RegExp(query, flags);
+    } else if (options.wholeWord) {
+      // `\b` 对中文不存在边界：`\b粗体\b` 在「这段 粗体 文字」里实测一个都匹配不上（0/0），
+      // 而这是这个 app 最常搜的东西。改成手写的前后"非词字符"边界。
+      wordMatch = true;
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      searchRegex = new RegExp(`(?:^|[^${WORD_CHARS}])((${escaped}))(?:$|[^${WORD_CHARS}])`, flags);
     } else {
       const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = options.wholeWord ? `\\b${escaped}\\b` : escaped;
-      const flags = options.caseSensitive ? 'g' : 'gi';
-      searchRegex = new RegExp(pattern, flags);
+      searchRegex = new RegExp(escaped, flags);
     }
   } catch {
     return [];
@@ -38,12 +47,17 @@ function findMatches(doc: any, query: string, options: { caseSensitive: boolean;
     const text = node.text || '';
     let match;
     while ((match = searchRegex.exec(text)) !== null) {
+      const hit = wordMatch ? (match[1] || '') : match[0];
       // 防止零长度匹配导致无限循环
-      if (match[0].length === 0) {
+      if (hit.length === 0) {
         searchRegex.lastIndex++;
         continue;
       }
-      matches.push({ from: pos + match.index, to: pos + match.index + match[0].length });
+      const at = match.index + (wordMatch ? match[0].indexOf(hit) : 0);
+      matches.push({ from: pos + at, to: pos + at + hit.length });
+      // 全词时上一处吃掉的"边界字符"可能正是下一处的左边界（「粗体 粗体」中间只有一个空格），
+      // 所以从命中起点后一格继续扫，而不是从整段匹配末尾
+      if (wordMatch) searchRegex.lastIndex = at + 1;
     }
   });
 
