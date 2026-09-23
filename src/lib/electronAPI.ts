@@ -222,8 +222,15 @@ export const electronAPI = {
     if (!isTauri) {
       // 浏览器回退
       switch (channel) {
-        case 'read-file':
-          return { success: true, content: demoContentOf(String(args[0])), filePath: args[0] };
+        case 'read-file': {
+          // 回退层也得有"文件不存在"这条失败：真实后端会报错，而这里原先对任何路径都返回正文
+          // （读不到就是空串），于是列表里一条被外部删掉的笔记会凭空开出一篇空白笔记。
+          const path = String(args[0]);
+          if (!demoFs().files.includes(path)) {
+            return { success: false, error: '文件不存在（浏览器演示区）', filePath: path };
+          }
+          return { success: true, content: demoContentOf(path), filePath: path };
+        }
         case 'read-file-binary':
           return { success: false, error: '浏览器模式不可用' };
         case 'get-file-meta':

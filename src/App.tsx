@@ -1016,6 +1016,9 @@ const App = () => {
       return;
     }
     setIsLoading(true);
+    // 读不到文件只默默 return 的话：转圈停了、界面回到原样、一句提示都没有，
+    // 从「最近打开」/图谱/双链点进来时看着就跟"鼠标没点上"一样，用户只会再点一次。
+    const fail = (reason: string) => showToast(`无法打开 ${displayName(filePath)}：${reason}`, 'error');
     try {
       // 通用打开:按文件类型路由,生成对应 Note
       const { kindOf, mimeOf, isEditable } = await import('./lib/fileTypes');
@@ -1040,7 +1043,8 @@ const App = () => {
         if (result.success && result.content !== undefined) {
           content = result.content;
         } else {
-          return; // 读失败
+          fail(result.error || '文件读取失败');
+          return;
         }
       } else {
         // 二进制:读 base64 + 拼 dataUrl
@@ -1048,6 +1052,7 @@ const App = () => {
         if (result.success && result.base64) {
           dataUrl = `data:${mime};base64,${result.base64}`;
         } else {
+          fail(result.error || '文件读取失败');
           return;
         }
       }
@@ -1068,10 +1073,14 @@ const App = () => {
       });
 
       if (mtime) setLastSaved(mtime);
+    } catch (e: any) {
+      // invoke 在 Rust 侧返回 Err 时是 reject（路径越权、无读权限都走这里），
+      // 不接住就是一条 unhandled rejection，用户那边依旧"点了没反应"
+      fail(e?.message || String(e));
     } finally {
       setIsLoading(false);
     }
-  }, [readFile, readFileBinary, getFileMeta, openNote]);
+  }, [readFile, readFileBinary, getFileMeta, openNote, showToast]);
 
   // 编辑器里 Cmd+点击 [[链接]] → 按标题/文件名解析并打开（主窗格与分屏共用同一份逻辑）
   const handleWikiLinkNavigate = useCallback((href: string) => {
