@@ -536,16 +536,27 @@ pub fn save_image(note_id: String, data: String) -> Result<String, String> {
         fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {}", e))?;
     }
     // data格式: data:image/png;base64,xxxxx
-    let (mime, b64) = if let Some(rest) = data.strip_prefix("data:") {
-        let parts: Vec<&str> = rest.splitn(2, ',').collect();
-        if parts.len() != 2 {
-            return Err("无效的base64数据".to_string());
-        }
-        (parts[0].to_string(), parts[1].to_string())
-    } else {
+    // data URI 拆分 + base64 解码走能力层 cap-img；mime→ext 留在本仓，
+    // 因为这里有 svg 特例和"认不出一律 png"的兜底，是本产品的命名规则。
+    if !data.starts_with("data:") {
         return Err("只支持data URI格式".to_string());
-    };
-    let ext = if mime.contains("png") {
+    }
+    let parsed = cap_img::decode_data_url(&data).ok_or("无效的base64数据")?;
+    let ext = ext_for_save(&parsed.mime);
+    // note_id 必须经 sanitize_filename 清洗，避免 `../../tmp/evil` 注入
+    let safe_id = sanitize_filename(&note_id);
+    if safe_id.is_empty() {
+        return Err("无效的 note_id".to_string());
+    }
+    let filename = format!("{}-{}.{}", safe_id, &Uuid::new_v4().to_string()[..8], ext);
+    let path = images_dir.join(&filename);
+    atomic_write(&path, &parsed.bytes).map_err(|e| format!("写入图片失败: {}", e))?;
+    Ok(format!("images/{}", filename))
+}
+
+/// mime → 存盘扩展名：本产品的命名规则（svg 单列，认不出回退 png）
+fn ext_for_save(mime: &str) -> &'static str {
+    if mime.contains("png") {
         "png"
     } else if mime.contains("jpeg") || mime.contains("jpg") {
         "jpg"
@@ -557,17 +568,7 @@ pub fn save_image(note_id: String, data: String) -> Result<String, String> {
         "svg"
     } else {
         "png"
-    };
-    // note_id 必须经 sanitize_filename 清洗，避免 `../../tmp/evil` 注入
-    let safe_id = sanitize_filename(&note_id);
-    if safe_id.is_empty() {
-        return Err("无效的 note_id".to_string());
     }
-    let filename = format!("{}-{}.{}", safe_id, &Uuid::new_v4().to_string()[..8], ext);
-    let path = images_dir.join(&filename);
-    let bytes = base64_decode(&b64)?;
-    atomic_write(&path, &bytes).map_err(|e| format!("写入图片失败: {}", e))?;
-    Ok(format!("images/{}", filename))
 }
 
 /// 读取图片文件，返回base64 data URI
@@ -582,6 +583,7 @@ pub fn read_image(path: String) -> Result<String, String> {
     }
     let bytes = fs::read(&full_path).map_err(|e| format!("读取图片失败: {}", e))?;
     let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    // ext→mime 同样是本产品的映射（svg → image/svg+xml 是 cap-img 没有的特例）
     let mime = match ext {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
@@ -590,42 +592,7 @@ pub fn read_image(path: String) -> Result<String, String> {
         "svg" => "image/svg+xml",
         _ => "image/png",
     };
-    let b64 = base64_encode(&bytes);
-    Ok(format!("data:{};base64,{}", mime, b64))
-}
-
-fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let input = input.trim_end_matches('=');
-    let mut result = Vec::with_capacity(input.len() * 3 / 4);
-    let buf: Vec<u8> = input.bytes().filter_map(|b| CHARS.iter().position(|&c| c == b).map(|i| i as u8)).collect();
-    for chunk in buf.chunks(4) {
-        let b0 = chunk.first().copied().unwrap_or(0);
-        let b1 = chunk.get(1).copied().unwrap_or(0);
-        let b2 = chunk.get(2).copied().unwrap_or(0);
-        let b3 = chunk.get(3).copied().unwrap_or(0);
-        let triple = ((b0 as u32) << 18) | ((b1 as u32) << 12) | ((b2 as u32) << 6) | (b3 as u32);
-        result.push(((triple >> 16) & 0xFF) as u8);
-        if chunk.len() > 2 { result.push(((triple >> 8) & 0xFF) as u8); }
-        if chunk.len() > 3 { result.push((triple & 0xFF) as u8); }
-    }
-    Ok(result)
-}
-
-fn base64_encode(input: &[u8]) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity(input.len() * 4 / 3 + 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = chunk.get(1).copied().unwrap_or(0);
-        let b2 = chunk.get(2).copied().unwrap_or(0);
-        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
-        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        result.push(if chunk.len() > 1 { CHARS[((triple >> 6) & 0x3F) as usize] as char } else { '=' });
-        result.push(if chunk.len() > 2 { CHARS[(triple & 0x3F) as usize] as char } else { '=' });
-    }
-    result
+    Ok(cap_img::encode_data_url(&bytes, mime))
 }
 
 /// 确保目录存在（路径校验防越界创建）
