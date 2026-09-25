@@ -3,6 +3,7 @@ name = "z-biz-tool-note"
 version = "0.2.0"
 description = "美观的Markdown笔记应用"
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "z_biz_tool_note_lib"
