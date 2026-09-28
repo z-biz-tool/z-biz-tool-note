@@ -106,6 +106,113 @@ Some content here.
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// 中文召回闸门：搜索词落在汉字串中间时也必须命中。
+/// 旧实现把 `笔记*` 直接打在 unicode61 的整块汉字 token 上，实测恒 0 命中
+/// （sqlite3：'我的笔记内容很重要' MATCH '笔记*' → 0 行），这条测试就是为了钉死它。
+#[test]
+fn index_recalls_chinese_inside_a_word() {
+    let dir = tempdir();
+    let store = IndexStore::open_in(&dir).expect("隔离索引库应能打开");
+
+    store
+        .upsert_note(
+            "/tmp/cjk-note.md",
+            "周记",
+            "# 周记\n\n今天把会议笔记写在这里，细节很多。\n",
+            1,
+            10,
+            "",
+            "",
+        )
+        .expect("upsert");
+
+    let hits = store.search("笔记", 10).expect("search");
+    assert_eq!(hits.len(), 1, "汉字串中间的「笔记」必须命中一条");
+    assert!(
+        hits[0].snippet.contains("<mark>笔记</mark>"),
+        "snippet 应高亮命中的汉字词，实际: {}",
+        hits[0].snippet
+    );
+    let visible = hits[0].snippet.replace("<mark>", "").replace("</mark>", "");
+    assert!(
+        visible.contains("会议笔记"),
+        "展示层必须撤掉切分空格，实际: {}",
+        hits[0].snippet
+    );
+
+    // 两个汉字词是 AND：缺一个就不该出结果
+    store
+        .upsert_note("/tmp/cjk-note-2.md", "读书", "读书笔记：另一篇也含这个词\n", 1, 10, "", "")
+        .expect("upsert");
+    assert_eq!(store.search("笔记", 10).expect("search").len(), 2);
+    assert_eq!(store.search("笔记 摘要", 10).expect("search").len(), 0);
+
+    // 拉丁前缀匹配不受影响
+    store
+        .upsert_note("/tmp/latin.md", "Title", "the quick brown fox", 1, 10, "", "")
+        .expect("upsert");
+    let latin = store.search("quic", 10).expect("search");
+    assert_eq!(latin.len(), 1);
+    assert!(latin[0].snippet.contains("<mark>quick</mark>"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// schema 版本不匹配时旧库必须被丢弃重建，而不是带着缺列的表继续跑
+#[test]
+fn index_rebuilds_after_schema_version_change() {
+    let dir = tempdir();
+    {
+        let store = IndexStore::open_in(&dir).expect("初次打开");
+        store
+            .upsert_note("/tmp/a.md", "A", "alpha 笔记", 1, 5, "", "")
+            .expect("upsert");
+    }
+    // 同一个文件再次打开：schema 已一致，数据仍在
+    let store = IndexStore::open_in(&dir).expect("二次打开");
+    assert_eq!(store.list_paths().expect("list").len(), 1);
+    assert_eq!(store.search("笔记", 10).expect("search").len(), 1);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// 纯汉字正文（没有一个空格、没有拉丁）也要能召回。
+/// unicode61 会把整串汉字切成一个 token，旧实现里这种笔记除了首字前缀永远搜不到；
+/// 而"搜不到就退化成 LIKE 全表扫"又会把不存在的词也返回来，所以正反两向都要断言。
+#[test]
+fn 中文正文检索既能命中也不会误召回() {
+    let dir = tempdir();
+    {
+        let store = IndexStore::open_in(&dir).expect("打开索引");
+        store
+            .upsert_note(
+                "/tmp/cjk.md",
+                "会议记录",
+                "今天下午讨论了检索排序与切片策略，结论是先做倒排再补缓存。",
+                1,
+                30,
+                "",
+                "",
+            )
+            .expect("upsert");
+    }
+    let store = IndexStore::open_in(&dir).expect("二次打开");
+
+    let hits = store.search("切片", 10).expect("search");
+    assert_eq!(hits.len(), 1, "正文中段的汉字词组应当命中");
+    assert_eq!(hits[0].file_path, "/tmp/cjk.md");
+    let snip = &hits[0].snippet;
+    assert!(snip.contains("<mark>"), "高亮要落到中文片段上: {}", snip);
+    assert!(
+        !snip.contains("切 片") && !snip.contains("片，"),
+        "逐字切分的空格应当被还原: {}",
+        snip
+    );
+
+    assert!(store.search("证书", 10).expect("search").is_empty(), "不存在的词不能返回");
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// 原子写 + 备份 + 恢复 全链路
 #[test]
 fn end_to_end_backup_restore() {
@@ -315,8 +422,7 @@ fn validate_nonexistent_path() {
 /// ensure_dir 路径校验：未存在路径也能被阻止
 #[test]
 fn ensure_dir_blocks_sensitive() {
-    use crate::commands::ensure_dir;
-    let result = ensure_dir("/etc/zennote-test".to_string());
+    let result = crate::commands::ensure_dir_at("/etc/zennote-test");
     assert!(result.is_err(), "应拒绝在 /etc 下创建目录");
 }
 

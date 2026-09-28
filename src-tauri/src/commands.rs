@@ -335,7 +335,7 @@ fn note_path_in(dir: &Path, id: &str) -> Option<PathBuf> {
 /// 返回 `Option` 而不是 `unwrap_or_default()` 吞成空串：那样"库里没这篇"和"这篇是空的"
 /// 长得一样，嵌入块只能画一片空白，用户不知道是写错了 id 还是笔记真没内容。
 #[tauri::command]
-pub fn read_note(id: String) -> Option<String> {
+pub async fn read_note(id: String) -> Option<String> {
     read_note_in(&notes_dir(), &id)
 }
 
@@ -530,7 +530,7 @@ pub fn list_tags() -> Vec<String> {
 
 /// 保存图片到本地，返回相对路径
 #[tauri::command]
-pub fn save_image(note_id: String, data: String) -> Result<String, String> {
+pub async fn save_image(note_id: String, data: String) -> Result<String, String> {
     let images_dir = notes_dir().join("images");
     if !images_dir.exists() {
         fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {}", e))?;
@@ -573,7 +573,7 @@ fn ext_for_save(mime: &str) -> &'static str {
 
 /// 读取图片文件，返回base64 data URI
 #[tauri::command]
-pub fn read_image(path: String) -> Result<String, String> {
+pub async fn read_image(path: String) -> Result<String, String> {
     let images_dir = notes_dir().join("images");
     let full_path = images_dir.join(&path);
     // 防止 path 中含 `../` 跳出 images 目录
@@ -597,14 +597,19 @@ pub fn read_image(path: String) -> Result<String, String> {
 
 /// 确保目录存在（路径校验防越界创建）
 #[tauri::command]
-pub fn ensure_dir(path: String) -> Result<(), String> {
-    validate_path_allow_nonexistent(&path)?;
-    std::fs::create_dir_all(&path).map_err(|e| format!("创建目录失败: {}", e))
+pub async fn ensure_dir(path: String) -> Result<(), String> {
+    ensure_dir_at(&path)
+}
+
+/// ensure_dir 的实体：单列出来让测试能直接喂路径（async 命令在测试里跑不了）
+pub fn ensure_dir_at(path: &str) -> Result<(), String> {
+    validate_path_allow_nonexistent(path)?;
+    std::fs::create_dir_all(path).map_err(|e| format!("创建目录失败: {}", e))
 }
 
 /// 写入文本文件（前端编辑笔记 / 通用文本写入的统一入口）
 #[tauri::command]
-pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     validate_path_allow_nonexistent(&path)?;
     atomic_write_str(std::path::Path::new(&path), &content)
 }
@@ -769,7 +774,7 @@ pub async fn rename_file(old_path: String, new_path: String) -> Result<(), Strin
 
 /// 检查文件或目录是否存在
 #[tauri::command]
-pub fn file_exists(path: String) -> bool {
+pub async fn file_exists(path: String) -> bool {
     if validate_path(&path).is_err() { return false; }
     std::path::Path::new(&path).exists()
 }
@@ -1159,7 +1164,7 @@ pub async fn ai_chat_stream(
 /// 备份存储在 ~/.z-note/backups/{note_id}/ 目录下，文件名为 {timestamp}.md
 /// 最多保留 20 个备份版本
 #[tauri::command]
-pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
+pub async fn create_backup(note_path: String, content: String) -> Result<(), String> {
     // note_path 来自前端，必须校验防越界备份
     validate_path(&note_path)?;
     let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -1192,7 +1197,7 @@ pub fn create_backup(note_path: String, content: String) -> Result<(), String> {
 
 /// 列出笔记的备份版本
 #[tauri::command]
-pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
+pub async fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
     validate_path(&note_path)?;
     let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let backup_base = base.join(".z-note").join("backups");
@@ -1233,7 +1238,7 @@ pub fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String> {
 /// 恢复备份版本（安全约束：必须验证 backup_path 与 target_path 都位于允许目录内，
 /// 防止前端被劫持后覆盖任意系统文件，例如 /etc/passwd）
 #[tauri::command]
-pub fn restore_backup(backup_path: String, target_path: String) -> Result<(), String> {
+pub async fn restore_backup(backup_path: String, target_path: String) -> Result<(), String> {
     // 两个路径都做 canonicalize + 范围校验
     validate_path(&backup_path).map_err(|e| format!("备份路径非法: {}", e))?;
     validate_path(&target_path).map_err(|e| format!("目标路径非法: {}", e))?;
@@ -1370,7 +1375,7 @@ use tauri::{Emitter, State};
 /// 索引笔记文件：内部命令（前端一般不需要直接调）。
 /// 行为：读取文件、提取 title/tags/links、写入 FTS5 索引。
 #[tauri::command]
-pub fn index_upsert_note(
+pub async fn index_upsert_note(
     path: String,
     index: State<'_, IndexStore>,
 ) -> Result<(), String> {
@@ -1394,7 +1399,7 @@ pub fn index_upsert_note(
 
 /// 从索引中删除单条
 #[tauri::command]
-pub fn index_delete_note(
+pub async fn index_delete_note(
     path: String,
     index: State<'_, IndexStore>,
 ) -> Result<(), String> {
@@ -1404,7 +1409,7 @@ pub fn index_delete_note(
 
 /// 全文搜索（FTS5 + BM25 排序）
 #[tauri::command]
-pub fn search_notes(
+pub async fn search_notes(
     query: String,
     index: State<'_, IndexStore>,
     limit: Option<usize>,
@@ -1511,7 +1516,7 @@ pub fn index_status(index: State<'_, IndexStore>) -> IndexStatus {
 
 /// 启动对 dir 的文件监听（替换 5 秒轮询）
 #[tauri::command]
-pub fn start_watch(
+pub async fn start_watch(
     dir: String,
     watcher: State<'_, WatcherState>,
     app: tauri::AppHandle,
@@ -1522,7 +1527,7 @@ pub fn start_watch(
 
 /// 停止当前监听
 #[tauri::command]
-pub fn stop_watch(watcher: State<'_, WatcherState>) -> Result<(), String> {
+pub async fn stop_watch(watcher: State<'_, WatcherState>) -> Result<(), String> {
     watcher.unwatch();
     Ok(())
 }

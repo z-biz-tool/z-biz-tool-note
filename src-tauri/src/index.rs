@@ -5,7 +5,8 @@
 //! 索引位置：`~/.z-note/index.db`
 //! 表结构：
 //!   - notes(path PK, title, mtime, tags, links)
-//!   - notes_fts(title, content) USING fts5 —— FTS5 虚拟表
+//!   - notes_fts(title, content, tokens) USING fts5 —— FTS5 虚拟表
+//!     tokens 是 content 的「汉字逐字加空格」形态，中文召回靠它（见 cjk_split）
 //!
 //! 触发：
 //!   - 打开文件夹 → 全量扫描，对比 mtime，仅更新变化文件
@@ -51,7 +52,8 @@ pub struct IndexStore {
 }
 
 /// 当前 schema 版本。结构变更时 +1；版本不匹配时丢弃旧 DB 自动重建。
-const SCHEMA_VERSION: i32 = 2;
+/// v3：notes_fts 增加 tokens 列（中文单字切分），旧库的中文召回是坏的，必须重建。
+const SCHEMA_VERSION: i32 = 3;
 
 impl IndexStore {
     /// 创建或打开索引文件
@@ -61,6 +63,11 @@ impl IndexStore {
             .join(".z-note");
         std::fs::create_dir_all(&base)
             .map_err(|e| format!("创建索引目录失败: {}", e))?;
+        Self::open_in(&base)
+    }
+
+    /// 在指定目录下打开 index.db（测试用隔离库，绝不碰用户真实索引）
+    pub fn open_in(base: &Path) -> Result<Self, String> {
         let index_path = base.join("index.db");
 
         // 如果索引文件存在但打开失败（损坏），重命名备份后重建
@@ -112,10 +119,12 @@ impl IndexStore {
             .map_err(|e| format!("丢弃旧索引失败: {}", e))?;
         }
 
-        // 3. 建表（IF NOT EXISTS 保证幂等）
         // 注意：notes_fts 用内联存储（不带 content='notes'），
         // 这样 snippet() 和 highlight() 才能工作。
         // 存储开销：~2x content 大小，对个人笔记库（< 100MB）可接受。
+        // tokens 列是 content 的逐字切分形态：unicode61 会把「我的笔记」整个当成
+        // 一个 token，中文查询在此前恒 0 命中（实测 MATCH '笔记*' = 0 行），
+        // 所以额外存一列「每个汉字之间插入空格」的正文供召回。
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS notes (
                 path TEXT PRIMARY KEY,
@@ -128,6 +137,7 @@ impl IndexStore {
             CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
                 title,
                 content,
+                tokens,
                 tokenize='unicode61 remove_diacritics 2'
             );
             CREATE INDEX IF NOT EXISTS idx_notes_mtime ON notes(mtime);",
@@ -185,15 +195,16 @@ impl IndexStore {
         // 内容先 HTML 转义：避免用户笔记里的 <script> 等通过 snippet 注入到前端
         // （前端用 dangerouslySetInnerHTML 渲染 snippet 以支持 <mark> 高亮）
         let safe_content = html_escape(content);
+        let safe_tokens = html_escape(&cjk_split(content));
         tx.execute(
             "DELETE FROM notes_fts WHERE rowid = (SELECT rowid FROM notes WHERE path = ?1)",
             params![path],
         )
         .map_err(|e| format!("删除旧 FTS 条目失败: {}", e))?;
         tx.execute(
-            "INSERT INTO notes_fts(rowid, title, content)
-             VALUES((SELECT rowid FROM notes WHERE path = ?1), ?2, ?3)",
-            params![path, title, safe_content],
+            "INSERT INTO notes_fts(rowid, title, content, tokens)
+             VALUES((SELECT rowid FROM notes WHERE path = ?1), ?2, ?3, ?4)",
+            params![path, title, safe_content, safe_tokens],
         )
         .map_err(|e| format!("插入 FTS 条目失败: {}", e))?;
 
@@ -230,18 +241,22 @@ impl IndexStore {
     /// 全文搜索（FTS5 MATCH + BM25 排序）
     /// query 支持：
     ///   - 普通词：`hello world`
+    ///   - 中文：`笔记`（经 build_fts_query 转成单字 phrase，命中 tokens 列）
     ///   - tag:#work（前端在传入前转换为 content 包含 #work）
     ///   - path:folder/sub
     ///   - "精确匹配"
     pub fn search(&self, raw_query: &str, limit: usize) -> Result<Vec<IndexedMatch>, String> {
         let fts_query = build_fts_query(raw_query);
         let conn = self.conn.lock();
+        // content 列（原文，英文/整词高亮准）与 tokens 列（逐字，中文召回准）各取一段
+        // snippet，在 Rust 侧挑：原文里没高亮就说明这次是中文召回，用逐字那段并还原间距。
         let mut stmt = conn
             .prepare(
                 "SELECT n.path, n.title,
-                        snippet(notes_fts, 1, '<mark>', '</mark>', '…', 16) AS snip,
+                        snippet(notes_fts, 1, '<mark>', '</mark>', '…', 16) AS snip_raw,
+                        snippet(notes_fts, 2, '<mark>', '</mark>', '…', 16) AS snip_split,
                         bm25(notes_fts) AS score,
-                        1 AS line
+                        0 AS line
                  FROM notes_fts
                  JOIN notes n ON n.rowid = notes_fts.rowid
                  WHERE notes_fts MATCH ?1
@@ -252,12 +267,19 @@ impl IndexStore {
 
         let rows = stmt
             .query_map(params![fts_query, limit as i64], |row| {
+                let snip_raw: String = row.get(2)?;
+                let snip_split: String = row.get(3)?;
+                let snippet = if snip_raw.contains("<mark>") {
+                    snip_raw
+                } else {
+                    collapse_cjk_spaces(&snip_split)
+                };
                 Ok(IndexedMatch {
                     file_path: row.get(0)?,
                     title: row.get(1)?,
-                    line: row.get::<_, i64>(4)? as usize,
-                    snippet: row.get(2)?,
-                    score: row.get(3)?,
+                    line: row.get::<_, i64>(5)? as usize,
+                    snippet,
+                    score: row.get(4)?,
                 })
             })
             .map_err(|e| format!("搜索执行失败: {}", e))?;
@@ -377,20 +399,146 @@ fn build_fts_query(query: &str) -> String {
     // 否则对每个 token 加 `*` 后缀做前缀匹配 → 类模糊搜索
     trimmed
         .split_whitespace()
-        .map(|t| {
-            // 去掉不安全字符
-            let safe: String = t
-                .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
-                .collect();
-            if safe.is_empty() {
-                return String::new();
-            }
-            format!("{}*", safe)
-        })
-        .filter(|s| !s.is_empty())
+        .flat_map(expand_token)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// 单个查询 token → FTS5 片段（多个片段之间是隐式 AND）。
+/// 拉丁段保留 `*` 前缀语义；汉字段拆成单字 phrase，才能命中 tokens 列。
+fn expand_token(token: &str) -> Vec<String> {
+    let cleaned: Vec<char> = token
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || is_cjk(*c))
+        .collect();
+
+    let mut out = Vec::new();
+    let mut run: Vec<char> = Vec::new();
+    let mut run_is_cjk = false;
+    for &c in cleaned.iter() {
+        let cjk = is_cjk(c);
+        if !run.is_empty() && cjk != run_is_cjk {
+            out.push(flush_run(&run, run_is_cjk));
+            run.clear();
+        }
+        run_is_cjk = cjk;
+        run.push(c);
+    }
+    if !run.is_empty() {
+        out.push(flush_run(&run, run_is_cjk));
+    }
+    out.into_iter().filter(|s| !s.is_empty()).collect()
+}
+
+fn flush_run(run: &[char], cjk: bool) -> String {
+    if cjk {
+        let chars: Vec<String> = run.iter().map(|c| c.to_string()).collect();
+        // 单字直接当 term；多字用 phrase 保证相邻（"笔记" ≠ "记…笔"）
+        if chars.len() == 1 {
+            chars.into_iter().next().unwrap()
+        } else {
+            format!("\"{}\"", chars.join(" "))
+        }
+    } else {
+        let s: String = run.iter().collect();
+        if s.is_empty() {
+            String::new()
+        } else {
+            format!("{}*", s)
+        }
+    }
+}
+
+/// 中日韩统一表意文字 + 扩展 A + 假名 + 谚文：unicode61 会把这些连成整块 token 的字符。
+fn is_cjk(c: char) -> bool {
+    matches!(c,
+        '\u{3040}'..='\u{30ff}'    // 平假名/片假名
+        | '\u{3400}'..='\u{4dbf}'  // 扩展 A
+        | '\u{4e00}'..='\u{9fff}'  // 基本汉字
+        | '\u{f900}'..='\u{faff}'  // 兼容汉字
+        | '\u{ac00}'..='\u{d7af}'  // 谚文音节
+    )
+}
+
+/// 在相邻两个汉字之间插入空格，让 unicode61 把每个汉字切成独立 token。
+/// 拉丁/数字/标点原样保留 —— 只有汉字之间加空格，reverse（collapse_cjk_spaces）才无歧义。
+fn cjk_split(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + s.len() / 2);
+    let mut prev_cjk = false;
+    for c in s.chars() {
+        let cjk = is_cjk(c);
+        if cjk && prev_cjk {
+            out.push(' ');
+        }
+        out.push(c);
+        prev_cjk = cjk;
+    }
+    out
+}
+
+/// 把 cjk_split 加进去的分隔空格撤掉，用于展示逐字列的 snippet。
+/// snippet 里夹着 `<mark>`/`</mark>`/`…`，得跳过标签再判断左右是否都是汉字。
+fn collapse_cjk_spaces(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    for i in 0..chars.len() {
+        if chars[i] == ' '
+            && prev_visible(&chars, i).is_some_and(is_cjk)
+            && next_visible(&chars, i).is_some_and(is_cjk)
+        {
+            continue;
+        }
+        out.push(chars[i]);
+    }
+    out
+}
+
+/// i 左边第一个非空格、非标签字符
+fn prev_visible(chars: &[char], i: usize) -> Option<char> {
+    if i == 0 {
+        return None;
+    }
+    let mut j = i - 1;
+    loop {
+        match chars.get(j) {
+            None => return None,
+            Some(' ') => {
+                if j == 0 {
+                    return None;
+                }
+                j -= 1;
+            }
+            Some('>') => {
+                // 退回标签开头
+                while j > 0 && chars[j] != '<' {
+                    j -= 1;
+                }
+                if j == 0 {
+                    return None;
+                }
+                j -= 1;
+            }
+            Some(c) => return Some(*c),
+        }
+    }
+}
+
+/// i 右边第一个非空格、非标签字符
+fn next_visible(chars: &[char], i: usize) -> Option<char> {
+    let mut j = i;
+    while j < chars.len() {
+        match chars[j] {
+            ' ' => j += 1,
+            '<' => {
+                while j < chars.len() && chars[j] != '>' {
+                    j += 1;
+                }
+                j += 1;
+            }
+            c => return Some(c),
+        }
+    }
+    None
 }
 
 /// HTML 转义：snippet() 会返回含 `<mark>` 的结果。
@@ -438,9 +586,61 @@ mod tests {
 
     #[test]
     fn fts_query_handles_chinese() {
-        // 中文不会被切分（unicode61 tokenizer 处理），但前缀通配不适用
+        // 汉字必须转成单字 phrase：unicode61 把连续汉字当一个 token，
+        // 此前的 `中文*` 形态对"我的中文笔记"恒 0 命中（sqlite3 实测）
         let q = build_fts_query("中文 笔记");
-        assert!(q.contains("中文*"));
+        assert_eq!(q, "\"中 文\" \"笔 记\"");
+    }
+
+    #[test]
+    fn fts_query_mixed_cjk_and_latin() {
+        assert_eq!(build_fts_query("笔记note"), "\"笔 记\" note*");
+    }
+
+    #[test]
+    fn fts_query_single_cjk_char_is_bare_term() {
+        assert_eq!(build_fts_query("笔"), "笔");
+    }
+
+    #[test]
+    fn cjk_split_only_touches_hanzi_runs() {
+        assert_eq!(cjk_split("我的笔记"), "我 的 笔 记");
+        assert_eq!(cjk_split("hello 世界 ok"), "hello 世 界 ok");
+        assert_eq!(cjk_split("English only"), "English only");
+        assert_eq!(cjk_split(""), "");
+    }
+
+    #[test]
+    fn cjk_collapse_is_inverse_of_split() {
+        for raw in [
+            "我的笔记内容",
+            "混合 english 笔记 with 词 mixed",
+            "# 标题\n\n正文第二行",
+        ] {
+            assert_eq!(collapse_cjk_spaces(&cjk_split(raw)), raw);
+        }
+    }
+
+    #[test]
+    fn cjk_collapse_keeps_highlight_tags_and_drops_split_spaces() {
+        let snip = "我 的 <mark>笔</mark> 记 内 容";
+        assert_eq!(collapse_cjk_spaces(snip), "我的<mark>笔</mark>记内容");
+    }
+
+    #[test]
+    fn cjk_collapse_keeps_spaces_touching_latin() {
+        // 与拉丁相邻的空格一定保留；两个汉字之间的原文空格无法与切分空格区分，
+        // 只在 snippet 展示层少一个空格（正文本身不受影响，写盘路径不经过这里）
+        assert_eq!(collapse_cjk_spaces("笔 记 note 摘 要"), "笔记 note 摘要");
+    }
+
+    #[test]
+    fn is_cjk_covers_hanzi_kana_and_rejects_punctuation() {
+        assert!(is_cjk('笔'));
+        assert!(is_cjk('あ'));
+        assert!(is_cjk('한'));
+        assert!(!is_cjk('a'));
+        assert!(!is_cjk('，'));
     }
 
     #[test]

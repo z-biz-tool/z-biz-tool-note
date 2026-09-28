@@ -880,7 +880,15 @@ export const Sidebar = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
                     <FileText size={14} />
                     <span style={{ fontWeight: 500 }}>{result.fileName}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>L{result.line}</span>
+                    {/* FTS5 索引只给正文片段，给不出行号；这里不能装作知道。
+                        行号只有全盘扫描那条路有，其余情况改成显示所在目录（同样能定位到篇）。 */}
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                      {result.line > 0
+                        ? `L${result.line}`
+                        : (currentDir && result.filePath.startsWith(`${currentDir}/`)
+                          ? result.filePath.slice(currentDir.length + 1).split('/').slice(0, -1).join('/')
+                          : '')}
+                    </span>
                   </div>
                   <span
                     style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 20, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}

@@ -251,6 +251,9 @@ const App = () => {
   // 用于避免防抖回调中的过期闭包问题（声明，在对应函数定义后赋值）
   const handleSaveRef = useRef<() => void>(() => {});
   const handleSaveSplitRef = useRef<() => void>(() => {});
+  // 失焦/定时扫的"全量 flush"入口：监听器只挂一次，靠这两个 ref 拿到最新的保存函数
+  const flushAllDirtyRef = useRef<(() => Promise<void>) | null>(null);
+  const flushingRef = useRef(false);
   const openTabsRef = useRef(openTabs);
   openTabsRef.current = openTabs;
   const activeTabIdRef = useRef(activeTabId);
@@ -837,7 +840,7 @@ const App = () => {
     return () => { cancelled = true; };
   }, [currentDir]);
 
-  // 笔记更新事件：增量更新知识图谱（取代每次保存后全量 read-all-notes）
+  // 笔记更新事件：增量更新知识图谱 + 标签（取代每次保存后全量 read-all-notes）
   useNoteUpdated(useCallback((summary) => {
     setGraphNodes(prev => {
       const idx = prev.findIndex(n => n.id === summary.file_path);
@@ -854,6 +857,25 @@ const App = () => {
       const next = prev.filter(l => l.source !== summary.file_path);
       const newLinks = summary.links.map(target => ({ source: summary.file_path, target }));
       return [...next, ...newLinks];
+    });
+    // 标签也按单篇重算：口径与 refreshKnowledgeIndex 一致（count = 挂了这篇的笔记数）
+    setTags(prev => {
+      const detached = prev
+        .map(t => (t.notes.includes(summary.file_path)
+          ? { ...t, notes: t.notes.filter(p => p !== summary.file_path), count: t.notes.length - 1 }
+          : t))
+        .filter(t => t.count > 0);
+      const byName = new Map(detached.map(t => [t.name, t]));
+      for (const name of summary.tags) {
+        const hit = byName.get(name);
+        if (hit) {
+          hit.notes = [...hit.notes, summary.file_path];
+          hit.count = hit.notes.length;
+        } else {
+          byName.set(name, { name, count: 1, notes: [summary.file_path] });
+        }
+      }
+      return [...byName.values()].sort((a, b) => b.count - a.count);
     });
   }, []));
 
@@ -1077,6 +1099,13 @@ const App = () => {
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       const hasDirty = openTabsRef.current.some(t => t.isDirty);
+      // 先把脏正文同步写进 WAL：beforeunload 里 await 不了写盘，而 localStorage 是同步的。
+      // WKWebView 不会把 preventDefault 变成系统确认框，用户真的说走就走 ——
+      // 这一笔就是"关掉应用丢掉当前缓冲区"唯一的兜底（下次启动由恢复横幅接手）。
+      for (const t of openTabsRef.current) {
+        if (t.isDirty && t.filePath) walStore.write(t.filePath, t.content);
+      }
+      void flushAllDirtyRef.current?.();
       if (hasDirty) {
         e.preventDefault();
         e.returnValue = '';
@@ -1452,6 +1481,8 @@ const App = () => {
     if (!currentNote || !currentNote.isDirty) return;
     if (currentNote.filePath) {
       setMainSaveState('saving');
+      // 先暂存再写盘：useAutoSave 承诺的"防抖/写入途中被强退也能恢复"只有在这一笔才成立
+      walStore.write(currentNote.filePath, currentNote.content);
       try {
         await writeFile(currentNote.filePath, currentNote.content);
       } catch (e) {
@@ -1481,11 +1512,10 @@ const App = () => {
       updateActiveTab({ isDirty: false });
       await syncMtime(currentNote.filePath, { isCurrent: true, afterSave: true });
       showToast(tr('toast', 'saved'), 'success');
-      // Refresh knowledge index since tags/links may have changed
-      if (currentDir) {
-        refreshKnowledgeIndex(currentDir);
-        refreshBacklinks();
-      }
+      // 索引/标签/图都由 Rust 的 note-updated 事件增量更新了，这里只剩反向链接要重查。
+      // 浏览器演示模式没有这个事件通道，才退化成整库 read-all-notes。
+      if (!electronAPI.isTauri && currentDir) void refreshKnowledgeIndex(currentDir);
+      if (currentDir) refreshBacklinks();
     } else {
       handleSaveAs();
     }
@@ -1553,6 +1583,7 @@ const App = () => {
   const handleSaveSplit = useCallback(async () => {
     if (!splitNote || !splitNote.isDirty || !splitNote.filePath) return;
     setSplitSaveState('saving');
+    walStore.write(splitNote.filePath, splitNote.content);
     try {
       await writeFile(splitNote.filePath, splitNote.content);
     } catch (e) {
@@ -1577,12 +1608,76 @@ const App = () => {
     }
     updateNote(splitNote.id, { isDirty: false });
     await syncMtime(splitNote.filePath, { isCurrent: false, isSplit: true, afterSave: true });
-    if (currentDir) {
-      refreshKnowledgeIndex(currentDir);
-      refreshBacklinks();
-    }
+    if (!electronAPI.isTauri && currentDir) void refreshKnowledgeIndex(currentDir);
+    if (currentDir) refreshBacklinks();
   }, [splitNote, writeFile, currentDir, refreshKnowledgeIndex, refreshBacklinks, updateNote, showToast, syncMtime]);
   handleSaveSplitRef.current = handleSaveSplit;
+
+  // ===== 后台标签的落盘兜底 =====
+  // 只有当前标签和分屏有 2 秒防抖自动保存：其它标签的正文只活在内存里，而 WAL 又只在
+  // "写盘失败"那一刻才记。失败模式：改了三篇、切去别的软件、应用被强退/崩溃 →
+  // 后台那两篇整篇丢，重启连恢复横幅的素材都没有（beforeunload 在 WKWebView 里弹不出确认框）。
+  // 所以：窗口失焦 / 切标签 / 每 5 秒各扫一次，把仍带脏标记的标签真正写盘；
+  // 每一次写盘都先暂存 WAL，成功后才清掉 —— 恢复横幅由此只呈现"真没落盘"的内容。
+  const flushAllDirty = useCallback(async () => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      // 当前标签与分屏交给各自的保存函数：状态栏、备份节流、toast 都在那边
+      await handleSaveRef.current?.();
+      await handleSaveSplitRef.current?.();
+      const activeId = activeTabIdRef.current;
+      const pending = openTabsRef.current.filter(t => t.isDirty && t.filePath && t.id !== activeId);
+      for (const t of pending) {
+        const path = t.filePath as string;
+        // 盘上比标签记着的还新 = 外部编辑器动过：这一篇不覆盖，留给切回去时的对账流程问用户
+        try {
+          const disk = String(mustSucceed(await electronAPI.invoke('get-file-modified', path)) || '');
+          const known = Date.parse(t.lastModified || '') || 0;
+          const nowMs = Date.parse(disk) || 0;
+          if (known && nowMs && nowMs > known) continue;
+        } catch {}
+        walStore.write(path, t.content);
+        try {
+          await writeFile(path, t.content);
+        } catch (e) {
+          // 已经暂存过了，这里只负责把原因说给用户
+          showToast(tr('toast', 'bgSaveFailed').replace('{name}', displayName(path) || path).replace('{err}', errText(e)), 'error');
+          continue;
+        }
+        walStore.clear(path);
+        let stamp = formatMtime();
+        try {
+          stamp = String(mustSucceed(await electronAPI.invoke('get-file-modified', path)) || stamp);
+        } catch {}
+        // lastModified 必须一起对上：不然下次这篇被外部改动对账时会把自家写入当成外部修改，
+        // 弹「丢弃本地并重新加载」——那是另一种丢内容的方式。
+        updateNote(t.id, { isDirty: false, lastModified: stamp });
+      }
+      if (pending.length) refreshWal();
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [writeFile, updateNote, showToast, refreshWal]);
+  flushAllDirtyRef.current = flushAllDirty;
+
+  useEffect(() => {
+    // 失焦/隐藏/切标签立刻 flush：这三处都是"用户已经离开这篇"的时刻，写盘不会打断输入
+    const flush = () => void flushAllDirtyRef.current?.();
+    const onVisibility = () => {
+      if (document.hidden) flush();
+    };
+    window.addEventListener('blur', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    const sweep = window.setInterval(flush, 5000);
+    return () => {
+      window.removeEventListener('blur', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(sweep);
+      // 卸载前最后一次机会：定时器还要被 clearTimeout 掉，先把脏正文 flush/WAL 出去
+      flush();
+    };
+  }, []);
 
   const handleSplitContentChange = useCallback((content: string) => {
     if (!splitNote) return;

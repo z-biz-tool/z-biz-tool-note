@@ -66,6 +66,7 @@ interface Translations {
     exportedPdf: string;
     exportFailed: string;
     splitSaveFailed: string;
+    bgSaveFailed: string;
     aiEnabled: string;
     aiDisabled: string;
     dailyCreated: string;
@@ -240,6 +241,7 @@ const translations: Record<Language, Translations> = {
       exportedPdf: 'Exported PDF: {path}',
       exportFailed: 'Export failed: {err}',
       splitSaveFailed: 'Split-pane save failed ({err}); the content is staged — restore it from the banner above',
+      bgSaveFailed: 'Autosave of "{name}" failed ({err}); the content is staged — restore it from the banner above',
       aiEnabled: 'AI assistant enabled',
       aiDisabled: 'AI assistant disabled',
       dailyCreated: 'Daily note created',
@@ -412,6 +414,7 @@ const translations: Record<Language, Translations> = {
       exportedPdf: '已导出 PDF：{path}',
       exportFailed: '导出失败: {err}',
       splitSaveFailed: '分屏保存失败（{err}），内容已暂存，可在顶部横幅恢复',
+      bgSaveFailed: '「{name}」自动保存失败（{err}），内容已暂存，可在顶部横幅恢复',
       aiEnabled: 'AI 助手已启用',
       aiDisabled: 'AI 助手已关闭',
       dailyCreated: '今日日记已创建',
