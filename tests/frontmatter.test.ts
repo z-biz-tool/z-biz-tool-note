@@ -337,10 +337,21 @@ test("往返：空数组退化成空字符串而不是数组（实测缺陷，se
   assert.equal(data(written).tags, "", "空数组写出去后读回来是 ''，不是 [] —— 与 tags: [] 不等价");
 });
 
-test("值里带换行会把 YAML 写坏，重新解析时数据丢失（实测缺陷）", () => {
+test("值里带换行会把 YAML 写坏，重新解析时数据丢失（实测缺陷，当前不可达）", () => {
   const written = stringifyFrontmatter({ title: "a\nb" });
   assert.equal(written, "---\ntitle: a\nb\n---\n");
   assert.equal(data(written).title, "a", "第二行 'b' 没有冒号被丢掉 —— 元数据静默截断");
+
+  // 为什么放着不修（2026-10-03 复核）：整条链在应用里走不到。
+  // 应用写 frontmatter 只走 setFrontmatterTags / setFrontmatterAliases
+  //   → setFrontmatterList（src/App.tsx:1322/1325），那条路刻意**不**用
+  //     stringifyFrontmatter，作者在 frontmatter.ts:116 写明了原因：
+  //     裸值序列化会把 `title: 会议: 周一` 这类写坏。
+  // 而 mergeFrontmatter（stringifyFrontmatter 的唯一调用方）在 src/ 里零调用方。
+  // 所以这是个**导出但没人用**的函数上的潜伏缺陷。修它要成对改
+  // 序列化与解析（引号转义），风险大于收益 —— 与 math 的椭圆求交同理，
+  // 不是"改不了"，是"改了动的是一条当前没人走的路"。
+  // 一旦有人开始调 mergeFrontmatter，先把这条用例反过来读。
 });
 
 test("嵌套对象被写成 '[object Object]'（不支持嵌套，已知限制）", () => {
