@@ -63,11 +63,24 @@ function setFrontmatterList(raw: string, key: string, values: string[], sanitize
   const cleaned = Array.from(new Set(values.map(sanitize).filter(Boolean)));
   const open = /^---\r?\n/.exec(raw);
   const block = open ? FRONTMATTER_RE.exec(raw) : null;
+
+  if (open && !block) {
+    // 文档以 `---` 开头却没有收尾的 `---`：这是一个**半开**的 frontmatter 块。
+    //
+    // 不能走下面的"没有 frontmatter → 在前面补一块"分支：那会把新块插到最前面，
+    // 而原来那半截留在正文里，结果一篇文档出现**两块 frontmatter**，
+    // 解析时只认得第一块，原标题等元数据被挤成正文 —— 存一次就丢数据。
+    //
+    // 这里选择原样返回：改标签这条操作静默不生效，但文档结构一个字节没动。
+    // 静默不生效是可见的（标签没变），结构损坏是不可逆的。
+    return raw;
+  }
+
   const lines: string[] = cleaned.length ? [`${key}:`] : [`${key}: []`];
   for (const v of cleaned) lines.push(`  - ${yamlListItem(v)}`);
 
   if (!open || !block) {
-    // 没有 frontmatter：空列表就不无中生有，有则补一块
+    // 确实没有 frontmatter：空列表就不无中生有，有则补一块
     if (!cleaned.length) return raw;
     return `---\n${lines.join('\n')}\n---\n\n${raw}`;
   }

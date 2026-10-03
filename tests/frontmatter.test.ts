@@ -284,13 +284,23 @@ test("缩进过的 key 定位不到，会多出一份重复的 tags（已知限�
   );
 });
 
-test("未闭合 `---` 的文档会被塞成两块 frontmatter（可疑行为，照实测钉住）", () => {
-  // open 匹配到了、block 没匹配上，走的是"没有 frontmatter 就前面补一块"的分支，
-  // 于是原文那半截 `---` 被挤到第二块后面。真要修需先确认没人靠这个行为兜底。
+test("未闭合 `---` 的文档改标签时原样返回，不许塞出第二块 frontmatter（2026-10-03 已修）", () => {
+  // 这条原本锁的是**结构损坏**：open 匹配到了、block 没匹配上，却走了
+  // "没有 frontmatter 就前面补一块"的分支，于是原文那半截 `---` 被挤到
+  // 第二块后面，一篇文档出现两块 frontmatter，解析时只认得第一块，
+  // 原标题等元数据被当成正文 —— 存一次丢一次数据。
+  //
+  // 现在半开块一律原样返回：改标签静默不生效，但文档结构一个字节没动。
+  assert.equal(setFrontmatterTags("---\ntitle: x", ["a"]), "---\ntitle: x");
+  assert.equal(setFrontmatterAliases("---\ntitle: x", ["别名"]), "---\ntitle: x");
+
+  // 正常闭合的文档不受影响，仍然该改就改
   assert.equal(
-    setFrontmatterTags("---\ntitle: x", ["a"]),
-    "---\ntags:\n  - a\n---\n\n---\ntitle: x",
+    setFrontmatterTags("---\ntitle: x\n---\n\n正文", ["a"]),
+    "---\ntitle: x\ntags:\n  - a\n---\n\n正文",
   );
+  // 确实没有 frontmatter 的文档，仍然正常补一块
+  assert.equal(setFrontmatterTags("# 正文", ["a"]), "---\ntags:\n  - a\n---\n\n# 正文");
 });
 
 /* ──────────────────────── stringifyFrontmatter ──────────────────────── */
