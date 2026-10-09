@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6A623"/>
+      <stop offset="1" stop-color="#FF6B6B"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFF3C4" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFF3C4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="72" y="72" width="880" height="880" rx="232" fill="url(#bg)"/>
+
+  <!-- 页面（右上角折角） -->
+  <path d="M292 240 H636 L768 372 V716 Q768 784 700 784 H360 Q292 784 292 716 Z" fill="#FFFFFF"/>
+  <path d="M636 240 L768 372 H636 Z" fill="#122A33" fill-opacity="0.2"/>
+  <circle cx="520" cy="540" r="210" fill="url(#glow)"/>
+
+  <!-- 标题 + 正文 -->
+  <rect x="358" y="420" width="290" height="40" rx="20" fill="#122A33"/>
+  <g fill="#122A33" fill-opacity="0.22">
+    <rect x="358" y="510" width="340" height="30" rx="15"/>
+    <rect x="358" y="580" width="340" height="30" rx="15"/>
+    <rect x="358" y="650" width="200" height="30" rx="15"/>
+  </g>
+  <rect x="596" y="646" width="102" height="34" rx="17" fill="#34E8D2"/>
+</svg>
