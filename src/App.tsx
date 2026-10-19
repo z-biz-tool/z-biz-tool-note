@@ -48,6 +48,9 @@ import { useFileWatcher, useNoteUpdated } from './hooks/useFileWatcher';
 import { parseFrontmatter, setFrontmatterAliases, setFrontmatterTags, stripFrontmatter, withFrontmatter } from './lib/frontmatter';
 import { normalizeEmptyTaskItems } from './lib/markdownWrite';
 import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
+import { useKeyboard } from './hooks/useKeyboard';
+import type { KeyboardShortcut } from './lib/keyboardShortcuts';
+import { createAppShortcuts } from './lib/appShortcuts';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
 import './index.css';
 
@@ -995,105 +998,11 @@ const App = () => {
     };
   }, []);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const cmd = e.metaKey || e.ctrlKey;
-      // e.key 的大小写跟着 Caps Lock / Shift 变（开着大写锁定按 ⌘B 拿到的是 'B'），
-      // 统一转小写、要靠 shiftKey 区分组合，否则这批快捷键会整片静默失效
-      const key = typeof e.key === 'string' ? e.key.toLowerCase() : '';
-      // Cmd+S 保存（带 Shift 时留给下面的另存为）
-      if (cmd && key === 's' && !e.shiftKey) {
-        e.preventDefault();
-        if (document.activeElement?.closest('.editor-pane-split')) {
-          handleSaveSplitRef.current();
-        } else {
-          handleSaveRef.current();
-        }
-        return;
-      }
-      if (cmd && key === 'p' && !e.shiftKey) {
-        e.preventDefault();
-        setShowQuickSwitcher(true);
-      } else if (cmd && e.shiftKey && key === 'p') {
-        e.preventDefault();
-        setShowCommandPalette(true);
-      } else if (cmd && key === 'n') {
-        e.preventDefault();
-        menuActionsRef.current['new-note']?.();
-      } else if (cmd && e.shiftKey && key === 's') {
-        e.preventDefault();
-        menuActionsRef.current['save-as']?.();
-      } else if (cmd && key === 'b') {
-        // 编辑器内 Cmd+B 被 Tiptap 的加粗拦走，这里只在编辑器之外生效
-        e.preventDefault();
-        menuActionsRef.current['toggle-sidebar']?.();
-      } else if (cmd && e.shiftKey && key === 'i') {
-        e.preventDefault();
-        setShowQuickInsert(true);
-      } else if (cmd && key === 'f') {
-        e.preventDefault();
-        setShowFindReplace(true);
-      } else if (cmd && e.key === '/') {
-        e.preventDefault();
-        setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg');
-      } else if (cmd && e.shiftKey && key === 'o') {
-        e.preventDefault();
-        menuActionsRef.current['open-folder']?.();
-      } else if (cmd && key === 'j') {
-        e.preventDefault();
-        setShowAIPanel(prev => !prev);
-      } else if (cmd && e.key === ',') {
-        // macOS 惯例：Cmd+, 打开设置
-        e.preventDefault();
-        setShowSettings(true);
-      } else if (cmd && e.shiftKey && key === 'd') {
-        // 每日笔记移至 Cmd+Shift+D（Cmd+D 让给多光标）
-        e.preventDefault();
-        menuActionsRef.current['create-daily']?.();
-      } else if (cmd && e.shiftKey && key === 'g') {
-        e.preventDefault();
-        setShowKnowledgeGraph(prev => !prev);
-      } else if (cmd && e.shiftKey && key === 't') {
-        // Cmd+Shift+T：恢复刚关掉的标签（和浏览器/编辑器的主流键位一致）
-        e.preventDefault();
-        void reopenTabRef.current();
-      } else if (cmd && e.shiftKey && key === 'h') {
-        // Cmd+Shift+H：版本历史
-        e.preventDefault();
-        setShowVersionHistory(true);
-      } else if (cmd && key === 'w' && !e.shiftKey) {
-        // Cmd+W：关闭当前标签
-        e.preventDefault();
-        if (activeTabIdRef.current) closeTab(activeTabIdRef.current);
-      } else if (cmd && e.shiftKey && e.code === 'BracketLeft') {
-        // Cmd+Shift+[：上一个标签
-        e.preventDefault();
-        switchTab(-1);
-      } else if (cmd && e.shiftKey && e.code === 'BracketRight') {
-        // Cmd+Shift+]：下一个标签
-        e.preventDefault();
-        switchTab(1);
-      } else if (cmd && e.code === 'Backslash') {
-        // Cmd+\：切换分屏
-        e.preventDefault();
-        toggleSplit();
-      } else if (e.key === 'Escape') {
-        setShowQuickSwitcher(false);
-        setShowCommandPalette(false);
-        setShowFindReplace(false);
-        setShowQuickInsert(false);
-        setShowVersionHistory(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-    // 这个 effect 只在挂载时注册一次，闭包里直接调的 handler 永远是首帧那一份。
-    // 凡读 state 的（create-daily 要 currentDir）都会因此拿到过期值 —— 实测 Cmd+Shift+D
-    // 在已经打开 demo 目录的情况下弹「请先打开一个文件夹」。统一走 menuActionsRef，
-    // 它每次渲染都重新指向当前闭包（菜单事件通道本来就是这么接的）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closeTab, switchTab, toggleSplit]);
+  // 键盘快捷键已抽到 useKeyboard hook（T4-05）。
+  // 快捷键表定义在下方 menuActionsRef 之后 —— 表里的 handler 要用
+  // menuActionsRef / reopenTabRef / handleSaveRef 这些 ref，而 useMemo 的工厂函数
+  // 是在渲染期就执行的，放在这些 ref 声明之前会踩 TDZ（ReferenceError）。
+  // 规则与实现见 src/lib/keyboardShortcuts.ts。
 
   // 关闭窗口前检查未保存的更改
   useEffect(() => {
@@ -1761,6 +1670,58 @@ const App = () => {
   }), [handleNewNote, handleOpenFolderDialog, handleSaveAs, handleExportHtml, handleExportPdf, handleCreateDaily, cycleTheme, closeTab, switchTab, openWelcomeGuide]);
   const menuActionsRef = useRef(menuActions);
   menuActionsRef.current = menuActions;
+
+  // Keyboard shortcuts —— 集中成一张表（T4-05）
+  //
+  // 表本身在 lib/appShortcuts.ts（纯数据 + 纯函数，可单测）；这里只把动作接进来。
+  // 顺序即优先级：第一条命中的生效（与改造前那条 else-if 链的短路顺序一致）。
+  // handler 里要读最新 state 的一律走 ref：闭包里直接调的 handler 永远是首帧那一份 ——
+  // 凡读 state 的（create-daily 要 currentDir）都会因此拿到过期值，实测 Cmd+Shift+D
+  // 在已经打开 demo 目录的情况下弹「请先打开一个文件夹」。统一走 menuActionsRef，
+  // 它每次渲染都重新指向当前闭包（菜单事件通道本来就是这么接的）。
+  const keyboardShortcuts = useMemo<KeyboardShortcut[]>(
+    () =>
+      createAppShortcuts({
+        // 分屏时保存分屏那篇，否则保存当前笔记
+        save: () => {
+          if (document.activeElement?.closest('.editor-pane-split')) {
+            handleSaveSplitRef.current();
+          } else {
+            handleSaveRef.current();
+          }
+        },
+        openQuickSwitcher: () => setShowQuickSwitcher(true),
+        openCommandPalette: () => setShowCommandPalette(true),
+        newNote: () => menuActionsRef.current['new-note']?.(),
+        saveAs: () => menuActionsRef.current['save-as']?.(),
+        toggleSidebar: () => menuActionsRef.current['toggle-sidebar']?.(),
+        openTemplate: () => setShowQuickInsert(true),
+        openFindReplace: () => setShowFindReplace(true),
+        toggleEditorMode: () => setEditorMode(prev => (prev === 'wysiwyg' ? 'source' : 'wysiwyg')),
+        openFolder: () => menuActionsRef.current['open-folder']?.(),
+        toggleAiPanel: () => setShowAIPanel(prev => !prev),
+        openSettings: () => setShowSettings(true),
+        createDailyNote: () => menuActionsRef.current['create-daily']?.(),
+        toggleKnowledgeGraph: () => setShowKnowledgeGraph(prev => !prev),
+        reopenClosedTab: () => { void reopenTabRef.current(); },
+        openVersionHistory: () => setShowVersionHistory(true),
+        closeTab: () => {
+          if (activeTabIdRef.current) closeTab(activeTabIdRef.current);
+        },
+        prevTab: () => switchTab(-1),
+        nextTab: () => switchTab(1),
+        toggleSplit: () => toggleSplit(),
+        closeOverlays: () => {
+          setShowQuickSwitcher(false);
+          setShowCommandPalette(false);
+          setShowFindReplace(false);
+          setShowQuickInsert(false);
+          setShowVersionHistory(false);
+        },
+      }),
+    [closeTab, switchTab, toggleSplit],
+  );
+  useKeyboard(keyboardShortcuts);
 
   useEffect(() => {
     if (!electronAPI.isTauri) return;

@@ -1,6 +1,8 @@
 import React from 'react';
 import { FolderPlus, FileText, Trash2, Edit3, FolderInput, ChevronRight, Folder } from 'lucide-react';
 import { useClampedMenuPos } from '../lib/useClampedMenuPos';
+import { useKeyboard } from '../hooks/useKeyboard';
+import type { KeyboardShortcut } from '../lib/keyboardShortcuts';
 
 /** 一个可移入的目录；depth 用来缩进，relPath 放在 title 里指清位置 */
 export interface MoveTarget {
@@ -64,16 +66,18 @@ export const FolderContextMenu = ({
         onClose();
       }
     };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
     document.addEventListener('click', handleGlobalClick);
-    window.addEventListener('keydown', handleKey);
     return () => {
       document.removeEventListener('click', handleGlobalClick);
-      window.removeEventListener('keydown', handleKey);
     };
   }, [onClose]);
+
+  // Esc 关掉右键菜单（改造前不 preventDefault，这里保持不变）
+  const escapeShortcuts = React.useMemo<KeyboardShortcut[]>(
+    () => [{ key: 'escape', preventDefault: false, handler: () => onClose() }],
+    [onClose],
+  );
+  useKeyboard(escapeShortcuts);
 
   const openMove = () => {
     setMoveOpen(true);

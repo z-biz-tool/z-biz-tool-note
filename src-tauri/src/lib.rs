@@ -4,6 +4,8 @@ mod extract;
 mod index;
 mod watcher;
 #[cfg(test)]
+mod bench;
+#[cfg(test)]
 mod integration_tests;
 
 use tauri::{

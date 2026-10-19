@@ -291,7 +291,7 @@ fn path_within_blocks_traversal() {
     use crate::commands::ensure_path_within;
     let base = tempdir();
     let safe = base.join("inside.md");
-    fs::write(&safe, "ok").unwrap();
+    atomic_write_str(&safe, "ok").unwrap();
     assert!(ensure_path_within(&base, &safe).is_ok());
 
     let bad = base.join("../escape.md");
@@ -446,10 +446,14 @@ async fn markdown_notes_cover_both_extensions() {
     let dir = tempdir();
     let marker = format!("zenmarkdown{}", test_nanos());
     for name in ["plain.md", "alt.markdown", "UPPER.MARKDOWN"] {
-        fs::write(dir.join(name), format!("# {}\n\n{}\n", name, marker)).unwrap();
+        atomic_write_str(
+            &dir.join(name),
+            &format!("# {}\n\n{}\n", name, marker),
+        )
+        .unwrap();
     }
-    fs::write(dir.join("readme.txt"), format!("{}\n", marker)).unwrap();
-    fs::write(dir.join("pic.png"), format!("{}\n", marker)).unwrap();
+    atomic_write_str(&dir.join("readme.txt"), &format!("{}\n", marker)).unwrap();
+    atomic_write_str(&dir.join("pic.png"), &format!("{}\n", marker)).unwrap();
 
     let dir_str = dir.to_string_lossy().to_string();
 
@@ -472,7 +476,7 @@ async fn markdown_notes_cover_both_extensions() {
     assert!(!hit_paths.iter().any(|p| p.ends_with(".txt") || p.ends_with(".png")));
 
     // 3. 反链：引用方是 .markdown 也要算进来
-    fs::write(dir.join("source.markdown"), "# Source\n\n[[Target]]\n").unwrap();
+    atomic_write_str(&dir.join("source.markdown"), "# Source\n\n[[Target]]\n").unwrap();
     let backlinks = find_backlinks(dir_str, "Target".into(), String::new())
         .await
         .expect("find_backlinks");

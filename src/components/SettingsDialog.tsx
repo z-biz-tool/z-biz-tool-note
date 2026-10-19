@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, Save, Plus, Trash2, FileText, RotateCw } from 'lucide-react';
 import type { AIConfig, Template, Config } from '../types';
 import { getIndexStatus, rebuildIndex, type IndexStatus } from '../lib/searchIndex';
 import { BUILTIN_TEMPLATES } from '../lib/templates';
 import { useI18n } from '../lib/i18n';
+import { useKeyboard } from '../hooks/useKeyboard';
+import type { KeyboardShortcut } from '../lib/keyboardShortcuts';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -56,18 +58,19 @@ export const SettingsDialog = ({
   }, [open, tab]);
 
   // Esc 必须走 closeAndRevert，否则实时预览的字号会留在页面上
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        applyFontVars(config);
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, config, onClose]);
+  const escapeShortcuts = useMemo<KeyboardShortcut[]>(
+    () => [
+      {
+        key: 'escape',
+        handler: () => {
+          applyFontVars(config);
+          onClose();
+        },
+      },
+    ],
+    [config, onClose],
+  );
+  useKeyboard(escapeShortcuts, { enabled: open });
 
   if (!open) return null;
 

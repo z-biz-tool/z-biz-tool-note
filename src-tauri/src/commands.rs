@@ -1535,6 +1535,7 @@ pub async fn stop_watch(watcher: State<'_, WatcherState>) -> Result<(), String> 
 #[cfg(test)]
 mod read_note_tests {
     use super::{note_path_in, read_note_in};
+    use crate::atomic_write::atomic_write_str;
     use std::fs;
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -1557,8 +1558,8 @@ mod read_note_tests {
     #[test]
     fn missing_and_empty_are_distinguishable() {
         let dir = temp_dir("shape");
-        fs::write(dir.join("empty.md"), "").unwrap();
-        fs::write(dir.join("hello.md"), "# Hello\n").unwrap();
+        atomic_write_str(&dir.join("empty.md"), "").unwrap();
+        atomic_write_str(&dir.join("hello.md"), "# Hello\n").unwrap();
 
         assert_eq!(read_note_in(&dir, "empty"), Some(String::new()));
         assert_eq!(read_note_in(&dir, "hello"), Some("# Hello\n".to_string()));
@@ -1574,7 +1575,7 @@ mod read_note_tests {
         let base = temp_dir("guard");
         let library = base.join("notes");
         fs::create_dir_all(&library).unwrap();
-        fs::write(base.join("secret.md"), "leaked").unwrap();
+        atomic_write_str(&base.join("secret.md"), "leaked").unwrap();
 
         for bad in ["../secret", "..\\secret", "a/b", "sub/../secret", ".."] {
             assert_eq!(note_path_in(&library, bad), None, "id {bad:?} 不该解析成路径");
