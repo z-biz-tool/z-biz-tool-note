@@ -96,7 +96,13 @@ jobs:
 
       - name: Tests
         working-directory: src-tauri
-        run: cargo test
+        # `-- --nocapture`：Rust 测试框架默认**吞掉通过用例的 stdout/stderr**
+        # （libtest 的输出捕获只放行失败用例的输出）⇒ 本仓
+        # 「[LIVE] 跳过 minimax 真实 API 实测…」与「[bench] CI 环境：跳过 5000ms
+        # 性能阈值判定…实测 NNNms」这类**跳过标记在 CI 日志里一个字都看不到**
+        # ⇒ 「没跑」和「跑过了」在日志里长得一模一样。
+        # 打开捕获后，跳过原因与实测值都进日志，可核对。
+        run: cargo test -- --nocapture
 
       - name: Clippy (advisory)
         # 不加 `-D warnings`：只在 macOS 一侧实测过 0，Linux/Windows 上平台特有的
