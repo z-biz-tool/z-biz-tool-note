@@ -1585,3 +1585,65 @@ mod read_note_tests {
         fs::remove_dir_all(&base).ok();
     }
 }
+
+#[cfg(test)]
+mod minimax_live_tests {
+    use super::{ai_chat, AiConfigPayload, ChatMessage};
+
+    /// **真实 API 实测**：用真的 MiniMax 端点跑一遍本仓自己的 `ai_chat`。
+    ///
+    /// 为什么不写桩：桩只能证明「请求拼得像 OpenAI」，证明不了
+    /// 「MiniMax 真的认这个协议」—— 而本仓的 `ai_chat` 就是要直连第三方服务。
+    /// 2026-10-20 实测：MiniMax 开放平台是 OpenAI 兼容的，
+    /// `https://api.minimaxi.com/v1/chat/completions` 返回 200。
+    ///
+    /// 跑法：`MINIMAX_API_KEY=<key> cargo test --lib minimax`
+    /// **没设 key 就显式跳过并打印原因**，不静默通过 ——
+    /// 「跳过了」和「跑过了」在报告里必须长得不一样。
+    #[tokio::test]
+    async fn minimax_live_chat() {
+        let Ok(key) = std::env::var("MINIMAX_API_KEY") else {
+            eprintln!(
+                "[LIVE] 跳过 minimax 真实 API 实测：未设置 MINIMAX_API_KEY（这是「没跑」，不是「跑过了」）"
+            );
+            return;
+        };
+        let cfg = AiConfigPayload {
+            base_url: std::env::var("MINIMAX_BASE_URL")
+                .unwrap_or_else(|_| "https://api.minimaxi.com/v1".to_string()),
+            api_key: key,
+            model: std::env::var("MINIMAX_MODEL")
+                .unwrap_or_else(|_| "MiniMax-M3.1-Flash".to_string()),
+        };
+        let msgs = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "只回两个字：收到".to_string(),
+        }];
+        let out = ai_chat(cfg, msgs).await.expect("真实调用应成功");
+        assert!(!out.trim().is_empty(), "返回内容为空");
+        eprintln!("[LIVE] note ai_chat 真实调用成功：{}", &out.chars().take(40).collect::<String>());
+    }
+
+    /// 假 key 必须被服务端拒 —— 反向钉，证明上面的 live 用例不是恒绿。
+    #[tokio::test]
+    async fn minimax_live_rejects_bad_key() {
+        let Ok(_key) = std::env::var("MINIMAX_API_KEY") else {
+            eprintln!("[LIVE] 跳过（未设置 MINIMAX_API_KEY）");
+            return;
+        };
+        let cfg = AiConfigPayload {
+            base_url: "https://api.minimaxi.com/v1".to_string(),
+            api_key: "sk-cp-definitely-invalid-key".to_string(),
+            model: "MiniMax-M3.1-Flash".to_string(),
+        };
+        let msgs = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "hi".to_string(),
+        }];
+        let err = ai_chat(cfg, msgs).await.expect_err("假 key 必须被拒");
+        assert!(
+            err.contains("401") || err.contains("403"),
+            "期望 401/403，实际错误：{err}"
+        );
+    }
+}

@@ -174,7 +174,7 @@ export const SettingsDialog = ({
                   type="text"
                   value={ai.model}
                   onChange={(e) => setAI({ ...ai, model: e.target.value })}
-                  placeholder="gpt-4o-mini / deepseek-chat / glm-4-flash / qwen-turbo"
+                  placeholder="gpt-4o-mini / deepseek-chat / glm-4-flash / qwen-turbo / MiniMax-M3.1-Flash"
                 />
               </label>
 
@@ -184,6 +184,10 @@ export const SettingsDialog = ({
                 <button onClick={() => setAI({ ...ai, baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' })}>DeepSeek</button>
                 <button onClick={() => setAI({ ...ai, baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' })}>{tr('settings', 'zhipu')}</button>
                 <button onClick={() => setAI({ ...ai, baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' })}>Kimi</button>
+                {/* MiniMax 开放平台：OpenAI 兼容协议，点一下就填好地址与模型
+                    （2026-10-20 实测该端点连通）。注意这里**不改默认值** ——
+                    预置是「加一个选项」，不是「替用户改掉原来的选择」。 */}
+                <button onClick={() => setAI({ ...ai, baseURL: 'https://api.minimaxi.com/v1', model: 'MiniMax-M3.1-Flash' })}>MiniMax</button>
                 <button onClick={() => setAI({ ...ai, baseURL: 'http://localhost:11434/v1', model: 'llama3.1' })}>Ollama</button>
               </div>
             </div>
