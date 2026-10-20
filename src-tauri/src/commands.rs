@@ -1621,7 +1621,7 @@ mod minimax_live_tests {
         }];
         let out = ai_chat(cfg, msgs).await.expect("真实调用应成功");
         assert!(!out.trim().is_empty(), "返回内容为空");
-        eprintln!("[LIVE] note ai_chat 真实调用成功：{}", &out.chars().take(40).collect::<String>());
+        eprintln!("[LIVE] note ai_chat 真实调用成功：{}", out.chars().take(40).collect::<String>());
     }
 
     /// 假 key 必须被服务端拒 —— 反向钉，证明上面的 live 用例不是恒绿。

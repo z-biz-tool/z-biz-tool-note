@@ -20,12 +20,34 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 实现要点：
 /// 1. 临时文件名以 `.` 前缀 + `.tmp` 后缀，避免被目录扫描误识别为用户文件
 /// 2. fsync 临时文件 + fsync 父目录，确保 rename 也落盘
-/// 3. Unix 上 `rename` 是原子操作，Windows 上需要走 fallback 路径
 ///
-/// Windows 兼容性说明：
-/// - Unix: `std::fs::rename` 覆盖同名文件，符合 POSIX 语义
-/// - Windows: `std::fs::rename` 不会覆盖已存在文件，因此对 Windows 使用
-///   "目标 → 临时 .bak → rename 临时 → 目标" 的迂回方式，确保原子性
+/// ## Windows：一条 rename 就够，不需要「备份再迂回」
+///
+/// 旧实现里有一句注释「Windows 上 `std::fs::rename` 不会覆盖已存在文件」，
+/// 并据此在 Windows 上套了一套「目标 → 临时 .bak → rename 临时 → 目标」的迂回。
+///
+/// **那句注释是错的。** Rust 标准库文档（`std::fs::rename`）明写：
+///
+/// > Renames a file or directory to a new name, **replacing the original file
+/// > if `to` already exists.**
+///
+/// Windows 侧对应 `MoveFileExW`（回退到 `SetFileInformationByHandle`），
+/// **本来就会覆盖已存在的文件**；并且「`to` 不能是目录」。
+///
+/// 那套迂回逻辑自身带来两个 Windows 专属缺陷（2026-10-20 由 Windows CI 抓出）：
+///
+/// 1. **会毁掉目录**：目标是个**已存在的目录**时，
+///    `rename(目录 → .bak)` 在 Windows 上**是成功的**（Windows 允许改目录名），
+///    于是用户的目录被**改名搬走**，接着 `remove_file(.bak)` 删不掉目录（那不是文件）
+///    ⇒ 目录消失、只剩一个 `.xxx.bak` 垃圾；而且整个调用**返回成功**。
+///    正确行为应是「rename(file → 目录) 失败并回传错误」。
+/// 2. **并发写同一目标会失败**：A 把 target 搬去 .bak 之后，
+///    B 看到 `target.exists()` 为 false ⇒ B 直接 rename 成功 ⇒
+///    A 再 rename 时目标已存在 ⇒ 失败 ⇒ 「保存偶发失败」。
+///    而这套迂回存在的唯一理由就是那个错误的注释。
+///
+/// ⇒ 现在各平台统一走 `fs::rename(tmp, target)`：
+/// 覆盖已有文件 ✓、目标是目录时失败并回传 ✓、并发写互不干扰 ✓、无 .bak 残留 ✓。
 pub fn atomic_write(target: &Path, content: &[u8]) -> Result<(), String> {
     let target_str = target.to_string_lossy().to_string();
     let dir = target
@@ -61,42 +83,19 @@ pub fn atomic_write(target: &Path, content: &[u8]) -> Result<(), String> {
         }
     }
 
-    // 2. 原子 rename
-    //    - Unix: rename 覆盖已存在文件
-    //    - Windows: rename 不会覆盖，先把目标备份再 rename，失败再回滚
-    #[cfg(windows)]
-    {
-        // Windows 上 std::fs::rename 不允许覆盖，需要迂回实现
-        // bak 也要唯一：并发写同一个文件时共用一个 .bak 同样会互相踩
-        let bak = temp_path_for(dir, &file_name, "bak");
-        let target_existed = target.exists();
-        if target_existed {
-            if let Err(e) = fs::rename(target, &bak) {
-                let _ = fs::remove_file(&tmp);
-                return Err(format!("Windows 备份原文件失败: {}", e));
-            }
-        }
-        if let Err(e) = fs::rename(&tmp, target) {
-            // 回滚：恢复 bak 到 target
-            if target_existed {
-                let _ = fs::rename(&bak, target);
-            }
-            // 清理 tmp
-            let _ = fs::remove_file(&tmp);
-            return Err(format!("rename 失败: {}", e));
-        }
-        // 成功：清理 bak
-        if target_existed {
-            let _ = fs::remove_file(&bak);
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        if let Err(e) = fs::rename(&tmp, target) {
-            // rename 失败：临时文件不能留在用户目录里
-            let _ = fs::remove_file(&tmp);
-            return Err(format!("rename 失败 ({} → {}): {}", tmp.display(), target_str, e));
-        }
+    // 2. 原子 rename（各平台同一条）
+    //    Rust 的 std::fs::rename 在 Windows 上也会覆盖已存在的文件
+    //    （MoveFileExW / SetFileInformationByHandle，见函数头注释与 std 文档），
+    //    且「to 不能是目录」⇒ 目标是个目录时必然失败 —— 正是失败路径要的行为。
+    if let Err(e) = fs::rename(&tmp, target) {
+        // rename 失败：临时文件不能留在用户目录里
+        let _ = fs::remove_file(&tmp);
+        return Err(format!(
+            "rename 失败 ({} → {}): {}",
+            tmp.display(),
+            target_str,
+            e
+        ));
     }
 
     // 3. fsync 父目录，确保 rename 也落盘
@@ -257,7 +256,11 @@ mod tests {
         let b = temp_path_for(&dir, "note.md", "tmp");
         assert_ne!(a, b, "同一次进程内的两次写不能共用同一个临时文件");
         assert_eq!(a.parent().unwrap(), dir);
-        assert!(a.file_name().unwrap().to_string_lossy().starts_with(".note.md."));
+        assert!(a
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(".note.md."));
         assert!(a.to_string_lossy().ends_with(".tmp"));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -314,6 +317,45 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// 回归钉：目标是**已存在的目录**时，写入必须失败，**且目录必须原地不动**。
+    ///
+    /// 2026-10-20 由 Windows CI 抓出：旧实现以为「Windows 的 rename 不覆盖」
+    /// （这句是错的，std 文档明写 rename 会替换已存在的文件），于是套了
+    /// 「目标 → .bak → rename 临时 → 目标」的迂回。
+    /// 而 Windows **允许给目录改名** ⇒ `rename(目录 → .bak)` 成功 ⇒
+    /// 用户的目录被**改名搬走**，随后 `remove_file(.bak)` 删不掉目录（那不是文件）
+    /// ⇒ **目录消失、只剩一个 `.xxx.bak` 垃圾，而且整个调用还返回成功**。
+    ///
+    /// 这条测试在**所有平台**都跑：Unix 上 rename(file → dir) 本来就失败，
+    /// 断言「目录仍在原处、旁边没有 .bak」把两边都钉住。
+    #[test]
+    fn writing_over_a_directory_fails_and_leaves_the_directory_intact() {
+        let dir = tempdir();
+        let target = dir.join("a_directory");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("inside.txt"), "keep me").unwrap();
+
+        let err = atomic_write_str(&target, "payload").expect_err("写目录必须失败");
+
+        assert!(!err.is_empty(), "必须回传错误");
+        // 目录必须还在原处、还是目录、内容没被动过
+        assert!(target.is_dir(), "目录不能被改名搬走：{}", err);
+        assert!(target.join("inside.txt").exists(), "目录里的内容不能被动过");
+        // 目录旁边不能留下改名后的残骸
+        let siblings: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            !siblings.iter().any(|n| n.contains(".bak")),
+            "不该留下 .bak 残骸，实际目录内容: {:?}",
+            siblings
+        );
+        assert_eq!(siblings.len(), 1, "目录里只应有那一个目录：{:?}", siblings);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn failed_write_to_missing_dir_reports_error() {
         let dir = tempdir();
@@ -331,7 +373,9 @@ mod tests {
         let mut out = Vec::new();
         let mut stack = vec![dir.to_path_buf()];
         while let Some(d) = stack.pop() {
-            let Ok(entries) = fs::read_dir(&d) else { continue };
+            let Ok(entries) = fs::read_dir(&d) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() {
