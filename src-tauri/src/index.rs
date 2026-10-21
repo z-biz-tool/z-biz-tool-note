@@ -61,8 +61,7 @@ impl IndexStore {
         let base = dirs::home_dir()
             .ok_or_else(|| "无法获取主目录".to_string())?
             .join(".z-note");
-        std::fs::create_dir_all(&base)
-            .map_err(|e| format!("创建索引目录失败: {}", e))?;
+        std::fs::create_dir_all(&base).map_err(|e| format!("创建索引目录失败: {}", e))?;
         Self::open_in(&base)
     }
 
@@ -83,8 +82,7 @@ impl IndexStore {
                             .unwrap_or(0)
                     ));
                     let _ = std::fs::rename(&index_path, &backup);
-                    Connection::open(&index_path)
-                        .map_err(|e| format!("重建索引失败: {}", e))?
+                    Connection::open(&index_path).map_err(|e| format!("重建索引失败: {}", e))?
                 }
             }
         } else {
@@ -176,7 +174,9 @@ impl IndexStore {
         links: &str,
     ) -> Result<(), String> {
         let conn = self.conn.lock();
-        let tx = conn.unchecked_transaction().map_err(|e| format!("事务开启失败: {}", e))?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("事务开启失败: {}", e))?;
 
         tx.execute(
             "INSERT INTO notes(path, title, mtime, size, tags, links)
@@ -322,11 +322,9 @@ impl IndexStore {
             .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
             .unwrap_or(0);
         let indexed: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM notes WHERE mtime > 0",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM notes WHERE mtime > 0", [], |r| {
+                r.get(0)
+            })
             .unwrap_or(0);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -373,7 +371,9 @@ fn tx_try<F>(conn: &Connection, f: F) -> Result<(), String>
 where
     F: FnOnce(&Connection) -> rusqlite::Result<()>,
 {
-    let tx = conn.unchecked_transaction().map_err(|e| format!("事务开启失败: {}", e))?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("事务开启失败: {}", e))?;
     f(&tx).map_err(|e| format!("事务执行失败: {}", e))?;
     tx.commit().map_err(|e| format!("提交失败: {}", e))?;
     Ok(())

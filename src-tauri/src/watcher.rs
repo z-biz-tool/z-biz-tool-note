@@ -182,7 +182,9 @@ fn spawn_flush_thread(
             let mut out = Vec::new();
             let stale_paths: Vec<PathBuf> = map
                 .iter()
-                .filter(|(_, p)| now.duration_since(p.last_seen) >= Duration::from_millis(DEBOUNCE_MS))
+                .filter(|(_, p)| {
+                    now.duration_since(p.last_seen) >= Duration::from_millis(DEBOUNCE_MS)
+                })
                 .map(|(k, _)| k.clone())
                 .collect();
             for path in stale_paths {

@@ -82,7 +82,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       # runner 上新版 token 会写坏 rust-toolchain 生成的 cargo config（与 build-release.yml 同一条 workaround）
       - name: Reset broken cargo config
@@ -104,9 +104,19 @@ jobs:
         # 打开捕获后，跳过原因与实测值都进日志，可核对。
         run: cargo test -- --nocapture
 
-      - name: Clippy (advisory)
-        # 不加 `-D warnings`：只在 macOS 一侧实测过 0，Linux/Windows 上平台特有的
-        # 告警（例如只在 cfg(unix) 下被调用的 helper 在 Windows 上算 dead_code）本地量不到。
-        # 在本机看不到那些输出的情况下把 warning 升级成失败，等于交一条永远红的 CI。
+      - name: Clippy
+        # 2026-10-21 收严：原来这一步是「advisory」（不带 -D warnings），理由是
+        # 「平台特有的告警本地量不到，升级成失败等于交一条永远红的 CI」。
+        # 但本地实测 `cargo clippy --all-targets -- -D warnings` 已经是干净的（rc=0），
+        # 而且**平台差异本来就只能靠 CI 量**（本仓 CI 跑 ubuntu）——
+        # 让 CI 量一次，比永久挂着 advisory 门禁强：
+        # 真出现平台特有告警，那是一条真 lint，该修而不是该藏。
         working-directory: src-tauri
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Format
+        # 新增门禁：rustfmt 差异之前只在本机量得到（2026-10-21 实测本仓有 74 处差异），
+        # CI 完全不跑 ⇒ 谁改乱了格式没人知道。
+        # 格式债已在同一次提交里整仓清零（纯排版，Rust 72 条 + 前端 212 条断言全过）。
+        working-directory: src-tauri
+        run: cargo fmt --all --check

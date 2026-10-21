@@ -1,12 +1,12 @@
-mod commands;
 mod atomic_write;
-mod extract;
-mod index;
-mod watcher;
 #[cfg(test)]
 mod bench;
+mod commands;
+mod extract;
+mod index;
 #[cfg(test)]
 mod integration_tests;
+mod watcher;
 
 use tauri::{
     menu::{MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
@@ -90,7 +90,11 @@ pub fn run() {
             // 菜单事件是按 id 转发给前端 menuActions 的，改文案不影响任何行为。
             let settings_item = menu_item(handle, "open-settings", "设置…", Some("CmdOrCtrl+,"))?;
             let app_menu = SubmenuBuilder::new(handle, "ZenNote")
-                .item(&PredefinedMenuItem::about(handle, Some("关于 ZenNote"), None)?)
+                .item(&PredefinedMenuItem::about(
+                    handle,
+                    Some("关于 ZenNote"),
+                    None,
+                )?)
                 .separator()
                 .item(&settings_item)
                 .separator()
@@ -105,19 +109,49 @@ pub fn run() {
 
             // ===== 文件 =====
             let file_menu = SubmenuBuilder::new(handle, "文件")
-                .item(&menu_item(handle, "new-note", "新建笔记", Some("CmdOrCtrl+N"))?)
-                .item(&menu_item(handle, "open-folder", "打开文件夹…", Some("CmdOrCtrl+O"))?)
+                .item(&menu_item(
+                    handle,
+                    "new-note",
+                    "新建笔记",
+                    Some("CmdOrCtrl+N"),
+                )?)
+                .item(&menu_item(
+                    handle,
+                    "open-folder",
+                    "打开文件夹…",
+                    Some("CmdOrCtrl+O"),
+                )?)
                 .separator()
                 .item(&menu_item(handle, "save", "保存", Some("CmdOrCtrl+S"))?)
-                .item(&menu_item(handle, "save-as", "另存为…", Some("CmdOrCtrl+Shift+S"))?)
+                .item(&menu_item(
+                    handle,
+                    "save-as",
+                    "另存为…",
+                    Some("CmdOrCtrl+Shift+S"),
+                )?)
                 .separator()
                 .item(&menu_item(handle, "export-html", "导出 HTML", None)?)
                 .item(&menu_item(handle, "export-pdf", "导出 PDF", None)?)
                 .separator()
-                .item(&menu_item(handle, "create-daily", "今日日记", Some("CmdOrCtrl+Shift+D"))?)
-                .item(&menu_item(handle, "version-history", "版本历史", Some("CmdOrCtrl+Shift+H"))?)
+                .item(&menu_item(
+                    handle,
+                    "create-daily",
+                    "今日日记",
+                    Some("CmdOrCtrl+Shift+D"),
+                )?)
+                .item(&menu_item(
+                    handle,
+                    "version-history",
+                    "版本历史",
+                    Some("CmdOrCtrl+Shift+H"),
+                )?)
                 .separator()
-                .item(&menu_item(handle, "close-tab", "关闭标签页", Some("CmdOrCtrl+W"))?)
+                .item(&menu_item(
+                    handle,
+                    "close-tab",
+                    "关闭标签页",
+                    Some("CmdOrCtrl+W"),
+                )?)
                 .build()?;
 
             // ===== 编辑（预定义项：同时让 Cmd+Z/X/C/V/A 在 WebView 中生效）=====
@@ -135,11 +169,31 @@ pub fn run() {
 
             // ===== 视图 =====
             let view_menu = SubmenuBuilder::new(handle, "视图")
-                .item(&menu_item(handle, "toggle-sidebar", "切换侧边栏", Some("CmdOrCtrl+B"))?)
+                .item(&menu_item(
+                    handle,
+                    "toggle-sidebar",
+                    "切换侧边栏",
+                    Some("CmdOrCtrl+B"),
+                )?)
                 .item(&menu_item(handle, "toggle-outline", "切换大纲", None)?)
-                .item(&menu_item(handle, "toggle-backlinks", "切换反向链接", None)?)
-                .item(&menu_item(handle, "toggle-graph", "切换知识图谱", Some("CmdOrCtrl+Shift+G"))?)
-                .item(&menu_item(handle, "toggle-ai", "切换 AI 助手", Some("CmdOrCtrl+J"))?)
+                .item(&menu_item(
+                    handle,
+                    "toggle-backlinks",
+                    "切换反向链接",
+                    None,
+                )?)
+                .item(&menu_item(
+                    handle,
+                    "toggle-graph",
+                    "切换知识图谱",
+                    Some("CmdOrCtrl+Shift+G"),
+                )?)
+                .item(&menu_item(
+                    handle,
+                    "toggle-ai",
+                    "切换 AI 助手",
+                    Some("CmdOrCtrl+J"),
+                )?)
                 .separator()
                 .item(&menu_item(handle, "toggle-source", "切换源码模式", None)?)
                 .item(&menu_item(handle, "toggle-focus", "专注模式", None)?)
@@ -150,8 +204,18 @@ pub fn run() {
 
             // ===== 前往 =====
             let go_menu = SubmenuBuilder::new(handle, "前往")
-                .item(&menu_item(handle, "quick-switch", "快速切换文件…", Some("CmdOrCtrl+P"))?)
-                .item(&menu_item(handle, "command-palette", "命令面板…", Some("CmdOrCtrl+Shift+P"))?)
+                .item(&menu_item(
+                    handle,
+                    "quick-switch",
+                    "快速切换文件…",
+                    Some("CmdOrCtrl+P"),
+                )?)
+                .item(&menu_item(
+                    handle,
+                    "command-palette",
+                    "命令面板…",
+                    Some("CmdOrCtrl+Shift+P"),
+                )?)
                 .separator()
                 .item(&menu_item(handle, "prev-tab", "上一个标签页", None)?)
                 .item(&menu_item(handle, "next-tab", "下一个标签页", None)?)
@@ -166,7 +230,12 @@ pub fn run() {
             // ===== 帮助 =====
             let help_menu = SubmenuBuilder::new(handle, "帮助")
                 .item(&menu_item(handle, "welcome-guide", "使用指南", None)?)
-                .item(&menu_item(handle, "command-palette-help", "全部命令（命令面板）", None)?)
+                .item(&menu_item(
+                    handle,
+                    "command-palette-help",
+                    "全部命令（命令面板）",
+                    None,
+                )?)
                 .build()?;
 
             // 显式把「窗口」「帮助」注册给 AppKit：标题是英文时系统靠标题匹配识别，

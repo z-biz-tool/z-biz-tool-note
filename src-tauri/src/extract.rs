@@ -25,7 +25,9 @@ fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
 
 /// 去掉 frontmatter，只留正文（没有 frontmatter 时原样返回）
 pub fn strip_frontmatter(content: &str) -> &str {
-    split_frontmatter(content).map(|(_, body)| body).unwrap_or(content)
+    split_frontmatter(content)
+        .map(|(_, body)| body)
+        .unwrap_or(content)
 }
 
 /// 去掉 ATX 标题前缀：`#` 到 `######` 后紧跟空白才算。
@@ -86,7 +88,9 @@ pub fn extract_tags(content: &str) -> Vec<String> {
             if word.starts_with('#') && word.len() > 1 {
                 let tag = word
                     .trim_start_matches('#')
-                    .trim_matches(|c: char| !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c))
+                    .trim_matches(|c: char| {
+                        !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c)
+                    })
                     .to_string();
                 if !tag.is_empty() && tag.chars().count() < 20 {
                     tags.insert(tag);
@@ -148,7 +152,6 @@ fn push_tag(out: &mut Vec<String>, raw: &str) {
         out.push(v);
     }
 }
-
 
 /// 提取 `[[link]]` 格式的双向链接
 pub fn extract_links(content: &str) -> Vec<String> {
@@ -265,11 +268,11 @@ mod tests {
     #[test]
     fn title_skips_frontmatter() {
         // 修复前：第一行 `---` 被提成标题，搜索结果和图谱节点上显示的都是 `---`
+        assert_eq!(extract_title("---\ntags: [a]\n---\n# 真标题\n"), "真标题");
         assert_eq!(
-            extract_title("---\ntags: [a]\n---\n# 真标题\n"),
-            "真标题"
+            extract_title("---\ntitle: x\n---\n\n正文开头\n"),
+            "正文开头"
         );
-        assert_eq!(extract_title("---\ntitle: x\n---\n\n正文开头\n"), "正文开头");
     }
 
     #[test]
@@ -282,7 +285,10 @@ mod tests {
 
     #[test]
     fn strip_frontmatter_passthrough() {
-        assert_eq!(strip_frontmatter("# 无 frontmatter\n"), "# 无 frontmatter\n");
+        assert_eq!(
+            strip_frontmatter("# 无 frontmatter\n"),
+            "# 无 frontmatter\n"
+        );
         assert_eq!(strip_frontmatter("---\na: 1\n---\n正文\n"), "正文\n");
     }
 

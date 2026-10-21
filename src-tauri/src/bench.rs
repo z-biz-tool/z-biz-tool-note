@@ -86,7 +86,15 @@ fn bench_index_build_1000_notes() {
     for i in 0..NOTES {
         let (path, title, body, tags, links) = synth_note(i);
         store
-            .upsert_note(&path, &title, &body, i as i64 + 1, body.len() as i64, &tags, &links)
+            .upsert_note(
+                &path,
+                &title,
+                &body,
+                i as i64 + 1,
+                body.len() as i64,
+                &tags,
+                &links,
+            )
             .expect("upsert");
     }
     let elapsed = started.elapsed();
@@ -104,10 +112,7 @@ fn bench_index_build_1000_notes() {
         status.indexed
     );
 
-    assert_eq!(
-        status.indexed, NOTES,
-        "索引条数不对，基准本身有问题"
-    );
+    assert_eq!(status.indexed, NOTES, "索引条数不对，基准本身有问题");
     // 性能断言**只在本机做**。
     //
     // 2026-10-20 实测：Windows CI runner 上建 1000 篇索引要 **~120 秒**（整个测试跑了
@@ -145,12 +150,29 @@ fn bench_search_1000_notes() {
     for i in 0..NOTES {
         let (path, title, body, tags, links) = synth_note(i);
         store
-            .upsert_note(&path, &title, &body, i as i64 + 1, body.len() as i64, &tags, &links)
+            .upsert_note(
+                &path,
+                &title,
+                &body,
+                i as i64 + 1,
+                body.len() as i64,
+                &tags,
+                &links,
+            )
             .expect("upsert");
     }
 
     let queries = [
-        "会议", "纪要", "计划", "里程碑", "复盘", "预算", "风险", "交付", "验收", "对齐",
+        "会议",
+        "纪要",
+        "计划",
+        "里程碑",
+        "复盘",
+        "预算",
+        "风险",
+        "交付",
+        "验收",
+        "对齐",
     ];
 
     let mut per_query_us: Vec<u64> = Vec::with_capacity(QUERIES);
@@ -181,7 +203,8 @@ fn bench_search_1000_notes() {
     assert!(
         total < 2_000_000,
         "搜索超时：{}us / {} 次查询（阈值 2000000us）—— 检索路径出现数量级回归",
-        total, QUERIES
+        total,
+        QUERIES
     );
 
     let _ = std::fs::remove_dir_all(&base);

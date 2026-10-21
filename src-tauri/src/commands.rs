@@ -1,7 +1,7 @@
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, Local};
 use uuid::Uuid;
 
 use crate::atomic_write::{atomic_write, atomic_write_str};
@@ -64,7 +64,14 @@ pub(crate) fn validate_path(path: &str) -> Result<PathBuf, String> {
     }
 
     // 3. 常见笔记存放位置
-    const ALLOWED_SUBDIRS: &[&str] = &["Documents", "Desktop", "Downloads", "Notes", "notes", "Documents/Notes"];
+    const ALLOWED_SUBDIRS: &[&str] = &[
+        "Documents",
+        "Desktop",
+        "Downloads",
+        "Notes",
+        "notes",
+        "Documents/Notes",
+    ];
     for sub in ALLOWED_SUBDIRS {
         let dir = canonical_home.join(sub);
         if canonical.starts_with(&dir) {
@@ -268,10 +275,10 @@ pub(crate) fn is_markdown_path(path: &Path) -> bool {
 /// HTML 特殊字符转义（防止 XSS）
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
-     .replace('\'', "&#39;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// 列出所有笔记
@@ -291,7 +298,8 @@ pub fn list_notes() -> Vec<NoteMeta> {
                     let title = extract_title(&content);
                     let tags = extract_tags(&content);
 
-                    let created = path.metadata()
+                    let created = path
+                        .metadata()
                         .and_then(|m| m.created())
                         .map(|t| {
                             let dt: DateTime<Local> = t.into();
@@ -299,7 +307,8 @@ pub fn list_notes() -> Vec<NoteMeta> {
                         })
                         .unwrap_or_default();
 
-                    let modified = path.metadata()
+                    let modified = path
+                        .metadata()
                         .and_then(|m| m.modified())
                         .map(|t| {
                             let dt: DateTime<Local> = t.into();
@@ -307,7 +316,13 @@ pub fn list_notes() -> Vec<NoteMeta> {
                         })
                         .unwrap_or_default();
 
-                    notes.push(NoteMeta { id, title, created, modified, tags });
+                    notes.push(NoteMeta {
+                        id,
+                        title,
+                        created,
+                        modified,
+                        tags,
+                    });
                 }
             }
         }
@@ -392,8 +407,8 @@ pub fn get_config() -> Config {
 #[tauri::command]
 pub fn save_config(config: Config) -> Result<(), String> {
     let path = config_path();
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("序列化配置失败: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("序列化配置失败: {}", e))?;
     atomic_write_str(&path, &json)
 }
 
@@ -410,15 +425,27 @@ pub fn export_note(id: String, format: String, path: String) -> Result<String, S
         for line in content.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("# ") {
-                html.push_str(&format!("<h1>{}</h1>", escape_html(trimmed.trim_start_matches("# "))));
+                html.push_str(&format!(
+                    "<h1>{}</h1>",
+                    escape_html(trimmed.trim_start_matches("# "))
+                ));
             } else if trimmed.starts_with("## ") {
-                html.push_str(&format!("<h2>{}</h2>", escape_html(trimmed.trim_start_matches("## "))));
+                html.push_str(&format!(
+                    "<h2>{}</h2>",
+                    escape_html(trimmed.trim_start_matches("## "))
+                ));
             } else if trimmed.starts_with("### ") {
-                html.push_str(&format!("<h3>{}</h3>", escape_html(trimmed.trim_start_matches("### "))));
+                html.push_str(&format!(
+                    "<h3>{}</h3>",
+                    escape_html(trimmed.trim_start_matches("### "))
+                ));
             } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
                 html.push_str(&format!("<li>{}</li>", escape_html(&trimmed[2..])));
             } else if trimmed.starts_with("> ") {
-                html.push_str(&format!("<blockquote>{}</blockquote>", escape_html(trimmed.trim_start_matches("> "))));
+                html.push_str(&format!(
+                    "<blockquote>{}</blockquote>",
+                    escape_html(trimmed.trim_start_matches("> "))
+                ));
             } else if trimmed.starts_with("```") {
                 html.push_str("<pre><code>");
             } else if trimmed.is_empty() {
@@ -470,7 +497,8 @@ pub fn list_trash() -> Vec<NoteMeta> {
 
                 if let Ok(content) = fs::read_to_string(&path) {
                     let title = extract_title(&content);
-                    let modified = path.metadata()
+                    let modified = path
+                        .metadata()
                         .and_then(|m| m.modified())
                         .map(|t| {
                             let dt: DateTime<Local> = t.into();
@@ -582,7 +610,10 @@ pub async fn read_image(path: String) -> Result<String, String> {
         return Err(format!("图片不存在: {}", path));
     }
     let bytes = fs::read(&full_path).map_err(|e| format!("读取图片失败: {}", e))?;
-    let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    let ext = full_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png");
     // ext→mime 同样是本产品的映射（svg → image/svg+xml 是 cap-img 没有的特例）
     let mime = match ext {
         "jpg" | "jpeg" => "image/jpeg",
@@ -716,7 +747,11 @@ pub async fn write_file(
     if let Ok(meta) = fs::metadata(&path) {
         let mtime = meta
             .modified()
-            .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+            .map(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0)
+            })
             .unwrap_or(0);
         let size = meta.len() as i64;
         let _ = index.upsert_note(&path, &title, &content, mtime, size, &tags, &links);
@@ -760,8 +795,7 @@ pub async fn move_to_trash(path: String) -> Result<(), String> {
         counter += 1;
     }
 
-    std::fs::rename(&path, &trash_path)
-        .map_err(|e| format!("移到废纸篓失败: {}", e))
+    std::fs::rename(&path, &trash_path).map_err(|e| format!("移到废纸篓失败: {}", e))
 }
 
 /// 重命名文件或目录
@@ -775,7 +809,9 @@ pub async fn rename_file(old_path: String, new_path: String) -> Result<(), Strin
 /// 检查文件或目录是否存在
 #[tauri::command]
 pub async fn file_exists(path: String) -> bool {
-    if validate_path(&path).is_err() { return false; }
+    if validate_path(&path).is_err() {
+        return false;
+    }
     std::path::Path::new(&path).exists()
 }
 
@@ -798,7 +834,8 @@ fn list_dir_recursive_impl(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
     let mut single = list_dir_single(dir)?;
     for entry in single.iter_mut() {
         if entry.is_dir {
-            entry.children = list_dir_recursive_impl(&PathBuf::from(&entry.path)).unwrap_or_default();
+            entry.children =
+                list_dir_recursive_impl(&PathBuf::from(&entry.path)).unwrap_or_default();
         }
     }
     Ok(single)
@@ -820,7 +857,8 @@ fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
             Err(_) => continue,
         };
 
-        let name = path.file_name()
+        let name = path
+            .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
@@ -829,11 +867,27 @@ fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
         let is_dir = metadata.is_dir();
         let is_file = !is_dir;
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !is_dir && !matches!(ext, "md" | "markdown" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "pdf" | "doc" | "docx" | "txt") {
+        if !is_dir
+            && !matches!(
+                ext,
+                "md" | "markdown"
+                    | "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "gif"
+                    | "webp"
+                    | "svg"
+                    | "pdf"
+                    | "doc"
+                    | "docx"
+                    | "txt"
+            )
+        {
             continue;
         }
 
-        let modified = metadata.modified()
+        let modified = metadata
+            .modified()
             .map(|t| {
                 let dt: DateTime<Local> = t.into();
                 dt.format("%Y-%m-%d %H:%M:%S").to_string()
@@ -852,9 +906,7 @@ fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
     }
 
     // 排序：目录在前，文件在后
-    entries.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name))
-    });
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
 
     Ok(entries)
 }
@@ -870,7 +922,11 @@ pub async fn search_in_files(dir: String, query: String) -> Result<Vec<SearchMat
 }
 
 /// 递归搜索 markdown 文件内容的内部实现
-fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec<SearchMatch>) -> Result<(), String> {
+fn search_in_files_recursive(
+    dir: &PathBuf,
+    query_lower: &str,
+    results: &mut Vec<SearchMatch>,
+) -> Result<(), String> {
     let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
 
     for entry in read_dir.flatten() {
@@ -896,7 +952,8 @@ fn search_in_files_recursive(dir: &PathBuf, query_lower: &str, results: &mut Vec
                         let match_char_pos = line[..pos].chars().count();
                         let preview_start = match_char_pos.saturating_sub(10);
                         let preview_end = (match_char_pos + 40).min(chars.len());
-                        let preview_str: String = chars[preview_start..preview_end].iter().collect();
+                        let preview_str: String =
+                            chars[preview_start..preview_end].iter().collect();
                         format!("{}...", preview_str)
                     } else {
                         line.to_string()
@@ -958,7 +1015,11 @@ fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Re
 
 /// 查找反向链接：搜索所有 markdown 文件中引用了指定笔记标题的文件
 #[tauri::command]
-pub async fn find_backlinks(dir: String, note_title: String, note_path: String) -> Result<Vec<BacklinkEntry>, String> {
+pub async fn find_backlinks(
+    dir: String,
+    note_title: String,
+    note_path: String,
+) -> Result<Vec<BacklinkEntry>, String> {
     validate_path(&dir)?;
     if !note_path.is_empty() {
         validate_path(&note_path)?;
@@ -969,7 +1030,12 @@ pub async fn find_backlinks(dir: String, note_title: String, note_path: String) 
 }
 
 /// 递归查找反向链接的内部实现
-fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, results: &mut Vec<BacklinkEntry>) -> Result<(), String> {
+fn find_backlinks_recursive(
+    dir: &PathBuf,
+    note_title: &str,
+    note_path: &str,
+    results: &mut Vec<BacklinkEntry>,
+) -> Result<(), String> {
     let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
 
     for entry in read_dir.flatten() {
@@ -1005,22 +1071,24 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
                         if let Some(end) = after.find("]]") {
                             let link_content = &after[..end];
                             // link_content 应该是 note_title 或 note_title#heading
-                            if (link_content == note_title || link_content.starts_with(&format!("{}#", note_title)))
-                                && !found {
-                                    found = true;
-                                    // 提取包含链接的行的前100个字符作为预览
-                                    let preview = if line.chars().count() > 100 {
-                                        let truncated: String = line.chars().take(100).collect();
-                                        format!("{}...", truncated)
-                                    } else {
-                                        line.to_string()
-                                    };
-                                    results.push(BacklinkEntry {
-                                        file_path: file_path.clone(),
-                                        title: title.clone(),
-                                        preview,
-                                    });
-                                }
+                            if (link_content == note_title
+                                || link_content.starts_with(&format!("{}#", note_title)))
+                                && !found
+                            {
+                                found = true;
+                                // 提取包含链接的行的前100个字符作为预览
+                                let preview = if line.chars().count() > 100 {
+                                    let truncated: String = line.chars().take(100).collect();
+                                    format!("{}...", truncated)
+                                } else {
+                                    line.to_string()
+                                };
+                                results.push(BacklinkEntry {
+                                    file_path: file_path.clone(),
+                                    title: title.clone(),
+                                    preview,
+                                });
+                            }
                         }
                     }
                 }
@@ -1033,7 +1101,10 @@ fn find_backlinks_recursive(dir: &PathBuf, note_title: &str, note_path: &str, re
 
 /// AI聊天代理：转发请求到OpenAI兼容API
 #[tauri::command]
-pub async fn ai_chat(config: AiConfigPayload, messages: Vec<ChatMessage>) -> Result<String, String> {
+pub async fn ai_chat(
+    config: AiConfigPayload,
+    messages: Vec<ChatMessage>,
+) -> Result<String, String> {
     // 构建请求URL
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
 
@@ -1130,7 +1201,8 @@ pub async fn ai_chat_stream(
                     for line in event.lines() {
                         if let Some(data) = line.strip_prefix("data: ") {
                             if data == "[DONE]" {
-                                let _ = app.emit("ai-stream://done", serde_json::json!({ "full": full }));
+                                let _ = app
+                                    .emit("ai-stream://done", serde_json::json!({ "full": full }));
                                 return Ok(());
                             }
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
@@ -1215,7 +1287,8 @@ pub async fn list_backups(note_path: String) -> Result<Vec<BackupEntry>, String>
             if path.extension().is_some_and(|ext| ext == "md") {
                 let filename = path.file_name().unwrap().to_string_lossy().to_string();
                 let timestamp = filename.trim_end_matches(".md").to_string();
-                let modified = path.metadata()
+                let modified = path
+                    .metadata()
                     .and_then(|m| m.modified())
                     .map(|t| {
                         let dt: DateTime<Local> = t.into();
@@ -1249,19 +1322,17 @@ pub async fn restore_backup(backup_path: String, target_path: String) -> Result<
     }
     let target = std::path::Path::new(&target_path);
 
-    let content = fs::read_to_string(backup)
-        .map_err(|e| format!("读取备份失败: {}", e))?;
-    atomic_write_str(target, &content)
-        .map_err(|e| format!("恢复备份失败: {}", e))
+    let content = fs::read_to_string(backup).map_err(|e| format!("读取备份失败: {}", e))?;
+    atomic_write_str(target, &content).map_err(|e| format!("恢复备份失败: {}", e))
 }
 
 /// 获取文件修改时间（用于检测外部修改）
 #[tauri::command]
 pub async fn get_file_modified(path: String) -> Result<String, String> {
     validate_path(&path)?;
-    let metadata = fs::metadata(&path)
-        .map_err(|e| format!("获取文件信息失败: {}", e))?;
-    let modified = metadata.modified()
+    let metadata = fs::metadata(&path).map_err(|e| format!("获取文件信息失败: {}", e))?;
+    let modified = metadata
+        .modified()
         .map(|t| {
             let dt: DateTime<Local> = t.into();
             dt.format("%Y-%m-%d %H:%M:%S").to_string()
@@ -1275,7 +1346,7 @@ pub async fn get_file_modified(path: String) -> Result<String, String> {
 pub async fn read_file_binary(path: String) -> Result<String, String> {
     validate_path(&path)?;
     let bytes = fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     Ok(STANDARD.encode(&bytes))
 }
 
@@ -1292,14 +1363,24 @@ pub async fn get_file_meta(path: String) -> Result<FileMeta, String> {
     use std::path::Path;
     validate_path(&path)?;
     let metadata = fs::metadata(&path).map_err(|e| format!("获取文件信息失败: {}", e))?;
-    let modified = metadata.modified()
+    let modified = metadata
+        .modified()
         .map(|t| {
             let dt: DateTime<Local> = t.into();
             dt.format("%Y-%m-%d %H:%M:%S").to_string()
         })
         .unwrap_or_else(|_| "未知".to_string());
-    let mime = guess_mime_from_ext(Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or(""));
-    Ok(FileMeta { size: metadata.len(), modified, mime })
+    let mime = guess_mime_from_ext(
+        Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or(""),
+    );
+    Ok(FileMeta {
+        size: metadata.len(),
+        modified,
+        mime,
+    })
 }
 
 /// 根据扩展名猜 MIME（覆盖常见图片/音视频/PDF/Office/文本类型）
@@ -1375,10 +1456,7 @@ use tauri::{Emitter, State};
 /// 索引笔记文件：内部命令（前端一般不需要直接调）。
 /// 行为：读取文件、提取 title/tags/links、写入 FTS5 索引。
 #[tauri::command]
-pub async fn index_upsert_note(
-    path: String,
-    index: State<'_, IndexStore>,
-) -> Result<(), String> {
+pub async fn index_upsert_note(path: String, index: State<'_, IndexStore>) -> Result<(), String> {
     validate_path(&path)?;
     let content = fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
     let title = extract_title(&content);
@@ -1399,10 +1477,7 @@ pub async fn index_upsert_note(
 
 /// 从索引中删除单条
 #[tauri::command]
-pub async fn index_delete_note(
-    path: String,
-    index: State<'_, IndexStore>,
-) -> Result<(), String> {
+pub async fn index_delete_note(path: String, index: State<'_, IndexStore>) -> Result<(), String> {
     validate_path(&path)?;
     index.delete_note(&path)
 }
@@ -1443,7 +1518,11 @@ pub async fn rebuild_index(
         };
         let mtime = meta
             .modified()
-            .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+            .map(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0)
+            })
             .unwrap_or(0);
         match existing_map.get(path) {
             Some(&old_mtime) if old_mtime == mtime => {
@@ -1471,7 +1550,11 @@ pub async fn rebuild_index(
             let meta = fs::metadata(path).map_err(|e| format!("元信息失败: {}", e))?;
             let mtime = meta
                 .modified()
-                .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0))
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0);
             let size = meta.len() as i64;
             index.upsert_note(path, &title, &content, mtime, size, &tags, &links)
@@ -1495,7 +1578,10 @@ fn scan_md_recursive(
         if path.is_dir() {
             // 跳过常见排除目录
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(name, ".git" | "node_modules" | ".z-note" | "images" | ".trash") {
+            if matches!(
+                name,
+                ".git" | "node_modules" | ".z-note" | "images" | ".trash"
+            ) {
                 continue;
             }
             scan_md_recursive(&path, out)?;
@@ -1578,8 +1664,16 @@ mod read_note_tests {
         atomic_write_str(&base.join("secret.md"), "leaked").unwrap();
 
         for bad in ["../secret", "..\\secret", "a/b", "sub/../secret", ".."] {
-            assert_eq!(note_path_in(&library, bad), None, "id {bad:?} 不该解析成路径");
-            assert_eq!(read_note_in(&library, bad), None, "id {bad:?} 读到了库外内容");
+            assert_eq!(
+                note_path_in(&library, bad),
+                None,
+                "id {bad:?} 不该解析成路径"
+            );
+            assert_eq!(
+                read_note_in(&library, bad),
+                None,
+                "id {bad:?} 读到了库外内容"
+            );
         }
         assert_eq!(read_note_in(&base, "secret"), Some("leaked".to_string()));
         fs::remove_dir_all(&base).ok();
@@ -1621,7 +1715,10 @@ mod minimax_live_tests {
         }];
         let out = ai_chat(cfg, msgs).await.expect("真实调用应成功");
         assert!(!out.trim().is_empty(), "返回内容为空");
-        eprintln!("[LIVE] note ai_chat 真实调用成功：{}", out.chars().take(40).collect::<String>());
+        eprintln!(
+            "[LIVE] note ai_chat 真实调用成功：{}",
+            out.chars().take(40).collect::<String>()
+        );
     }
 
     /// 假 key 必须被服务端拒 —— 反向钉，证明上面的 live 用例不是恒绿。

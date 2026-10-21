@@ -142,14 +142,30 @@ fn index_recalls_chinese_inside_a_word() {
 
     // 两个汉字词是 AND：缺一个就不该出结果
     store
-        .upsert_note("/tmp/cjk-note-2.md", "读书", "读书笔记：另一篇也含这个词\n", 1, 10, "", "")
+        .upsert_note(
+            "/tmp/cjk-note-2.md",
+            "读书",
+            "读书笔记：另一篇也含这个词\n",
+            1,
+            10,
+            "",
+            "",
+        )
         .expect("upsert");
     assert_eq!(store.search("笔记", 10).expect("search").len(), 2);
     assert_eq!(store.search("笔记 摘要", 10).expect("search").len(), 0);
 
     // 拉丁前缀匹配不受影响
     store
-        .upsert_note("/tmp/latin.md", "Title", "the quick brown fox", 1, 10, "", "")
+        .upsert_note(
+            "/tmp/latin.md",
+            "Title",
+            "the quick brown fox",
+            1,
+            10,
+            "",
+            "",
+        )
         .expect("upsert");
     let latin = store.search("quic", 10).expect("search");
     assert_eq!(latin.len(), 1);
@@ -209,7 +225,10 @@ fn 中文正文检索既能命中也不会误召回() {
         snip
     );
 
-    assert!(store.search("证书", 10).expect("search").is_empty(), "不存在的词不能返回");
+    assert!(
+        store.search("证书", 10).expect("search").is_empty(),
+        "不存在的词不能返回"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -317,12 +336,7 @@ fn index_escapes_html_in_content() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let unique_marker = format!(
-        "zennotexss{}{}{}",
-        std::process::id(),
-        nanos,
-        counter
-    );
+    let unique_marker = format!("zennotexss{}{}{}", std::process::id(), nanos, counter);
     let path = format!("/tmp/test-xss-{}.md", unique_marker);
     let title = "XSS Test";
     // 包含恶意 HTML 的笔记 + 唯一关键词
@@ -431,33 +445,39 @@ fn ensure_dir_blocks_sensitive() {
 /// （list_dir_single 收 markdown）、点得开、改得动，却搜不到、进不了图谱和反链。
 #[tokio::test]
 async fn markdown_notes_cover_both_extensions() {
-    use std::path::Path;
     use crate::commands::{find_backlinks, is_markdown_path, read_all_notes, search_in_files};
+    use std::path::Path;
 
     // 1. 纯函数口径：两种扩展名 + 大小写混排都算，其它一律不算
     for name in ["a.md", "a.markdown", "NOTE.MD", "Note.Markdown"] {
-        assert!(is_markdown_path(Path::new(name)), "{} 应判为 markdown", name);
+        assert!(
+            is_markdown_path(Path::new(name)),
+            "{} 应判为 markdown",
+            name
+        );
     }
     for name in ["a.txt", "a.png", "Makefile", "a.mdx"] {
-        assert!(!is_markdown_path(Path::new(name)), "{} 不该判为 markdown", name);
+        assert!(
+            !is_markdown_path(Path::new(name)),
+            "{} 不该判为 markdown",
+            name
+        );
     }
 
     // 2. 真实目录：三篇笔记（含两篇 .markdown）+ 两个树里可见的非笔记文件
     let dir = tempdir();
     let marker = format!("zenmarkdown{}", test_nanos());
     for name in ["plain.md", "alt.markdown", "UPPER.MARKDOWN"] {
-        atomic_write_str(
-            &dir.join(name),
-            &format!("# {}\n\n{}\n", name, marker),
-        )
-        .unwrap();
+        atomic_write_str(&dir.join(name), &format!("# {}\n\n{}\n", name, marker)).unwrap();
     }
     atomic_write_str(&dir.join("readme.txt"), &format!("{}\n", marker)).unwrap();
     atomic_write_str(&dir.join("pic.png"), &format!("{}\n", marker)).unwrap();
 
     let dir_str = dir.to_string_lossy().to_string();
 
-    let mut summaries = read_all_notes(dir_str.clone()).await.expect("read_all_notes");
+    let mut summaries = read_all_notes(dir_str.clone())
+        .await
+        .expect("read_all_notes");
     summaries.sort_by(|a, b| a.file_path.cmp(&b.file_path));
     let got: Vec<&str> = summaries.iter().map(|s| s.file_path.as_str()).collect();
     assert_eq!(
@@ -466,14 +486,29 @@ async fn markdown_notes_cover_both_extensions() {
         "图谱/摘要应正好收 3 篇笔记（readme.txt、pic.png 不能混进来）：{:?}",
         got
     );
-    assert!(got.iter().any(|p| p.ends_with("alt.markdown")), "缺 .markdown 笔记");
-    assert!(got.iter().any(|p| p.ends_with("UPPER.MARKDOWN")), "缺大写扩展名笔记");
+    assert!(
+        got.iter().any(|p| p.ends_with("alt.markdown")),
+        "缺 .markdown 笔记"
+    );
+    assert!(
+        got.iter().any(|p| p.ends_with("UPPER.MARKDOWN")),
+        "缺大写扩展名笔记"
+    );
 
-    let hits = search_in_files(dir_str.clone(), marker).await.expect("search_in_files");
+    let hits = search_in_files(dir_str.clone(), marker)
+        .await
+        .expect("search_in_files");
     let hit_paths: Vec<&str> = hits.iter().map(|h| h.file_path.as_str()).collect();
-    assert_eq!(hits.len(), 3, "全文搜索应命中 3 篇笔记，实际 {:?}", hit_paths);
+    assert_eq!(
+        hits.len(),
+        3,
+        "全文搜索应命中 3 篇笔记，实际 {:?}",
+        hit_paths
+    );
     assert!(hits.iter().any(|h| h.file_path.ends_with("alt.markdown")));
-    assert!(!hit_paths.iter().any(|p| p.ends_with(".txt") || p.ends_with(".png")));
+    assert!(!hit_paths
+        .iter()
+        .any(|p| p.ends_with(".txt") || p.ends_with(".png")));
 
     // 3. 反链：引用方是 .markdown 也要算进来
     atomic_write_str(&dir.join("source.markdown"), "# Source\n\n[[Target]]\n").unwrap();
@@ -481,7 +516,9 @@ async fn markdown_notes_cover_both_extensions() {
         .await
         .expect("find_backlinks");
     assert!(
-        backlinks.iter().any(|b| b.file_path.ends_with("source.markdown")),
+        backlinks
+            .iter()
+            .any(|b| b.file_path.ends_with("source.markdown")),
         "反链漏掉 .markdown 引用方：{:?}",
         backlinks.iter().map(|b| &b.file_path).collect::<Vec<_>>()
     );
