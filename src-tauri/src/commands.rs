@@ -1845,11 +1845,19 @@ mod show_in_folder_tests {
     /// 越界路径必须被路径校验挡下（这条命令会把路径交给系统命令 ⇒ 不能放行任意路径）
     #[test]
     fn path_outside_allowed_dirs_is_rejected() {
-        // /etc/hosts 在任何平台都不在允许范围（笔记库 / 常见笔记位置 / 应用数据 / 临时目录）
-        let err = show_in_folder_at("/etc/hosts").expect_err("越界路径必须拒");
+        // 选一个**在当前平台确实存在、但一定不在允许范围内**的路径。
+        // ⚠ 不能用同一个字符串跨平台：Windows 上 `/etc/hosts` 压根不存在
+        // ⇒ 会先被「文件不存在」拦下（那时错误里没有「路径」二字）
+        // ⇒ 断言就红了（2026-10-23 实测：Windows CI 的 Tests 步就是被这一条顶红的）。
+        #[cfg(target_os = "windows")]
+        let outside = "C:\\Windows\\System32\\drivers\\etc\\hosts";
+        #[cfg(not(target_os = "windows"))]
+        let outside = "/etc/hosts";
+
+        let err = show_in_folder_at(outside).expect_err("越界路径必须拒");
         assert!(
-            err.contains("不在允许范围内") || err.contains("路径"),
-            "错误要说清是路径被拒: {err}"
+            err.contains("不在允许范围内"),
+            "错误要说清是路径被拒（若这里报的是「不存在」，说明该平台上选的测试路径不对）: {err}"
         );
     }
 }
