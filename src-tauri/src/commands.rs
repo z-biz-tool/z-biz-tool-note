@@ -815,6 +815,55 @@ pub async fn file_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
 }
 
+/// 算出「在文件管理器里定位这个文件」该用哪个命令与参数（纯函数，可测）
+///
+/// 平台差异：
+/// - macOS：`open -R <path>` —— 在 Finder 里**选中**该文件；
+/// - Windows：`explorer /select,<path>` —— 资源管理器里选中；
+/// - Linux：`xdg-open <父目录>` —— 没有等价的「选中」语义，退化成打开所在目录。
+pub fn reveal_command(path: &Path) -> (String, Vec<String>) {
+    let target = path.to_string_lossy().to_string();
+    if cfg!(target_os = "windows") {
+        ("explorer".to_string(), vec![format!("/select,{}", target)])
+    } else if cfg!(target_os = "macos") {
+        ("open".to_string(), vec!["-R".to_string(), target])
+    } else {
+        let parent = path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| target.clone());
+        ("xdg-open".to_string(), vec![parent])
+    }
+}
+
+/// 在系统文件管理器中定位（选中）文件
+///
+/// **2026-10-22 修**：前端 `BinaryViewer.tsx` 的「在文件管理器中显示」
+/// 一直在调 `show_in_folder`，但**后端从来没有注册过这个命令**
+/// ⇒ invoke 直接报 "command not found"，而前端把错误 `catch { /* noop */ }` 吞掉
+/// ⇒ **按钮点了没有任何反应，也没有任何提示**。
+/// （db 仓把同一类叫「界面说成功、事实不是」；这里是「界面说能做、事实是啥也没发生」。）
+#[tauri::command]
+pub async fn show_in_folder(path: String) -> Result<(), String> {
+    show_in_folder_at(&path)
+}
+
+/// show_in_folder 的实体：单列出来让测试能直接喂路径（async 命令在测试里跑不了）
+pub fn show_in_folder_at(path: &str) -> Result<(), String> {
+    let p = Path::new(path);
+    if !p.exists() {
+        return Err(format!("文件不存在: {}", path));
+    }
+    // 路径校验：只允许笔记库/常见笔记位置/应用数据/临时目录里的文件
+    let canonical = validate_path(path)?;
+    let (program, args) = reveal_command(&canonical);
+    std::process::Command::new(&program)
+        .args(&args)
+        .spawn()
+        .map_err(|e| format!("在文件管理器中显示失败: {}", e))?;
+    Ok(())
+}
+
 /// 列出目录内容（单层；子目录的 children 由前端展开时按需加载，避免大目录递归遍历阻塞 UI）
 #[tauri::command]
 pub async fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
@@ -1741,6 +1790,66 @@ mod minimax_live_tests {
         assert!(
             err.contains("401") || err.contains("403"),
             "期望 401/403，实际错误：{err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod show_in_folder_tests {
+    use super::{reveal_command, show_in_folder_at};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "zennote-show-in-folder-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            tag
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    /// 平台映射不能写错：macOS 是 `open -R`（Finder 里**选中**），
+    /// Windows 是 `explorer /select,`，Linux 没有「选中」语义 ⇒ 退化成打开父目录。
+    #[test]
+    fn reveal_command_matches_platform() {
+        let (program, args) = reveal_command(std::path::Path::new("/tmp/x.txt"));
+        if cfg!(target_os = "windows") {
+            assert_eq!(program, "explorer");
+            assert_eq!(args, vec!["/select,/tmp/x.txt".to_string()]);
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(program, "open");
+            assert_eq!(args, vec!["-R".to_string(), "/tmp/x.txt".to_string()]);
+        } else {
+            assert_eq!(program, "xdg-open");
+            assert_eq!(args, vec!["/tmp".to_string()], "Linux 退化成打开父目录");
+        }
+    }
+
+    /// 文件不存在 ⇒ 必须报错（而不是让系统命令去处理一个不存在的路径）
+    #[test]
+    fn missing_file_is_rejected() {
+        let dir = temp_dir("missing");
+        let p = dir.join("nope.bin");
+        let err = show_in_folder_at(&p.to_string_lossy()).expect_err("不存在的文件必须拒");
+        assert!(err.contains("不存在"), "错误要说清是文件不存在: {err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 越界路径必须被路径校验挡下（这条命令会把路径交给系统命令 ⇒ 不能放行任意路径）
+    #[test]
+    fn path_outside_allowed_dirs_is_rejected() {
+        // /etc/hosts 在任何平台都不在允许范围（笔记库 / 常见笔记位置 / 应用数据 / 临时目录）
+        let err = show_in_folder_at("/etc/hosts").expect_err("越界路径必须拒");
+        assert!(
+            err.contains("不在允许范围内") || err.contains("路径"),
+            "错误要说清是路径被拒: {err}"
         );
     }
 }

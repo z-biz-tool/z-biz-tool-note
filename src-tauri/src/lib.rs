@@ -77,6 +77,9 @@ pub fn run() {
             commands::index_delete_note,
             commands::start_watch,
             commands::stop_watch,
+            // 2026-10-22 补注册：前端 BinaryViewer 一直在调 show_in_folder，
+            // 但后端从来没有这个命令 ⇒ 那个按钮点了没反应、也没提示（错误被前端吞了）。
+            commands::show_in_folder,
         ])
         .setup(|app| {
             // 初始化索引与 watcher 状态

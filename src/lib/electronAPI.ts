@@ -682,8 +682,12 @@ export const electronAPI = {
           return { success: true };
         case 'read-file-stats':
           return { success: true, stats: { size: 0, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), isFile: true, isDirectory: false } };
-        case 'open-file-in-finder':
-          return { success: false, error: 'Tauri 模式暂不支持' };
+        case 'open-file-in-finder': {
+          // 2026-10-22：后端补上了 show_in_folder（原先这个通道在 Tauri 模式下
+          // 直接返回「暂不支持」⇒ 桌面上是个假入口；前端其实也没在用它）。
+          const res = await invoke('show_in_folder', { path: String(args[0]) });
+          return { success: true, path: res };
+        }
         case 'save-image': {
           const relativePath = await invoke<string>('save_image', { noteId: args[0], data: args[1] });
           return { success: true, path: relativePath };

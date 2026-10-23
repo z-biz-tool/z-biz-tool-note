@@ -1,4 +1,6 @@
 import { baseName } from '../../lib/fileTypes';
+import { electronAPI, errText } from '../../lib/electronAPI';
+import { notify } from '../../lib/dialogs';
 import { FileQuestion, ExternalLink } from 'lucide-react';
 
 interface Props {
@@ -30,11 +32,19 @@ export const BinaryViewer = ({ filePath, size, modified, mime }: Props) => {
         </table>
         <a className="text-btn" href="#" onClick={async (e) => {
           e.preventDefault();
-          // 调系统"在 finder 中显示"
+          // ⚠ 不要静默吞掉错误：这里原来是 `catch { /* noop */ }`，
+          // 而后端**压根没注册 show_in_folder** ⇒ 用户点了没有任何反应、
+          // 也没有任何提示（"界面说能做、事实是啥也没发生"）。
+          if (!electronAPI.isTauri) {
+            notify('浏览器模式下无法调用系统文件管理器，请在桌面应用里使用', 'error');
+            return;
+          }
           try {
             const { invoke } = await import('@tauri-apps/api/core');
             await invoke('show_in_folder', { path: filePath });
-          } catch { /* noop */ }
+          } catch (err) {
+            notify(`在文件管理器中显示失败：${errText(err)}`, 'error');
+          }
         }}>
           <ExternalLink size={14} /> 在文件管理器中显示
         </a>
