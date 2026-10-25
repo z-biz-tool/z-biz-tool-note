@@ -556,6 +556,12 @@ export const electronAPI = {
           return { success: false, error: '浏览器模式没有搜索索引' };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
+        // 系统密钥库通道：浏览器演示区没有 keychain，密钥只在会话内存里有效，
+        // 绝不退回 localStorage —— 那把明文写回去，正是这次迁移要消灭的东西。
+        case 'save-secret':
+        case 'load-secret':
+        case 'delete-secret':
+          return { success: false, error: '浏览器演示模式没有系统密钥库，密钥不会被保存' };
         default:
           return { success: false, error: '浏览器模式不可用' };
       }
@@ -704,6 +710,21 @@ export const electronAPI = {
           } catch (e: any) {
             return { success: false, error: e?.toString() || 'AI 请求失败' };
           }
+        }
+        // 敏感项（AI API Key 等）走 OS 密钥库：account 为命名空间化 key
+        // （"ai.apiKey"），由 Rust secrets::account_for 校验形状。
+        case 'save-secret': {
+          await invoke('save_secret', { key: args[0], value: args[1] });
+          return { success: true };
+        }
+        case 'load-secret': {
+          // value = null 表示还没配过密钥（Rust 返回 Option::None）
+          const value = await invoke<string | null>('load_secret', { key: args[0] });
+          return { success: true, value: value ?? null };
+        }
+        case 'delete-secret': {
+          await invoke('delete_secret', { key: args[0] });
+          return { success: true };
         }
         case 'read-all-notes': {
           const notes = await invoke<any[]>('read_all_notes', { dir: args[0] });

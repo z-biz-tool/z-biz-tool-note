@@ -6,6 +6,7 @@ mod extract;
 mod index;
 #[cfg(test)]
 mod integration_tests;
+mod secrets;
 mod watcher;
 
 use tauri::{
@@ -80,6 +81,10 @@ pub fn run() {
             // 2026-10-22 补注册：前端 BinaryViewer 一直在调 show_in_folder，
             // 但后端从来没有这个命令 ⇒ 那个按钮点了没反应、也没提示（错误被前端吞了）。
             commands::show_in_folder,
+            // 敏感项（AI API Key 等）走 OS 密钥库：明文不再落 localStorage
+            secrets::save_secret,
+            secrets::load_secret,
+            secrets::delete_secret,
         ])
         .setup(|app| {
             // 初始化索引与 watcher 状态

@@ -20,6 +20,7 @@ import { disambiguateTabTitles } from './lib/tabTitles';
 import { recordRecentFile } from './lib/recentFiles';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
+import { loadAiConfigFromStores, saveAiConfigToStores, DEFAULT_AI_CONFIG } from './lib/aiSecrets';
 import { StatusBar } from './components/StatusBar';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
@@ -202,12 +203,9 @@ const App = () => {
   const [currentDir, setCurrentDir] = useState<string>('');
 
   // AI state
-  const [aiConfig, setAIConfig] = useState<AIConfig>({
-    baseURL: 'https://api.openai.com/v1',
-    apiKey: '',
-    model: 'gpt-4o-mini',
-    enabled: false,
-  });
+  // 密钥不在 state 里持久化：它只存在于本次会话内存 + OS 密钥库，
+  // localStorage 的 aiConfig 只留非敏感项（见 lib/aiSecrets.ts）
+  const [aiConfig, setAIConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -446,11 +444,9 @@ const App = () => {
   useEffect(() => {
     // 主题已由 main.tsx 在首帧前应用，这里不再重复 apply（否则又是一次"先浅色后深色"的闪）
 
-    // Load AI config
-    const savedAI = localStorage.getItem('aiConfig');
-    if (savedAI) {
-      try { setAIConfig(JSON.parse(savedAI)); } catch (e) { console.warn('加载 AI 配置失败:', e); }
-    }
+    // Load AI config（非敏感项在 localStorage，密钥从 OS 密钥库读回；
+    // 旧版明文密钥由 loadAiConfigFromStores 内部做一次性迁移并擦除旧位置）
+    void loadAiConfigFromStores().then(setAIConfig);
 
     // 加载字体配置
     const savedConfig = localStorage.getItem('appConfig');
@@ -2161,9 +2157,15 @@ const App = () => {
           templates={templates}
           config={config}
           currentDir={currentDir}
-          onSaveAI={(cfg) => {
+          onSaveAI={async (cfg) => {
             setAIConfig(cfg);
-            localStorage.setItem('aiConfig', JSON.stringify(cfg));
+            // 密钥只进 OS 密钥库；localStorage 只留剥掉 apiKey 的非敏感配置。
+            // 落库失败时 localStorage 保持原样，用户的密钥不会因这次保存丢失。
+            const ok = await saveAiConfigToStores(cfg);
+            if (!ok) {
+              showToast(tr('toast', 'aiKeySaveFailed'), 'error');
+              return;
+            }
             showToast(tr('toast', cfg.enabled ? 'aiEnabled' : 'aiDisabled'));
           }}
           onSaveTemplates={(tpls) => {

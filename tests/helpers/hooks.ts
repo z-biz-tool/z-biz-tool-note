@@ -36,15 +36,18 @@ export function installHooks(): void {
     // ERR_INVALID_RETURN_PROPERTY_VALUE（url 为 undefined）。
     resolve(specifier: string, context: any, nextResolve: Function) {
       if (specifier === "react") return { url: REACT_STUB, shortCircuit: true };
-      // 相对路径且没有扩展名 → 补 .ts（Vite 的写法在 Node 里要自己补）
+      // 相对路径且没有扩展名 → 补 .ts / .tsx（Vite 的写法在 Node 里要自己补；
+      // dialogs.tsx 这类 .tsx 模块只补 .ts 会解析失败）
       if (
         (specifier.startsWith("./") || specifier.startsWith("../")) &&
         !/\.[cm]?[jt]sx?$/i.test(specifier)
       ) {
-        try {
-          return nextResolve(`${specifier}.ts`, context);
-        } catch {
-          // 补不上就按原样解析（让真实报错信息露出来）
+        for (const ext of [".ts", ".tsx"]) {
+          try {
+            return nextResolve(`${specifier}${ext}`, context);
+          } catch {
+            // 换下一个扩展名再试
+          }
         }
       }
       return nextResolve(specifier, context);

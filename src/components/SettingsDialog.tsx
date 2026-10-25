@@ -167,6 +167,7 @@ export const SettingsDialog = ({
                   placeholder="sk-..."
                 />
               </label>
+              <p className="settings-hint">{tr('settings', 'apiKeyHint')}</p>
 
               <label className="settings-label">
                 <span>{tr('settings', 'model')}</span>

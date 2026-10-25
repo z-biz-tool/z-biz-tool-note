@@ -69,6 +69,7 @@ interface Translations {
     bgSaveFailed: string;
     aiEnabled: string;
     aiDisabled: string;
+    aiKeySaveFailed: string;
     dailyCreated: string;
     dailyOpened: string;
     templateCreated: string;
@@ -95,6 +96,7 @@ interface Translations {
     enableAI: string;
     baseURL: string;
     apiKey: string;
+    apiKeyHint: string;
     model: string;
     presets: string;
     zhipu: string;
@@ -244,6 +246,7 @@ const translations: Record<Language, Translations> = {
       bgSaveFailed: 'Autosave of "{name}" failed ({err}); the content is staged — restore it from the banner above',
       aiEnabled: 'AI assistant enabled',
       aiDisabled: 'AI assistant disabled',
+      aiKeySaveFailed: 'Failed to save the key: the system keychain is unavailable',
       dailyCreated: 'Daily note created',
       dailyOpened: "Opened today's daily note",
       templateCreated: 'Note created from template',
@@ -271,6 +274,7 @@ const translations: Record<Language, Translations> = {
       enableAI: 'Enable AI assistant',
       baseURL: 'Base URL',
       apiKey: 'API Key',
+      apiKeyHint: 'The key is stored in your system keychain (macOS Keychain / Windows Credential Manager) — never in browser storage.',
       model: 'Model',
       presets: 'Presets:',
       zhipu: 'Zhipu',
@@ -417,6 +421,7 @@ const translations: Record<Language, Translations> = {
       bgSaveFailed: '「{name}」自动保存失败（{err}），内容已暂存，可在顶部横幅恢复',
       aiEnabled: 'AI 助手已启用',
       aiDisabled: 'AI 助手已关闭',
+      aiKeySaveFailed: '密钥保存失败：系统密钥库不可用',
       dailyCreated: '今日日记已创建',
       dailyOpened: '已打开今日日记',
       templateCreated: '已从模板新建笔记',
@@ -444,6 +449,7 @@ const translations: Record<Language, Translations> = {
       enableAI: '启用 AI 助手',
       baseURL: '接口地址 Base URL',
       apiKey: 'API Key',
+      apiKeyHint: '密钥保存在系统密钥库（macOS 钥匙串 / Windows 凭据管理器 / Linux Secret Service），不会写入浏览器存储。',
       model: '模型',
       presets: '预设：',
       zhipu: '智谱',
