@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Folder, FileText, Search, Plus, ChevronRight, ChevronDown,
-  Home, Clock, Files, Hash, Settings, Sparkles, Calendar, X
+  Home, Clock, Files, Hash, Settings, Sparkles, Calendar, X, ScanSearch
 } from 'lucide-react';
 import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
@@ -16,8 +16,6 @@ import { modKeys, MOD } from '../lib/modifier';
 import { useI18n } from '../lib/i18n';
 
 // 渐变色主题常量
-const brandGradient = "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
-const cardBgGradient = "linear-gradient(135deg, rgba(102,126,234,0.04) 0%, rgba(118,75,162,0.04) 100%)";
 
 /** 递归树里挑出所有能当放置目标的目录，depth 用来在子菜单里缩进 */
 function collectDirs(nodes: FileItem[], depth: number, out: MoveTarget[] = []): MoveTarget[] {
@@ -71,6 +69,8 @@ interface SidebarProps {
   activeTag?: string | null;
   onOpenSettings?: () => void;
   onOpenAI?: () => void;
+  /** 打开「问笔记」面板（RAG 检索问答） */
+  onOpenAsk?: () => void;
   onCreateDaily?: () => void;
   width?: number;
 }
@@ -79,7 +79,7 @@ type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
   isOpen, currentDir, currentNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
-  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onCreateDaily, width,
+  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onOpenAsk, onCreateDaily, width,
 }: SidebarProps) => {
   const { t: tr } = useI18n();
   const { listFiles, listFilesRecursive, showOpenDialog } = useFileOperations();
@@ -650,41 +650,14 @@ export const Sidebar = ({
 
   return (
     <div className="sidebar" role="navigation" aria-label="笔记导航" style={width ? { width: `${width}px` } : undefined}>
-      <div 
-        className="sidebar-header"
-        style={{
-          background: cardBgGradient,
-          borderRadius: 12,
-          padding: "12px 16px",
-          marginBottom: 12,
-        }}
-      >
-        <span 
-          className="sidebar-title"
-          style={{ 
-            fontWeight: 600, 
-            background: brandGradient,
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundImage: brandGradient,
-          }}
-        >ZenNote</span>
+      <div className="sidebar-header">
+        <span className="sidebar-title">ZenNote</span>
         <button className="toolbar-btn" onClick={onNewNote} title="新建笔记">
           <Plus size={16} />
         </button>
       </div>
 
-      <div 
-        className="sidebar-tabs"
-        role="group"
-        aria-label="侧栏视图"
-        style={{
-          background: cardBgGradient,
-          borderRadius: 10,
-          padding: 4,
-          marginBottom: 12,
-        }}
-      >
+      <div className="sidebar-tabs" role="group" aria-label="侧栏视图">
         {/* 用 aria-pressed 而不是 role=tab：这四个按钮下面没有四个 tabpanel，
             标成 tab 只会得到一组指向不存在面板的 aria-controls。跟状态栏那排模式按钮同一套约定。 */}
         <button className={`sidebar-tab ${activeTab === 'files' ? 'active' : ''}`} aria-pressed={activeTab === 'files'} onClick={() => setActiveTab('files')} title="文件树" aria-label="文件树">
@@ -703,18 +676,7 @@ export const Sidebar = ({
 
       {activeTab === 'files' && (
         <>
-          <div 
-            className="sidebar-search"
-            style={{
-              background: cardBgGradient,
-              borderRadius: 10,
-              padding: "8px 12px",
-              marginBottom: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
+          <div className="sidebar-search">
             <button className="toolbar-btn" onClick={handleFolderSelect} title={modKeys('打开文件夹（Cmd+Shift+O）')} style={{ width: 28, height: 28 }}>
               <Folder size={14} />
             </button>
@@ -722,18 +684,13 @@ export const Sidebar = ({
               {currentDir ? currentDir.split('/').pop() : '未打开文件夹'}
             </span>
           </div>
-          <div 
-            className={`sidebar-file-list ${dropTargetDir === currentDir ? 'drop-target' : ''}`} 
-            role="tree" 
+          <div
+            className={`sidebar-file-list ${dropTargetDir === currentDir ? 'drop-target' : ''}`}
+            role="tree"
             onContextMenu={(e) => handleContextMenu(e)}
             onDragOver={(e) => handleDirDragOver(e, currentDir)}
             onDrop={(e) => handleDirDrop(e, currentDir)}
             onDragLeave={() => setDropTargetDir(prev => (prev === currentDir ? null : prev))}
-            style={{
-              background: cardBgGradient,
-              borderRadius: 10,
-              padding: 8,
-            }}
           >
             {loading ? (
               <div className="sidebar-empty">正在读取目录…</div>
@@ -752,14 +709,7 @@ export const Sidebar = ({
       )}
 
       {activeTab === 'recent' && (
-        <div 
-          className="sidebar-file-list"
-          style={{
-            background: cardBgGradient,
-            borderRadius: 10,
-            padding: 8,
-          }}
-        >
+        <div className="sidebar-file-list">
           {recentFiles.length > 0 && (
             <div className="sidebar-recent-head">
               {/* 条数放这儿：光是"最近打开"看不出这堆是从哪儿攒来的、有多少条要清 */}
@@ -802,18 +752,7 @@ export const Sidebar = ({
 
       {activeTab === 'search' && (
         <>
-          <div 
-            className="sidebar-search"
-            style={{
-              background: cardBgGradient,
-              borderRadius: 10,
-              padding: "8px 12px",
-              marginBottom: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
+          <div className="sidebar-search">
             <Search size={14} style={{ color: 'var(--text-muted)' }} />
             <input
               ref={searchInputRef}
@@ -831,14 +770,7 @@ export const Sidebar = ({
               }}
             />
           </div>
-          <div 
-            className="sidebar-file-list"
-            style={{
-              background: cardBgGradient,
-              borderRadius: 10,
-              padding: 8,
-            }}
-          >
+          <div className="sidebar-file-list">
             {!searchQuery.trim() ? (
               <div className="sidebar-empty">
                 <p>输入关键词搜索全部笔记</p>
@@ -904,14 +836,7 @@ export const Sidebar = ({
       )}
 
       {activeTab === 'tags' && (
-        <div 
-          className="sidebar-file-list"
-          style={{
-            background: cardBgGradient,
-            borderRadius: 10,
-            padding: 8,
-          }}
-        >
+        <div className="sidebar-file-list">
           <TagsPanel
             tags={tags}
             onTagClick={(t) => onTagClick?.(t)}
@@ -936,7 +861,7 @@ export const Sidebar = ({
         />
       )}
 
-      <div 
+      <div
         className="sidebar-footer"
         style={{
           marginTop: 12,
@@ -947,6 +872,11 @@ export const Sidebar = ({
         {onCreateDaily && (
           <button className="toolbar-btn" onClick={onCreateDaily} title={modKeys('今日日记（Cmd+Shift+D）')}>
             <Calendar size={16} />
+          </button>
+        )}
+        {onOpenAsk && (
+          <button className="toolbar-btn" onClick={onOpenAsk} title="问笔记：用自然语言检索并回答，带出处">
+            <ScanSearch size={16} />
           </button>
         )}
         {onOpenAI && (

@@ -32,7 +32,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useI18n } from './lib/i18n';
 import { Resizer } from './components/Resizer';
 import { PanelHeader } from './components/PanelHeader';
-import { ListTree, Link2, Sparkles, Network, FileText } from 'lucide-react';
+import { ListTree, Link2, Sparkles, Network, FileText, ScanSearch } from 'lucide-react';
 import type { Note, ThemeName, EditorMode, HeadingItem, Command, WikiLinkItem, GraphNode, GraphLink, AIConfig, AIMessage, Template, Tag, Backlink, Config } from './types';
 import type { AIAction } from './components/AIPanel';
 
@@ -41,6 +41,7 @@ const KnowledgeGraph = lazy(() => import('./components/KnowledgeGraph').then(m =
 const VersionHistory = lazy(() => import('./components/VersionHistory'));
 const SettingsDialog = lazy(() => import('./components/SettingsDialog').then(m => ({ default: m.SettingsDialog })));
 const AIPanel = lazy(() => import('./components/AIPanel').then(m => ({ default: m.AIPanel })));
+const AskPanel = lazy(() => import('./components/AskPanel').then(m => ({ default: m.AskPanel })));
 import { useFileOperations } from './hooks/useFileOperations';
 import { BUILTIN_TEMPLATES, applyTemplate, dailyNotePath, todayTitle } from './lib/templates';
 import { walStore, shouldCreateBackup, markBackedUp, type WalEntry } from './hooks/useAutoSave';
@@ -207,6 +208,11 @@ const App = () => {
   // localStorage 的 aiConfig 只留非敏感项（见 lib/aiSecrets.ts）
   const [aiConfig, setAIConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
   const [showAIPanel, setShowAIPanel] = useState(false);
+  // 问笔记（RAG）：原 kb 仓的能力并入后的入口
+  const [showAskPanel, setShowAskPanel] = useState(false);
+  const [ragStatus, setRagStatus] = useState<{ notes: number; chunks: number } | null>(null);
+  // 引用回跳：先开文件，等目标笔记真正加载后再让编辑器滚到锚点
+  const pendingAnchorRef = useRef<{ path: string; anchor: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   // 字体配置
@@ -1163,6 +1169,39 @@ const App = () => {
     handleOpenFile(filePath);
   }, [handleOpenFile]);
 
+  // ===== 问笔记（RAG）=====
+  // 语料规模：打开文件夹后拉一次。状态条不是关键路径，保存后的实时刷新
+  // 交给下次打开面板时的懒取（ragStatus 为 null 就不显示那一行）。
+  useEffect(() => {
+    let alive = true;
+    electronAPI.invoke('rag-status').then((r: any) => {
+      if (alive && r?.success && typeof r.notes === 'number') {
+        setRagStatus({ notes: r.notes, chunks: r.chunks });
+      }
+    }).catch(() => { /* 浏览器演示区没有索引，静默 */ });
+    return () => { alive = false; };
+  }, [currentDir]);
+
+  /** 引用回跳：先打开（或聚焦）目标笔记，锚点存进 ref 等内容加载后兑现 */
+  const handleAskReveal = useCallback((path: string, anchor: string) => {
+    pendingAnchorRef.current = { path, anchor };
+    handleSearchResultOpen(path);
+  }, [handleSearchResultOpen]);
+
+  // 锚点兑现：等目标笔记成为当前笔记、Tiptap 完成首帧渲染后再定位。
+  // 120ms 是渲染余量而不是猜的时序 —— contentReady 由 currentNote 变化驱动，
+  // 这里的 setTimeout 只解决「同一次提交里编辑器还没挂完」的窗口。
+  useEffect(() => {
+    const pending = pendingAnchorRef.current;
+    if (!pending || !currentNote) return;
+    if (currentNote.filePath !== pending.path) return;
+    const t = setTimeout(() => {
+      editorRef.current?.revealText?.(pending.anchor);
+      pendingAnchorRef.current = null;
+    }, 120);
+    return () => clearTimeout(t);
+  }, [currentNote]);
+
   const handleWikiLinkNavigate = useCallback((href: string) => {
     const t = parseWikiLinkTarget(href);
     if (!t) return;
@@ -1763,6 +1802,7 @@ const App = () => {
     { id: 'next-tab', title: '下一个标签页', shortcut: 'Cmd+Shift+]', category: '视图', action: () => switchTab(1) },
     { id: 'prev-tab', title: '上一个标签页', shortcut: 'Cmd+Shift+[', category: '视图', action: () => switchTab(-1) },
     { id: 'toggle-ai', title: '切换 AI 助手', shortcut: 'Cmd+J', category: 'AI', action: () => setShowAIPanel(prev => !prev) },
+    { id: 'toggle-ask', title: '问我的笔记（带出处检索问答）', category: 'AI', action: () => setShowAskPanel(prev => !prev) },
     { id: 'toggle-find', title: '查找与替换', shortcut: 'Cmd+F', category: '编辑', action: () => setShowFindReplace(true) },
     { id: 'quick-switch', title: '快速切换文件', shortcut: 'Cmd+P', category: '跳转', action: () => setShowQuickSwitcher(true) },
     { id: 'open-settings', title: '打开设置', shortcut: 'Cmd+,', category: '设置', action: () => setShowSettings(true) },
@@ -1782,9 +1822,10 @@ const App = () => {
     });
   }, []);
 
-  // 当前打开的右侧面板（按优先级：KnowledgeGraph > AIPanel > Backlinks > Outline）
-  const activeRightPanel: 'graph' | 'ai' | 'backlinks' | 'outline' | null =
+  // 当前打开的右侧面板（按优先级：KnowledgeGraph > AskPanel > AIPanel > Backlinks > Outline）
+  const activeRightPanel: 'graph' | 'ask' | 'ai' | 'backlinks' | 'outline' | null =
     showKnowledgeGraph && currentNote ? 'graph'
+    : showAskPanel ? 'ask'
     : showAIPanel ? 'ai'
     : showBacklinks && currentNote ? 'backlinks'
     : outlineOpen && currentNote ? 'outline'
@@ -1824,6 +1865,7 @@ const App = () => {
         activeTag={activeTag}
         onOpenSettings={() => setShowSettings(true)}
         onOpenAI={() => setShowAIPanel(true)}
+        onOpenAsk={() => setShowAskPanel(true)}
         onCreateDaily={handleCreateDaily}
         width={sidebarWidth}
       />
@@ -2106,6 +2148,47 @@ const App = () => {
                   enabled={aiConfig.enabled}
                   onOpenSettings={() => { setShowAIPanel(false); setShowSettings(true); }}
                   width={rightPanelWide ? undefined : rightPanelWidth}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        </>
+      )}
+
+      {activeRightPanel === 'ask' && (
+        <>
+          {!rightPanelWide && (
+            <Resizer
+              side="right"
+              size={rightPanelWidth}
+              min={300}
+              max={640}
+              onResize={(w) => {
+                setRightPanelWidth(w);
+                localStorage.setItem('rightPanelWidth', String(w));
+              }}
+            />
+          )}
+          <div
+            className="ask-panel-shell panel-animate"
+            style={rightPanelWide ? { flex: 1, minWidth: 0 } : { width: rightPanelWidth, flexShrink: 0 }}
+          >
+            <PanelHeader
+              icon={<ScanSearch size={14} />}
+              title="问笔记"
+              wide={rightPanelWide}
+              onToggleWide={toggleRightPanelWide}
+              onClose={() => setShowAskPanel(false)}
+            />
+            <ErrorBoundary>
+              <Suspense fallback={<div className="panel-loading">加载中...</div>}>
+                <AskPanel
+                  aiConfig={aiConfig}
+                  currentNote={currentNote?.filePath ? { filePath: currentNote.filePath, title: currentNote.title } : null}
+                  enabled={aiConfig.enabled}
+                  ragStatus={ragStatus}
+                  onOpenSettings={() => { setShowAskPanel(false); setShowSettings(true); }}
+                  onReveal={handleAskReveal}
                 />
               </Suspense>
             </ErrorBoundary>

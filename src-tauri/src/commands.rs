@@ -1148,55 +1148,17 @@ fn find_backlinks_recursive(
     Ok(())
 }
 
-/// AI聊天代理：转发请求到OpenAI兼容API
+/// AI聊天代理：转发请求到 AI 服务商。
+///
+/// 协议、鉴权、响应解析已收口到 cap-llm（见 ai.rs 头部说明）—— 这里只做
+/// 「收参数、调封装」。2026-10-26 之前这里是本仓自拼的
+/// `/chat/completions` 请求 + 手写 JSON 取值，是家族十套重复实现的之一。
 #[tauri::command]
 pub async fn ai_chat(
     config: AiConfigPayload,
     messages: Vec<ChatMessage>,
 ) -> Result<String, String> {
-    // 构建请求URL
-    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-
-    // 构建请求体
-    let body = serde_json::json!({
-        "model": config.model,
-        "messages": messages,
-    });
-
-    // 发送HTTP POST请求
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("请求AI服务失败: {}", e))?;
-
-    // 检查HTTP状态码
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("AI服务返回错误: {} - {}", status, body));
-    }
-
-    // 解析响应JSON
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析AI响应失败: {}", e))?;
-
-    // 提取 choices[0].message.content
-    let content = json
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .ok_or_else(|| "AI响应格式异常: 无法提取content".to_string())?;
-
-    Ok(content.to_string())
+    crate::ai::chat(&config, &messages).await
 }
 
 /// AI 流式聊天：通过 SSE 推送 token，前端 listen('ai-stream://token') 增量显示。
@@ -1206,80 +1168,23 @@ pub async fn ai_chat_stream(
     messages: Vec<ChatMessage>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    use futures::StreamExt;
+    let result = crate::ai::chat_stream(&config, &messages, |token| {
+        let _ = app.emit("ai-stream://token", token);
+    })
+    .await;
 
-    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let body = serde_json::json!({
-        "model": config.model,
-        "messages": messages,
-        "stream": true,
-    });
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            let _ = app.emit("ai-stream://error", format!("请求失败: {}", e));
-            format!("请求AI服务失败: {}", e)
-        })?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        let err = format!("AI服务返回错误: {} - {}", status, body);
-        let _ = app.emit("ai-stream://error", &err);
-        return Err(err);
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut full = String::new();
-
-    while let Some(chunk) = stream.next().await {
-        match chunk {
-            Ok(bytes) => {
-                buffer.push_str(&String::from_utf8_lossy(&bytes));
-                while let Some(idx) = buffer.find("\n\n") {
-                    let event = buffer[..idx].to_string();
-                    buffer = buffer[idx + 2..].to_string();
-                    for line in event.lines() {
-                        if let Some(data) = line.strip_prefix("data: ") {
-                            if data == "[DONE]" {
-                                let _ = app
-                                    .emit("ai-stream://done", serde_json::json!({ "full": full }));
-                                return Ok(());
-                            }
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                                if let Some(delta) = json
-                                    .get("choices")
-                                    .and_then(|c| c.get(0))
-                                    .and_then(|c| c.get("delta"))
-                                    .and_then(|d| d.get("content"))
-                                    .and_then(|c| c.as_str())
-                                {
-                                    full.push_str(delta);
-                                    let _ = app.emit("ai-stream://token", delta);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                let err = format!("流读取失败: {}", e);
-                let _ = app.emit("ai-stream://error", &err);
-                return Err(err);
-            }
+    match result {
+        Ok(full) => {
+            let _ = app.emit("ai-stream://done", serde_json::json!({ "full": full }));
+            Ok(())
+        }
+        Err(e) => {
+            let _ = app.emit("ai-stream://error", &e);
+            Err(e)
         }
     }
-    let _ = app.emit("ai-stream://done", serde_json::json!({ "full": full }));
-    Ok(())
 }
+
 
 /// 创建笔记备份（版本历史）
 /// 备份存储在 ~/.z-note/backups/{note_id}/ 目录下，文件名为 {timestamp}.md
@@ -1499,8 +1404,147 @@ fn guess_mime_from_ext(ext: &str) -> String {
 // ==================== Phase 2: 搜索索引 / 文件监听 / 增量图谱 ====================
 
 use crate::index::{IndexStatus, IndexStore, IndexedMatch};
+use crate::rag::{self, RagStatus};
 use crate::watcher::WatcherState;
+use parking_lot::Mutex;
 use tauri::{Emitter, State};
+
+// ==================== 问笔记（RAG，原 kb 仓的能力并入） ====================
+//
+// 与 kb 的差异一句话讲完：kb 问的是「上传的 PDF」，这里问的是「你自己的
+// 笔记」—— 语料就是 FTS 索引旁边的片段表，保存一篇笔记就自动重建它的
+// 片段，不需要任何「先上传」的动作。
+
+/// BM25 索引的进程内缓存。
+///
+/// 每次提问都从 SQLite 读全部片段再建索引，1000 篇笔记要几百毫秒；
+/// 缓存键是片段表版本号（IndexStore::chunks_epoch），保存/删除/改名任何
+/// 一次都会让版本号跳变，缓存随之失效 —— 不存在「答了删掉的内容」的窗口。
+pub struct RagState(Mutex<Option<(u64, rag::Bm25Index)>>);
+
+impl RagState {
+    pub fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
+impl Default for RagState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 拿到（必要时重建）检索索引并完成一次检索。锁只护缓存读写；
+/// 几千片的 BM25 检索是微秒级，在锁内做不构成争用。
+fn search_rag(
+    index: &IndexStore,
+    rag_state: &RagState,
+    question: &str,
+    top_k: usize,
+    only_path: Option<&str>,
+) -> Result<Vec<rag::Citation>, String> {
+    let epoch = index.chunks_epoch();
+    let mut guard = rag_state.0.lock();
+    if guard.as_ref().is_none_or(|(e, _)| *e != epoch) {
+        let chunks = index.load_chunks()?;
+        *guard = Some((epoch, rag::Bm25Index::build(chunks)));
+    }
+    let cached = &guard.as_ref().expect("上面刚填充").1;
+    let hits = cached.search(question, top_k, only_path);
+    Ok(rag::to_citations(cached, &hits))
+}
+
+/// 索引规模（前端显示「已索引 N 段 / M 篇」）
+#[tauri::command]
+pub async fn rag_status(index: State<'_, IndexStore>) -> Result<RagStatus, String> {
+    let (notes, chunks) = index.corpus_status()?;
+    Ok(RagStatus { notes, chunks })
+}
+
+/// 问答事件：引用先到、token 后到、done 收尾，前端按这个顺序渲染。
+mod ask_events {
+    pub const CITATIONS: &str = "ask://citations";
+    pub const TOKEN: &str = "ask://token";
+    pub const DONE: &str = "ask://done";
+    pub const ERROR: &str = "ask://error";
+}
+
+/// 问自己的笔记（流式）。
+///
+/// 事件序列：
+/// 1. `ask://citations` — 检索到的证据（先给，用户在模型说话前就能点开来源）
+/// 2. `ask://token` × N — 回答增量
+/// 3. `ask://done` — `{ answer, citations }` 收尾
+/// 失败时发 `ask://error` 并返回 Err。
+#[tauri::command]
+pub async fn ask_notes(
+    question: String,
+    scope: Option<String>,
+    note_path: Option<String>,
+    config: AiConfigPayload,
+    index: State<'_, IndexStore>,
+    rag_state: State<'_, RagState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let question = question.trim().to_string();
+    if question.is_empty() {
+        return Err("问题不能为空".to_string());
+    }
+    let scoped = scope.as_deref() == Some("note");
+    let only_path = if scoped { note_path.as_deref() } else { None };
+
+    // 1. 检索
+    let citations = search_rag(&index, &rag_state, &question, rag::DEFAULT_TOP_K, only_path)?;
+    let corpus_chunks = index
+        .corpus_status()
+        .map(|(_, c)| c)
+        .unwrap_or(0);
+
+    // 2. 证据先发给前端（哪怕最终要走向「没找到」的兜底话术）
+    let _ = app.emit(ask_events::CITATIONS, &citations);
+
+    // 3. 没有证据就不花一次模型调用：直接给引导话术
+    if citations.is_empty() {
+        let (notes, _) = index.corpus_status()?;
+        let msg = rag::no_evidence_message(corpus_chunks, scoped && notes > 0);
+        let _ = app.emit(
+            ask_events::DONE,
+            serde_json::json!({ "answer": msg, "citations": [] }),
+        );
+        return Ok(());
+    }
+
+    // 4. 组提示词，流式回答
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: rag::SYSTEM_PROMPT.to_string(),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: rag::build_user_message(&question, &citations),
+        },
+    ];
+
+    let result = crate::ai::chat_stream(&config, &messages, |token| {
+        let _ = app.emit(ask_events::TOKEN, token);
+    })
+    .await;
+
+    match result {
+        Ok(answer) => {
+            let _ = app.emit(
+                ask_events::DONE,
+                serde_json::json!({ "answer": answer, "citations": citations }),
+            );
+            Ok(())
+        }
+        Err(e) => {
+            let _ = app.emit(ask_events::ERROR, &e);
+            Err(e)
+        }
+    }
+}
 
 /// 索引笔记文件：内部命令（前端一般不需要直接调）。
 /// 行为：读取文件、提取 title/tags/links、写入 FTS5 索引。

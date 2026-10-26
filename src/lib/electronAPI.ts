@@ -36,6 +36,20 @@ export function mustSucceed<T>(result: T): T {
 export const errText = (e: unknown): string =>
   String((e as Error | null)?.message || e || '未知错误').slice(0, 60);
 
+/**
+ * 前端 AIConfig（驼峰 baseURL）→ Rust AiConfigPayload（snake_case base_url）。
+ * ai-chat / ask-notes 两个通道共用；字段名错位会让 serde 报 missing field，
+ * 且报错出现在 Rust 反序列化层，调用方完全看不出是自己传错了键名。
+ */
+function toAiPayload(cfg: unknown): { base_url: string; api_key: string; model: string } {
+  const c = (cfg ?? {}) as Record<string, unknown>;
+  return {
+    base_url: String(c.baseURL ?? c.base_url ?? ''),
+    api_key: String(c.apiKey ?? c.api_key ?? ''),
+    model: String(c.model ?? ''),
+  };
+}
+
 // 对话框插件（懒加载，可能不可用）
 let _dialogLoaded = false;
 let dialogSave: ((opts: any) => Promise<string | string[] | null>) | null = null;
@@ -559,6 +573,9 @@ export const electronAPI = {
           return { success: false, error: '浏览器模式没有搜索索引' };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
+        case 'ask-notes':
+        case 'rag-status':
+          return { success: false, error: '浏览器模式没有检索索引' };
         // 系统密钥库通道：浏览器演示区没有 keychain，密钥只在会话内存里有效，
         // 绝不退回 localStorage —— 那把明文写回去，正是这次迁移要消灭的东西。
         case 'save-secret':
@@ -711,10 +728,37 @@ export const electronAPI = {
         }
         case 'ai-chat': {
           try {
-            const content = await invoke<string>('ai_chat', { config: args[0], messages: args[1] });
+            // 前端 AIConfig 用驼峰 baseURL，Rust AiConfigPayload 是 snake_case base_url。
+            // serde 不做大小写转换，之前把对象原样递过去，Rust 侧直接报
+            // 「missing field base_url」—— 这条通道一直是断的，2026-10-26 修复。
+            const config = toAiPayload(args[0]);
+            const content = await invoke<string>('ai_chat', { config, messages: args[1] });
             return { success: true, content };
           } catch (e: any) {
             return { success: false, error: e?.toString() || 'AI 请求失败' };
+          }
+        }
+        // 问笔记（RAG）：检索与调用都在 Rust 侧（rag + cap-llm），回答经
+        // ask://token / ask://done 事件流式到达，这条通道只负责发起与收尾状态。
+        case 'ask-notes': {
+          try {
+            await invoke('ask_notes', {
+              question: args[0],
+              scope: args[1],
+              notePath: args[2],
+              config: toAiPayload(args[3]),
+            });
+            return { success: true };
+          } catch (e: any) {
+            return { success: false, error: e?.toString() || '问笔记失败' };
+          }
+        }
+        case 'rag-status': {
+          try {
+            const s = await invoke<{ notes: number; chunks: number }>('rag_status');
+            return { success: true, notes: s.notes, chunks: s.chunks };
+          } catch (e: any) {
+            return { success: false, error: e?.toString() || '索引状态不可用' };
           }
         }
         // 敏感项（AI API Key 等）走 OS 密钥库：account 为命名空间化 key

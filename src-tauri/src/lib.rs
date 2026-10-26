@@ -1,3 +1,4 @@
+mod ai;
 mod atomic_write;
 #[cfg(test)]
 mod bench;
@@ -6,6 +7,7 @@ mod extract;
 mod index;
 #[cfg(test)]
 mod integration_tests;
+mod rag;
 mod secrets;
 mod watcher;
 
@@ -91,6 +93,9 @@ pub fn run() {
             commands::index_delete_note,
             commands::start_watch,
             commands::stop_watch,
+            // === 问笔记（RAG，原 kb 仓能力并入）===
+            commands::ask_notes,
+            commands::rag_status,
             // 2026-10-22 补注册：前端 BinaryViewer 一直在调 show_in_folder，
             // 但后端从来没有这个命令 ⇒ 那个按钮点了没反应、也没提示（错误被前端吞了）。
             commands::show_in_folder,
@@ -103,6 +108,8 @@ pub fn run() {
             // 初始化索引与 watcher 状态
             app.manage(index::IndexStore::open().expect("初始化搜索索引失败"));
             app.manage(watcher::WatcherState::new());
+            // 问笔记的检索缓存（原 kb 仓能力并入）
+            app.manage(commands::RagState::new());
 
             let handle = app.handle();
 

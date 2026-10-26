@@ -3,17 +3,20 @@ import type { ThemeOption, ThemeName } from '../types';
 export const THEMES: ThemeOption[] = [
   {
     name: 'light',
+    // 2026-10-26 微调：原来的蓝灰系（#e9ecef / #dee2e6）让整个浅色主题
+    // 泛着一层冷灰；换成一阶真正中性的灰阶后，强调色的存在感才出得来。
+    // textMuted 没有跟着变浅 —— 它被大量用作次级正文，对比度不能牺牲。
     colors: {
       bgPrimary: '#ffffff',
-      bgSecondary: '#f8f9fa',
-      bgTertiary: '#e9ecef',
-      textPrimary: '#212529',
-      textSecondary: '#4b5157',
-      textMuted: '#5f6b77',
-      borderColor: '#dee2e6',
+      bgSecondary: '#f7f7f8',
+      bgTertiary: '#f0f0f2',
+      textPrimary: '#1f2328',
+      textSecondary: '#586069',
+      textMuted: '#6b7280',
+      borderColor: '#e6e6e9',
       accentColor: '#4f46e5',
       accentHover: '#4338ca',
-      codeBg: '#f1f3f5',
+      codeBg: '#f4f4f6',
     },
   },
   {

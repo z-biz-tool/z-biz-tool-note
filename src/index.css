@@ -2945,3 +2945,474 @@ body {
 @keyframes viewer-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+   视觉系统重构（2026-10-26）
+   ------------------------------------------------------------
+   背景一句话：之前三个组件里各硬编码了一套 #667eea→#764ba2 紫罗兰
+   渐变，以内联样式到处贴，绕开了主题系统 —— 深色主题下是一堆浅色
+   补丁，浅色下也是「卡片套卡片」的糊感。本节做三件事：
+   1. 收敛设计 token（间距 / 圆角 / 阴影 / 焦点环），全部从主题变量派生；
+   2. 重做主要表面：侧栏图标栏、标签栏、工具栏、欢迎页；
+   3. 新增「问笔记」面板的样式。
+   本节整体位于文件末尾，同特异性下按顺序覆盖上面的旧规则。
+   ============================================================ */
+
+/* ---------- 1. 设计 token ---------- */
+:root {
+  /* 强调色的衍生阶：主题切换只改 --accent-color，这些自动跟上 */
+  --accent-soft: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  --accent-soft-strong: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  --accent-text-soft: color-mix(in srgb, var(--accent-color) 78%, var(--text-primary));
+  /* 表面阶：侧栏 / 卡片 / 悬浮层 */
+  --bg-elevated: var(--bg-primary);
+  --border-subtle: color-mix(in srgb, var(--border-color) 60%, transparent);
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 键盘可达性：统一的焦点环（旧规则只改边框色，键盘用户看不出焦点在哪） */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-color) 55%, transparent);
+  outline-offset: 1px;
+}
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---------- 2. 侧栏 ---------- */
+.sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+}
+.sidebar-header {
+  padding: 14px 16px 10px;
+  border-bottom: none;
+}
+.sidebar-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* 视图切换：从「四个描边方块」改成一段式分段控件 */
+.sidebar-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 10px 8px;
+  padding: 3px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+.sidebar-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 0;
+  border: none;
+  border-bottom: none;
+  border-radius: var(--radius-sm);
+  background: transparent; /* 原生 button 默认白底，深色主题下会亮成一块 */
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+}
+.sidebar-tab:hover { color: var(--text-secondary); background: transparent; }
+.sidebar-tab.active {
+  color: var(--accent-color);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.sidebar-search {
+  margin: 0 10px 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sidebar-search:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.sidebar-file-list { padding: 2px 10px 12px; }
+.sidebar-file-item,
+.sidebar-folder-item {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sidebar-file-item::before,
+.sidebar-folder-item::before { display: none; }
+.sidebar-file-item:hover,
+.sidebar-folder-item:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+/* 选中行：柔和的强调底色 + 强调色文字，替代原来的紫底白字 */
+.sidebar-file-item.active {
+  background: var(--accent-soft-strong);
+  color: var(--accent-text-soft);
+  font-weight: 500;
+}
+.sidebar-file-item.active > .sidebar-item-meta { color: var(--accent-text-soft); opacity: 0.75; }
+
+.sidebar-empty { padding: 32px 18px; font-size: 12.5px; line-height: 1.7; }
+.sidebar-empty .toolbar-btn { margin-top: 10px; }
+
+/* ---------- 3. 标签栏：整条平铺，不再悬浮圆角卡片 ---------- */
+.tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  margin-bottom: 0;
+  border-radius: 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 38px;
+}
+.tabs-list { flex: 1; display: flex; align-items: stretch; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs-list::-webkit-scrollbar { display: none; }
+.tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 6px 10px;
+  margin: 5px 0;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.tab-item:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.tab-item.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: inset 0 -2px 0 var(--accent-color);
+}
+.tab-split-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: none; border-radius: var(--radius-xs);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.tab-split-btn:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); color: var(--text-primary); }
+.tab-split-btn.active {
+  background: var(--accent-soft-strong);
+  color: var(--accent-color);
+}
+
+/* ---------- 4. 编辑器工具栏：压成一条低调的工具条 ---------- */
+.toolbar {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 5px 10px;
+  border-radius: 0;
+  margin-bottom: 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.tb-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border: none; border-radius: var(--radius-xs);
+  background: transparent; color: var(--text-secondary); cursor: pointer;
+}
+.tb-btn:hover { background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary); }
+.tb-btn.active { background: var(--accent-soft-strong); color: var(--accent-color); }
+.tb-lang-btn { width: auto; padding: 0 8px; gap: 4px; font-size: 12px; }
+.tb-lang-btn.active { background: var(--accent-soft-strong); color: var(--accent-color); }
+
+/* ---------- 5. 欢迎页：去掉紫色渐变英雄区，改成编辑感的排版 ---------- */
+.welcome-page { background: var(--bg-secondary); }
+.welcome-container { padding: 72px 48px 40px; }
+.welcome-header { margin-bottom: 40px; gap: 14px; }
+.welcome-logo-glow {
+  width: 64px; height: 64px; border-radius: 18px;
+  font-size: 30px;
+  background: linear-gradient(160deg, var(--accent-color), var(--accent-hover));
+  box-shadow: var(--shadow-card);
+  animation: none;
+}
+.welcome-title {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  background: none;
+  -webkit-background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text-primary);
+}
+.welcome-subtitle { font-size: 13.5px; }
+.welcome-body { gap: 56px; max-width: 860px; margin: 0 auto; }
+.welcome-section h2 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+.section-title {
+  background: none;
+  -webkit-background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+  color: var(--text-muted);
+}
+.welcome-action {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  /* 图标贴文字，箭头钉在最右：原来 space-between 三个子元素会把文字挤到正中间 */
+  justify-content: flex-start;
+}
+.welcome-action span { flex: 1; text-align: left; margin-left: 10px; }
+.welcome-action::before { display: none; }
+.welcome-action svg:not(:last-child) { color: var(--accent-color); }
+.welcome-action svg:last-child { color: var(--text-muted); opacity: 0; transition: opacity 0.15s; }
+.welcome-action:hover { background: var(--bg-primary); transform: none; box-shadow: var(--shadow-card); }
+.welcome-action:hover svg:last-child { opacity: 1; }
+.welcome-hint { background: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px 18px; }
+.welcome-hint kbd {
+  padding: 2px 6px; border-radius: 5px;
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  background: var(--bg-secondary);
+  font-family: var(--font-mono); font-size: 11px;
+}
+
+/* ---------- 6. 面板头与按钮 ---------- */
+.outline-header {
+  padding: 11px 14px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.btn-primary {
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+.btn-primary:hover:not(:disabled) { box-shadow: var(--shadow-xs); }
+
+/* ---------- 7. 问笔记面板 ---------- */
+.ask-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.ask-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 8px;
+}
+.ask-scope {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+.ask-scope button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted); font-size: 12px; cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.ask-scope button:hover:not(:disabled) { color: var(--text-secondary); }
+.ask-scope button.active {
+  background: var(--bg-primary);
+  color: var(--accent-color);
+  box-shadow: var(--shadow-xs);
+}
+.ask-scope button:disabled { opacity: 0.45; cursor: not-allowed; }
+.ask-corpus {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ask-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 14px 12px;
+}
+.ask-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 36px 12px 24px;
+  color: var(--text-muted);
+}
+.ask-empty svg { color: var(--accent-color); opacity: 0.8; margin-bottom: 10px; }
+.ask-empty-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px; }
+.ask-empty-desc { font-size: 12.5px; line-height: 1.6; margin: 0 0 18px; max-width: 260px; }
+.ask-suggestions { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 300px; }
+.ask-suggestion {
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.ask-suggestion:hover { border-color: var(--accent-color); color: var(--accent-text-soft); background: var(--accent-soft); }
+
+.ask-exchange { margin-bottom: 18px; }
+.ask-question {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 2px;
+}
+.ask-answer-body {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ask-cite-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px; height: 17px;
+  margin: 0 2px;
+  padding: 0 4px;
+  vertical-align: 1px;
+  border: none; border-radius: 5px;
+  background: var(--accent-soft-strong);
+  color: var(--accent-color);
+  font-size: 10.5px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.ask-cite-chip:hover { background: var(--accent-color); color: #fff; transform: translateY(-1px); }
+.ask-thinking {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: var(--text-muted);
+  padding: 4px 0;
+}
+.ask-error {
+  display: flex; align-items: flex-start; gap: 7px;
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger-color) 8%, transparent);
+  color: var(--danger-color);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.ask-error svg { flex-shrink: 0; margin-top: 2px; }
+
+.ask-citations { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.ask-citation {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px 7px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ask-citation:hover { border-color: var(--accent-color); box-shadow: var(--shadow-xs); }
+/* 相关度条：第一名将占满底边，颜色随主题强调色 */
+.ask-citation-score {
+  position: absolute; left: 0; bottom: 0; height: 2px;
+  background: color-mix(in srgb, var(--accent-color) 55%, transparent);
+}
+.ask-citation-no {
+  flex-shrink: 0;
+  font-size: 10.5px; font-weight: 700;
+  color: var(--accent-color);
+  font-variant-numeric: tabular-nums;
+}
+.ask-citation-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ask-citation-title {
+  font-size: 12.5px; font-weight: 500; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ask-citation-heading {
+  font-size: 11px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ask-citation > svg { flex-shrink: 0; color: var(--text-muted); opacity: 0; transition: opacity 0.15s; }
+.ask-citation:hover > svg { opacity: 1; color: var(--accent-color); }
+
+.ask-input-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+.ask-input-row textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  outline: none;
+  max-height: 96px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.ask-input-row textarea:focus {
+  border-color: var(--accent-color);
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.ask-input-row textarea::placeholder { color: var(--text-muted); opacity: 0.75; }
+.ask-send {
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-md);
+  padding: 0;
+  flex-shrink: 0;
+}
+.ask-panel-shell { display: flex; flex-direction: column; background: var(--bg-primary); border-left: 1px solid var(--border-subtle); }
+
+/* 顺带：AI 助手面板与问笔记同构（同一个壳） */
+.ai-panel {
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-subtle);
+}
+.ai-panel .outline-header { background: var(--bg-primary); }
+
+/* 面板整体走主色底 + 细边，不再各自一张卡 */
+.outline-panel, .knowledge-graph-panel {
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-subtle);
+}

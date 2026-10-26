@@ -610,12 +610,40 @@ export const Editor = ({
     editor.commands.scrollIntoView();
   }, [editor]);
 
-  // Expose jumpToHeading via ref
+  /**
+   * 按文字内容定位一段（问笔记的引用回跳用）。
+   *
+   * 引用锚点是「片段首句前 24 字」，但编辑器里的文本带着 Markdown 记号
+   * （**加粗**、`代码`、[[双链]]），直接 includes 会匹配不上 —— 所以两边
+   * 都做一次「去记号」再比。找不到就什么都不做：宁可没反应，也不要跳错位置。
+   */
+  const revealText = useCallback((needle: string) => {
+    if (!editor || !needle) return;
+    const target = needle.replace(/#\d+$/, '').replace(/[*`~[\]#>]/g, '');
+    if (!target) return;
+    let found: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (found !== null) return false;
+      if (!node.isTextblock || !node.textContent) return true;
+      const text = node.textContent.replace(/[*`~[\]#>]/g, '');
+      if (text.includes(target)) {
+        found = pos;
+        return false;
+      }
+      return true;
+    });
+    if (found !== null) {
+      editor.chain().setTextSelection(found + 1).scrollIntoView().run();
+    }
+  }, [editor]);
+
+  // Expose jumpToHeading / revealText via ref
   useEffect(() => {
     if (editor && editorRef.current) {
       (editorRef.current as any).jumpToHeading = jumpToHeading;
+      (editorRef.current as any).revealText = revealText;
     }
-  }, [editor, jumpToHeading, editorRef]);
+  }, [editor, jumpToHeading, revealText, editorRef]);
 
   if (!editor) return null;
 

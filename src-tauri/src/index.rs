@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::rag::chunk::{chunk_markdown, Chunk, DEFAULT_MAX_CHARS};
+
 /// 单条搜索匹配（含高亮）
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IndexedMatch {
@@ -49,11 +51,17 @@ pub struct IndexStore {
     conn: Arc<Mutex<Connection>>,
     index_path: PathBuf,
     last_build_ms: Arc<Mutex<u128>>, // 上次全量构建耗时
+    /// 片段表的版本号：任何一次片段写入/删除都 +1。
+    /// 检索侧的非缓存索引（BM25）靠它判断要不要重建 —— 比按目录 mtime
+    /// 指纹便宜得多，而且改名、移文件这类「内容没变、路径变了」的变更
+    /// 也能被看见（mtime 指纹会漏掉）。
+    chunks_epoch: Arc<Mutex<u64>>,
 }
 
 /// 当前 schema 版本。结构变更时 +1；版本不匹配时丢弃旧 DB 自动重建。
 /// v3：notes_fts 增加 tokens 列（中文单字切分），旧库的中文召回是坏的，必须重建。
-const SCHEMA_VERSION: i32 = 3;
+/// v4（2026-10-26）：新增 note_chunks 片段表，「问笔记」的检索语料。
+const SCHEMA_VERSION: i32 = 4;
 
 impl IndexStore {
     /// 创建或打开索引文件
@@ -111,6 +119,7 @@ impl IndexStore {
             // 版本不兼容：清空所有表（含旧 FTS 虚拟表），保留 schema_meta
             conn.execute_batch(
                 "DROP TABLE IF EXISTS notes_fts;
+                 DROP TABLE IF EXISTS note_chunks;
                  DROP TABLE IF EXISTS notes;
                  DROP INDEX IF EXISTS idx_notes_mtime;",
             )
@@ -138,7 +147,18 @@ impl IndexStore {
                 tokens,
                 tokenize='unicode61 remove_diacritics 2'
             );
-            CREATE INDEX IF NOT EXISTS idx_notes_mtime ON notes(mtime);",
+            CREATE INDEX IF NOT EXISTS idx_notes_mtime ON notes(mtime);
+            -- 片段表：问笔记的检索语料。正文不转义、不做 FTS 虚拟表 ——
+            -- 排序由 rag::bm25 在内存里做（中文分词要一元+二元，FTS5 给不了），
+            -- 这张表只负责「按路径读写」。
+            CREATE TABLE IF NOT EXISTS note_chunks (
+                path TEXT NOT NULL,
+                idx INTEGER NOT NULL,
+                heading TEXT NOT NULL DEFAULT '',
+                anchor TEXT NOT NULL DEFAULT '',
+                text TEXT NOT NULL,
+                PRIMARY KEY (path, idx)
+            );",
         )
         .map_err(|e| format!("初始化索引表失败: {}", e))?;
         conn.execute(
@@ -151,6 +171,7 @@ impl IndexStore {
             conn: Arc::new(Mutex::new(conn)),
             index_path,
             last_build_ms: Arc::new(Mutex::new(0)),
+            chunks_epoch: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -208,21 +229,49 @@ impl IndexStore {
         )
         .map_err(|e| format!("插入 FTS 条目失败: {}", e))?;
 
+        // 片段与正文同事务重建：两处不同步的话，「问笔记」会引用一段
+        // 用户早就删掉的文字，还理直气壮地标出来源。
+        tx.execute("DELETE FROM note_chunks WHERE path = ?1", params![path])
+            .map_err(|e| format!("清理旧片段失败: {}", e))?;
+        let chunks = chunk_markdown(path, title, content, DEFAULT_MAX_CHARS);
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO note_chunks(path, idx, heading, anchor, text)
+                     VALUES(?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(|e| format!("片段写入语句准备失败: {}", e))?;
+            for c in &chunks {
+                stmt.execute(params![c.path, c.idx as i64, c.heading, c.anchor, c.text])
+                    .map_err(|e| format!("写入片段失败: {}", e))?;
+            }
+        }
+
         tx.commit().map_err(|e| format!("提交事务失败: {}", e))?;
+        self.bump_chunks_epoch();
         Ok(())
     }
 
     /// 删除单条
+    ///
+    /// 注意 FTS 的清理走普通 `DELETE FROM notes_fts WHERE rowid = ...`：
+    /// notes_fts 是内联存储的普通 FTS5 表，`VALUES('delete', rowid)` 那套
+    /// 特殊命令是给 external-content 表用的，在普通表上直接报
+    /// "SQL logic error" —— 这条路径之前没有任何测试走到，是被
+    /// `deleting_note_drops_its_chunks` 第一次踩出来的。
     pub fn delete_note(&self, path: &str) -> Result<(), String> {
         let conn = self.conn.lock();
         tx_try(&conn, |c| {
             c.execute(
-                "INSERT INTO notes_fts(notes_fts, rowid) VALUES('delete', (SELECT rowid FROM notes WHERE path = ?1))",
+                "DELETE FROM notes_fts WHERE rowid = (SELECT rowid FROM notes WHERE path = ?1)",
                 params![path],
             )?;
+            c.execute("DELETE FROM note_chunks WHERE path = ?1", params![path])?;
             c.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
             Ok(())
-        })
+        })?;
+        self.bump_chunks_epoch();
+        Ok(())
     }
 
     /// 路径改名
@@ -234,8 +283,71 @@ impl IndexStore {
                 "UPDATE notes SET path = ?1 WHERE path = ?2",
                 params![new_path, old_path],
             )?;
+            c.execute(
+                "UPDATE note_chunks SET path = ?1 WHERE path = ?2",
+                params![new_path, old_path],
+            )?;
             Ok(())
-        })
+        })?;
+        self.bump_chunks_epoch();
+        Ok(())
+    }
+
+    // ==================== 片段（问笔记的语料） ====================
+
+    /// 片段表的版本号。检索侧据此决定 BM25 索引要不要重建。
+    pub fn chunks_epoch(&self) -> u64 {
+        *self.chunks_epoch.lock()
+    }
+
+    fn bump_chunks_epoch(&self) {
+        *self.chunks_epoch.lock() += 1;
+    }
+
+    /// 读出全部片段（重建 BM25 索引用）
+    pub fn load_chunks(&self) -> Result<Vec<Chunk>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT c.path, COALESCE(n.title, ''), c.idx, c.heading, c.anchor, c.text
+                 FROM note_chunks c
+                 LEFT JOIN notes n ON n.path = c.path
+                 ORDER BY c.path, c.idx",
+            )
+            .map_err(|e| format!("片段查询语句准备失败: {}", e))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(Chunk {
+                    path: r.get(0)?,
+                    title: r.get(1)?,
+                    idx: r.get::<_, i64>(2)? as usize,
+                    heading: r.get(3)?,
+                    anchor: r.get(4)?,
+                    text: r.get(5)?,
+                })
+            })
+            .map_err(|e| format!("片段查询失败: {}", e))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| format!("读取片段失败: {}", e))?);
+        }
+        Ok(out)
+    }
+
+    /// 片段与笔记总数（前端显示索引规模）
+    pub fn corpus_status(&self) -> Result<(usize, usize), String> {
+        let conn = self.conn.lock();
+        let notes: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT path) FROM note_chunks",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let chunks: i64 = conn
+            .query_row("SELECT COUNT(*) FROM note_chunks", [], |r| r.get(0))
+            .unwrap_or(0);
+        Ok((notes as usize, chunks as usize))
     }
 
     /// 全文搜索（FTS5 MATCH + BM25 排序）
@@ -301,11 +413,13 @@ impl IndexStore {
 
         conn.execute_batch(
             "DELETE FROM notes_fts;
+             DELETE FROM note_chunks;
              DELETE FROM notes;",
         )
         .map_err(|e| format!("清空索引失败: {}", e))?;
 
         drop(conn); // 释放锁后再扫描（不阻塞其它读）
+        self.bump_chunks_epoch();
 
         // 调用方负责扫描并逐条 upsert
         // 这里只清空，扫描由 rebuild_index 命令完成
@@ -344,8 +458,12 @@ impl IndexStore {
     #[allow(dead_code)]
     pub fn clear(&self) -> Result<(), String> {
         let conn = self.conn.lock();
-        conn.execute_batch("DELETE FROM notes_fts; DELETE FROM notes;")
-            .map_err(|e| format!("清空失败: {}", e))?;
+        conn.execute_batch(
+            "DELETE FROM notes_fts; DELETE FROM note_chunks; DELETE FROM notes;",
+        )
+        .map_err(|e| format!("清空失败: {}", e))?;
+        drop(conn);
+        self.bump_chunks_epoch();
         Ok(())
     }
 
@@ -647,5 +765,74 @@ mod tests {
     fn fts_query_sanitizes_dangerous_chars() {
         let q = build_fts_query("foo bar");
         assert!(!q.contains('(') && !q.contains(')'));
+    }
+
+    // ==================== 片段表（问笔记的语料） ====================
+
+    fn temp_store(tag: &str) -> IndexStore {
+        let dir = std::env::temp_dir().join(format!(
+            "znote-idx-{}-{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        IndexStore::open_in(&dir).unwrap()
+    }
+
+    const NOTE: &str = "# 部署\n\n上线前跑冒烟测试。\n\n## 回滚\n\n回滚到上一个 tag。\n";
+
+    #[test]
+    fn upsert_creates_chunks_and_bumps_epoch() {
+        let store = temp_store("upsert");
+        assert_eq!(store.chunks_epoch(), 0);
+        store
+            .upsert_note("/n.md", "部署", NOTE, 1, 10, "", "")
+            .unwrap();
+        let chunks = store.load_chunks().unwrap();
+        assert_eq!(chunks.len(), 2, "两个小节应各成一片");
+        assert_eq!(chunks[0].title, "部署", "标题从 notes 表回填");
+        assert!(store.chunks_epoch() > 0, "写入片段必须让版本号变化");
+        assert_eq!(store.corpus_status().unwrap(), (1, 2));
+    }
+
+    #[test]
+    fn reupsert_replaces_old_chunks() {
+        let store = temp_store("reupsert");
+        store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store
+            .upsert_note("/n.md", "部署", "# 部署\n\n只有一个小节。\n", 2, 10, "", "")
+            .unwrap();
+        let chunks = store.load_chunks().unwrap();
+        assert_eq!(chunks.len(), 1, "旧片段必须被替换，不能留孤儿");
+        assert!(chunks[0].text.contains("只有一个小节"));
+    }
+
+    #[test]
+    fn deleting_note_drops_its_chunks() {
+        let store = temp_store("delete");
+        store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store.delete_note("/n.md").unwrap();
+        assert!(store.load_chunks().unwrap().is_empty());
+        assert_eq!(store.corpus_status().unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn rename_moves_chunks_with_the_note() {
+        let store = temp_store("rename");
+        store.upsert_note("/a.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store.rename_note("/a.md", "/b.md").unwrap();
+        let chunks = store.load_chunks().unwrap();
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks.iter().all(|c| c.path == "/b.md"), "改名后片段要跟着走");
+    }
+
+    #[test]
+    fn clear_and_rebuild_drop_chunks() {
+        let store = temp_store("rebuild");
+        store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store.rebuild(Path::new("/tmp")).unwrap();
+        assert!(store.load_chunks().unwrap().is_empty());
+        assert_eq!(store.chunks_epoch() > 0, true);
     }
 }
