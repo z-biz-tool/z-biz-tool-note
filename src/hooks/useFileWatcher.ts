@@ -109,6 +109,9 @@ export function useNoteUpdated(onUpdate: (summary: {
   cbRef.current = onUpdate;
 
   useEffect(() => {
+    // 浏览器演示区没有 Tauri 后端；这里也必须先挡住，否则 listen 返回的
+    // rejected promise 没人接，控制台每次挂载都留一坨 transformCallback 堆栈
+    if (!electronAPI.isTauri) return;
     let cancelled = false;
     let unlisten: UnlistenFn | null = null;
     listen<{
@@ -130,6 +133,8 @@ export function useNoteUpdated(onUpdate: (summary: {
       } else {
         unlisten = u;
       }
+    }).catch((e) => {
+      console.warn('[useNoteUpdated] 订阅 note-updated 失败，知识图谱不会随保存增量更新:', e);
     });
     return () => {
       cancelled = true;

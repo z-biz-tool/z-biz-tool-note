@@ -704,7 +704,9 @@ const App = () => {
     let mtime: string | null = null;
     try {
       mtime = mustSucceed(await electronAPI.invoke('get-file-modified', filePath)) as string;
-    } catch {}
+    } catch (e) {
+      console.warn('[note] 读取盘上修改时间失败，状态栏可能沿用上次时间:', filePath, e);
+    }
     if (!mtime && !afterSave) return;
     const stamp = mtime || formatMtime();
     // 顺手把标签自己的"已知盘上时间"更新掉：切回这个标签时靠它判断盘有没有又被人动过
@@ -1081,7 +1083,9 @@ const App = () => {
       try {
         const meta = await getFileMeta(filePath);
         if (meta.success) { size = meta.size; mtime = meta.modified; }
-      } catch {}
+      } catch (e) {
+        console.warn('[note] 读取文件元信息失败，大小/时间按未知处理:', filePath, e);
+      }
 
       // 根据类型决定读取方式
       let content = '';
@@ -1541,7 +1545,10 @@ const App = () => {
           const known = Date.parse(t.lastModified || '') || 0;
           const nowMs = Date.parse(disk) || 0;
           if (known && nowMs && nowMs > known) continue;
-        } catch {}
+        } catch (e) {
+          // 读不到盘上时间就不能断定"没被外部改过"；至少留痕，不要让覆盖发生得无声无息
+          console.warn('[note] 关闭前对账时读不到盘上修改时间，仍按本标签内容保存:', path, e);
+        }
         walStore.write(path, t.content);
         try {
           await writeFile(path, t.content);
@@ -1554,7 +1561,9 @@ const App = () => {
         let stamp = formatMtime();
         try {
           stamp = String(mustSucceed(await electronAPI.invoke('get-file-modified', path)) || stamp);
-        } catch {}
+        } catch (e) {
+          console.warn('[note] 保存后读不到新的盘上时间，先用本机时间占位:', path, e);
+        }
         // lastModified 必须一起对上：不然下次这篇被外部改动对账时会把自家写入当成外部修改，
         // 弹「丢弃本地并重新加载」——那是另一种丢内容的方式。
         updateNote(t.id, { isDirty: false, lastModified: stamp });

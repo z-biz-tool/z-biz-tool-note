@@ -81,7 +81,10 @@ function demoFs(): DemoFs {
   try {
     const saved = JSON.parse(localStorage.getItem(DEMO_FS_KEY) || 'null');
     if (saved && Array.isArray(saved.files) && Array.isArray(saved.dirs)) return saved as DemoFs;
-  } catch {}
+  } catch (e) {
+    // 演示区数据损坏就按种子重建；先留痕，否则用户会以为自己的演示笔记凭空消失
+    console.warn('[demo] 演示文件树读取失败，已重建种子数据:', e);
+  }
   const seed: DemoFs = { files: Object.keys(demoSeedContents), dirs: [`${DEMO_DIR}/Examples`] };
   localStorage.setItem(DEMO_FS_KEY, JSON.stringify(seed));
   return seed;
@@ -581,7 +584,10 @@ export const electronAPI = {
           try {
             const meta = await invoke<{ size: number }>('get_file_meta', { path: filePath });
             size = meta.size;
-          } catch {}
+          } catch (e) {
+            // 量不到大小就按"小文件"走 base64：功能仍可用，但内存代价可能变高
+            console.warn('[note] 读取文件大小失败，按非流式方式加载:', filePath, e);
+          }
           if (size > 5 * 1024 * 1024 && isStreamablePath(filePath)) {
             // 大文件：返回 asset URL，前端用 <video>/<img>/<audio> 直接加载
             return {
