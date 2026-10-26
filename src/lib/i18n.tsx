@@ -73,6 +73,7 @@ interface Translations {
     dailyCreated: string;
     dailyOpened: string;
     templateCreated: string;
+    ghostCreated: string;
     renamedTo: string;
     movedTo: string;
     trashedNote: string;
@@ -250,6 +251,7 @@ const translations: Record<Language, Translations> = {
       dailyCreated: 'Daily note created',
       dailyOpened: "Opened today's daily note",
       templateCreated: 'Note created from template',
+      ghostCreated: 'Note created: {title}',
       renamedTo: 'Renamed to {name}',
       movedTo: 'Moved to {name}',
       trashedNote: 'Note moved to trash',
@@ -425,6 +427,7 @@ const translations: Record<Language, Translations> = {
       dailyCreated: '今日日记已创建',
       dailyOpened: '已打开今日日记',
       templateCreated: '已从模板新建笔记',
+      ghostCreated: '已创建「{title}」',
       renamedTo: '已重命名为 {name}',
       movedTo: '已移动到 {name}',
       trashedNote: '笔记已移到废纸篓',

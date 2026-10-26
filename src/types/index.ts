@@ -51,11 +51,15 @@ export interface GraphNode {
   label?: string;
   path?: string;
   group?: number | string;
+  /** note=笔记，file=被链接到的附件（图片/PDF 等），ghost=未解析链接（[[还没创建的笔记]]） */
+  kind?: 'note' | 'file' | 'ghost';
 }
 
 export interface GraphLink {
   source: string;
   target: string;
+  /** 指向幽灵节点的边（虚化显示） */
+  ghost?: boolean;
 }
 
 export interface AIConfig {

@@ -1708,6 +1708,7 @@ body {
 
 /* ===== Enhanced Graph (filter + tag legend) ===== */
 .graph-controls {
+  position: relative;
   padding: 8px;
   border-bottom: 1px solid var(--border-color);
 }
@@ -3415,4 +3416,167 @@ textarea:focus-visible {
 .outline-panel, .knowledge-graph-panel {
   background: var(--bg-primary);
   border-left: 1px solid var(--border-subtle);
+}
+
+/* ===== 图谱工具栏：全局/局部切换 + 设置弹层（Obsidian 补齐） ===== */
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.graph-mode {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.graph-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.graph-mode-btn + .graph-mode-btn {
+  border-left: 1px solid var(--border-color);
+}
+.graph-mode-btn:hover {
+  color: var(--text-primary);
+}
+.graph-mode-btn.active {
+  background: var(--accent-color);
+  color: #fff;
+}
+.graph-search {
+  flex: 1;
+  min-width: 0;
+}
+.graph-settings-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.graph-settings-btn:hover,
+.graph-settings-btn.active {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.graph-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.graph-settings {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 8px;
+  z-index: 31;
+  width: 220px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.graph-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.graph-settings-row select {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.graph-settings-row input[type="range"] {
+  flex: 1;
+  max-width: 110px;
+  accent-color: var(--accent-color);
+}
+.graph-settings-check {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+.graph-settings-check input {
+  accent-color: var(--accent-color);
+}
+
+.graph-local-hint {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 幽灵节点的「创建笔记」动作条 */
+.graph-actions {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.graph-actions-create {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.graph-actions-create:hover {
+  filter: brightness(1.08);
+}
+.graph-actions-dismiss {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.graph-actions-dismiss:hover {
+  color: var(--text-primary);
 }

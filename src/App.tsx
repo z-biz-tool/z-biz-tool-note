@@ -192,8 +192,11 @@ const App = () => {
   // 本地暂存（WAL）里待恢复的条目；保存失败或异常退出后在此露出恢复入口
   const [walEntries, setWalEntries] = useState<WalEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
-  const [graphLinks, setGraphLinks] = useState<GraphLink[]>([]);
+  // 知识图谱索引：路径 -> { 标题, 首标签, [[双链]] 原始目标 }。
+  // 全量重建（refreshKnowledgeIndex）与单篇增量（note-updated 事件）都只写这份索引，
+  // 图谱的节点/边由下方 useMemo 派生（解析标题 → 路径，未解析目标变幽灵节点），
+  // 不再平行维护 nodes/links 两份状态（旧增量路径把原始标题当节点 id 写进去，图会悄悄错）。
+  const [graphIndex, setGraphIndex] = useState<Record<string, { title: string; tag?: string; links: string[] }>>({});
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
 
   // Knowledge management state
@@ -527,32 +530,68 @@ const App = () => {
       .sort((a, b) => b.count - a.count);
     setTags(tagList);
 
-    // Graph: nodes = all notes, links = wiki links (resolved by title)
-    const titleToPath = new Map<string, string>();
-    notes.forEach(n => titleToPath.set(n.title.toLowerCase(), n.filePath));
-    const nodes: GraphNode[] = notes.map(n => ({
-      id: n.filePath,
-      name: n.title,
-      path: n.filePath,
-      group: (n.tags?.[0] as string) || undefined,
-    }));
-    const links: GraphLink[] = [];
-    const linkSet = new Set<string>();
+    // Graph 索引：路径 → 标题/首标签/原始双链目标。节点/边在 useMemo 里派生。
+    const nextGraphIndex: Record<string, { title: string; tag?: string; links: string[] }> = {};
     notes.forEach(n => {
-      (n.links || []).forEach((targetTitle: string) => {
-        const targetPath = titleToPath.get(targetTitle.toLowerCase());
-        if (targetPath && targetPath !== n.filePath) {
-          const key = `${n.filePath}->${targetPath}`;
-          if (!linkSet.has(key)) {
-            linkSet.add(key);
-            links.push({ source: n.filePath, target: targetPath });
-          }
-        }
-      });
+      if (!n.filePath) return;
+      nextGraphIndex[n.filePath] = {
+        title: n.title,
+        tag: (n.tags?.[0] as string) || undefined,
+        links: n.links || [],
+      };
     });
-    setGraphNodes(nodes);
-    setGraphLinks(links);
+    setGraphIndex(nextGraphIndex);
   }, []);
+
+  // 图谱数据派生：标题→路径 解析 + 附件节点 + 幽灵节点（对齐 Obsidian 的 unresolved link）。
+  // 解析顺序：笔记标题 → 文件名（附件/同名文件）→ 都不中则落为 ghost。
+  const { graphNodes, graphLinks } = useMemo(() => {
+    const titleToPath = new Map<string, string>();
+    Object.entries(graphIndex).forEach(([p, e]) => titleToPath.set(e.title.toLowerCase(), p));
+    const fileToPath = new Map<string, string>();
+    allFiles.forEach(f => fileToPath.set(f.name.toLowerCase(), f.path));
+
+    const nodes: GraphNode[] = Object.entries(graphIndex).map(([p, e]) => ({
+      id: p,
+      name: e.title,
+      label: e.title,
+      path: p,
+      group: e.tag,
+      kind: 'note' as const,
+    }));
+    const extras = new Map<string, GraphNode>();
+    const links: GraphLink[] = [];
+    const seen = new Set<string>();
+    const pushLink = (source: string, node: GraphNode, ghost: boolean) => {
+      const key = `${source}->${node.id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      links.push(ghost ? { source, target: node.id, ghost: true } : { source, target: node.id });
+    };
+    Object.entries(graphIndex).forEach(([p, e]) => {
+      for (const raw of e.links) {
+        const target = raw.trim();
+        if (!target) continue;
+        const tp = titleToPath.get(target.toLowerCase());
+        if (tp) {
+          if (tp !== p) pushLink(p, { id: tp } as GraphNode, false);
+          continue;
+        }
+        const fp = fileToPath.get(target.toLowerCase());
+        if (fp && fp !== p) {
+          // 附件（图片/PDF 等）或按文件名引用的文件：小号实心节点
+          if (!extras.has(fp)) extras.set(fp, { id: fp, name: target, label: target, path: fp, kind: 'file' });
+          pushLink(p, extras.get(fp)!, false);
+          continue;
+        }
+        // 未解析链接 → 幽灵节点（多个来源指向同一个目标时共用一个节点）
+        const gid = `ghost:${target.toLowerCase()}`;
+        if (!extras.has(gid)) extras.set(gid, { id: gid, name: target, label: target, path: gid, kind: 'ghost' });
+        pushLink(p, extras.get(gid)!, true);
+      }
+    });
+    return { graphNodes: [...nodes, ...extras.values()], graphLinks: links };
+  }, [graphIndex, allFiles]);
 
   // 侧栏树 + allFiles（双链解析靠它）对齐。read-all-notes 要读全部笔记，只在
   // 路径真的变了（改名/删除）时才跟着刷，新建文件不必。
@@ -690,6 +729,15 @@ const App = () => {
 
   const handleFileDeleted = useCallback((path: string, isDirectory: boolean) => {
     if (closeTabsForDeletedPath(path, isDirectory)) showToast(tr('toast', 'closedDeletedTabs'));
+    // 图谱索引同步清掉（目录删除按前缀过滤），否则图谱里留着指向已删文件的死节点
+    setGraphIndex(prev => {
+      const next: typeof prev = {};
+      for (const [p, e] of Object.entries(prev)) {
+        if (p === path || p.startsWith(path + '/')) continue;
+        next[p] = e;
+      }
+      return next;
+    });
     refreshFileTree();
     refreshNoteIndex();
   }, [closeTabsForDeletedPath, showToast, refreshFileTree, refreshNoteIndex]);
@@ -849,22 +897,15 @@ const App = () => {
 
   // 笔记更新事件：增量更新知识图谱 + 标签（取代每次保存后全量 read-all-notes）
   useNoteUpdated(useCallback((summary) => {
-    setGraphNodes(prev => {
-      const idx = prev.findIndex(n => n.id === summary.file_path);
-      const next = [...prev];
-      const nodeUpdate = { id: summary.file_path, name: summary.title, label: summary.title };
-      if (idx >= 0) {
-        next[idx] = { ...next[idx], ...nodeUpdate };
-      } else {
-        next.push(nodeUpdate as GraphNode);
-      }
-      return next;
-    });
-    setGraphLinks(prev => {
-      const next = prev.filter(l => l.source !== summary.file_path);
-      const newLinks = summary.links.map(target => ({ source: summary.file_path, target }));
-      return [...next, ...newLinks];
-    });
+    // 只更新图谱索引，节点/边由 useMemo 派生（summary.links 是原始标题，由派生层解析）
+    setGraphIndex(prev => ({
+      ...prev,
+      [summary.file_path]: {
+        title: summary.title,
+        tag: summary.tags[0] || undefined,
+        links: summary.links,
+      },
+    }));
     // 标签也按单篇重算：口径与 refreshKnowledgeIndex 一致（count = 挂了这篇的笔记数）
     setTags(prev => {
       const detached = prev
@@ -1143,6 +1184,29 @@ const App = () => {
       setIsLoading(false);
     }
   }, [readFile, readFileBinary, getFileMeta, openNote, showToast, syncMtime]);
+
+  // 图谱里点幽灵节点（[[还没创建的笔记]]）的「创建笔记」动作：
+  // 按标题在当前目录落一篇空笔记并打开。先探测文件是否已在盘上——
+  // 存在（比如按文件名引用、图谱索引没认出来的）就直接打开，绝不覆盖。
+  const createNoteFromGhost = useCallback(async (title: string) => {
+    if (!currentDir) {
+      showToast(tr('toast', 'needFolder'));
+      return;
+    }
+    const safe = title.replace(/[\\/:*?"<>|]/g, '-').trim();
+    if (!safe) return;
+    const filePath = `${currentDir}/${safe}.md`;
+    const existing = await readFile(filePath);
+    if (existing.success && existing.content !== undefined) {
+      await handleOpenFile(filePath);
+      setShowKnowledgeGraph(false);
+      return;
+    }
+    await createAndOpenNote(filePath, `# ${title}\n\n`, tr('toast', 'ghostCreated').replace('{title}', title));
+    refreshFileList(currentDir);
+  }, [currentDir, readFile, handleOpenFile, createAndOpenNote, refreshFileList, showToast]);
+  const createNoteFromGhostRef = useRef(createNoteFromGhost);
+  createNoteFromGhostRef.current = createNoteFromGhost;
 
   // ⌘⇧T 恢复最近关掉的标签。快捷键那个 effect 只在挂载时注册一次，闭包里拿不到后面这份
   // useCallback，所以同时留一个 ref 给它调（menuActionsRef 是同一个套路）。
@@ -2226,12 +2290,14 @@ const App = () => {
                 <KnowledgeGraph
                 nodes={graphNodes}
                 links={graphLinks}
+                theme={theme}
                 currentFilePath={currentNote.filePath}
                 tags={tags}
+                onCreateGhost={(title) => { void createNoteFromGhostRef.current(title); }}
                 onNodeClick={(node) => {
-                  if (node.path && node.path.endsWith('.md')) {
-                    handleOpenFile(node.path);
-                  }
+                  // 幽灵节点留在面板里走「创建笔记」动作，不关面板
+                  if (node.kind === 'ghost') return;
+                  if (node.path) handleOpenFile(node.path);
                   setShowKnowledgeGraph(false);
                 }}
               />

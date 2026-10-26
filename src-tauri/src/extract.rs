@@ -154,6 +154,11 @@ fn push_tag(out: &mut Vec<String>, raw: &str) {
 }
 
 /// 提取 `[[link]]` 格式的双向链接
+///
+/// 目标取「第一个 `|` 之前」再「第一个 `#` 之前」的部分：
+/// `[[目标#锚点|别名]]` → `目标`。此前只剥锚点不剥别名，
+/// `[[Welcome|首页]]` 会被整条提为 `Welcome|首页`，反链与图谱静默丢链。
+/// `![[嵌入]]` 与普通链接同等对待（Obsidian 图谱也是把嵌入算作链接）。
 pub fn extract_links(content: &str) -> Vec<String> {
     let mut links = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -165,6 +170,9 @@ pub fn extract_links(content: &str) -> Vec<String> {
             if let Some(end) = content[start..].find("]]") {
                 let raw_link = &content[start..start + end];
                 let link = raw_link
+                    .split('|')
+                    .next()
+                    .unwrap_or(raw_link)
                     .split('#')
                     .next()
                     .unwrap_or(raw_link)
@@ -351,6 +359,20 @@ mod tests {
     fn links_basic() {
         let v = extract_links("see [[Note A]] and [[Note B#section]]");
         assert_eq!(v, vec!["Note A".to_string(), "Note B".to_string()]);
+    }
+
+    #[test]
+    fn links_alias_stripped() {
+        // `[[目标|别名]]` / `[[目标#锚点|别名]]` 的目标都不该带别名尾巴
+        let v = extract_links("[[Welcome|首页]] and [[Note B#sec|别名]]");
+        assert_eq!(v, vec!["Welcome".to_string(), "Note B".to_string()]);
+    }
+
+    #[test]
+    fn links_embed_counted() {
+        // ![[嵌入]] 与 Obsidian 一致算作链接（图谱里会出现嵌入目标）
+        let v = extract_links("![[Embedded Note]]");
+        assert_eq!(v, vec!["Embedded Note".to_string()]);
     }
 
     #[test]
