@@ -693,9 +693,22 @@ pub struct BackupEntry {
 }
 
 /// AI聊天配置
+///
+/// ⚠ **字段名必须与前端的 `AIConfig`（src/types/index.ts）一字不差**：
+/// 前端是 `baseURL` / `apiKey`（camelCase，且 URL 是全大写），
+/// 而 **Tauri v2 只对顶层参数做 camelCase → snake_case，嵌套结构体走 serde 自己那套**
+/// ⇒ serde 默认只认 `base_url` ⇒ 不写下面的 rename 的话，
+/// **桌面端每一条 AI 请求都会在反序列化这一步就失败**（实测：missing field `base_url`）。
+///
+/// ⛔ **别用 `#[serde(rename_all = "camelCase")]`**：serde 把 `base_url` 转成的是
+/// `baseUrl`，**不是 `baseURL`**（全大写的 URL 会错一位）⇒ 必须显式 rename。
+///
+/// 这条契约由 `ai_payload_wire_tests` 钉住（照抄前端那个 JSON 形状）。
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AiConfigPayload {
+    #[serde(rename = "baseURL")]
     pub base_url: String,
+    #[serde(rename = "apiKey")]
     pub api_key: String,
     pub model: String,
 }
@@ -1834,6 +1847,52 @@ mod minimax_live_tests {
         assert!(
             err.contains("401") || err.contains("403"),
             "期望 401/403，实际错误：{err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ai_payload_wire_tests {
+    use super::AiConfigPayload;
+
+    /// **线上形状**测试：前端 `AIConfig`（src/types/index.ts）的字段名是
+    /// `baseURL` / `apiKey`（camelCase，且 URL 是全大写），而 Rust 结构体字段是
+    /// `base_url` / `api_key`。**Tauri v2 只对顶层参数做 camelCase → snake_case，
+    /// 嵌套结构体的字段名走 serde 自己那套** ⇒ serde 默认只认 `base_url`。
+    ///
+    /// 为什么要有这条：上面那个 `minimax_live_chat` 是在 **Rust 里直接构造**
+    /// `AiConfigPayload` 的 ⇒ 它证明的是「请求拼得像 OpenAI」，
+    /// **证明不了「前端发过来的那份 JSON 能被反序列化」** ⇒
+    /// 两边字段名对不上时，live 用例照样绿，而桌面端每一条 AI 请求都会失败。
+    ///
+    /// 这条把**前端真实发的那个 JSON** 钉住（不是推测的形状，是照抄
+    /// `src/types/index.ts` 的 interface + `src/App.tsx` 传的对象）。
+    #[test]
+    fn accepts_frontend_camel_case_shape() {
+        let raw = r#"{
+            "provider": "minimax",
+            "apiKey": "sk-test-not-a-real-key",
+            "model": "MiniMax-M3.1-Flash",
+            "baseURL": "https://api.minimaxi.com/v1",
+            "enabled": true
+        }"#;
+        let cfg: AiConfigPayload = serde_json::from_str(raw)
+            .expect("前端发来的 AIConfig 形状必须能被反序列化（否则桌面端每条 AI 请求都失败）");
+        assert_eq!(cfg.base_url, "https://api.minimaxi.com/v1");
+        assert_eq!(cfg.api_key, "sk-test-not-a-real-key");
+        assert_eq!(cfg.model, "MiniMax-M3.1-Flash");
+    }
+
+    /// 反向钉：只认 snake_case 的形状必须**不再**被接受 ——
+    /// 否则就变成「两种都收 ⇒ 到底是哪种说了算没人知道」。
+    #[test]
+    fn rejects_snake_case_shape() {
+        let raw = r#"{"base_url":"https://x/v1","api_key":"k","model":"m"}"#;
+        let err = serde_json::from_str::<AiConfigPayload>(raw)
+            .expect_err("snake_case 形状应当不被接受（真源只有前端那一份）");
+        assert!(
+            err.to_string().contains("baseURL") || err.to_string().contains("apiKey"),
+            "错误信息应当点名缺哪个字段，实际：{err}"
         );
     }
 }

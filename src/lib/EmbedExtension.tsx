@@ -33,13 +33,24 @@ function EmbedComponent({ node, updateAttributes, editor }: any) {
     setState('loading');
     setLoadError('');
     try {
+      // 笔记名 → 文件路径：**与双链 `[[…]]` 共用同一条真源**（noteResolve.resolveNotePath）。
+      //
+      // 原来这里调后端 `read_note`，读的是**上一代架构**的 `~/.z-note/notes/{id}.md`
+      // —— 那个目录现在的界面根本不用（笔记库是用户自选的目录）⇒
+      // **嵌入永远显示「找不到这篇笔记」**，而双链却能跳。
+      //
+      // 「没这篇」与「读取失败」必须分开（见上面的六种状态）：
+      // 解析器找不到路径 ⇒ missing；找到了却读不出来 ⇒ failed。
+      const resolver = editor?.extensionManager?.extensions?.find((e: any) => e.name === 'embed')?.options?.resolvePath;
+      const path = typeof resolver === 'function' ? resolver(noteId) : null;
+      if (!path) { setState('missing'); return; }
+      const result = mustSucceed(await electronAPI.invoke('read-file', path)) as { content?: string | null };
+      const raw = result?.content ?? '';
       // content === null 才是"没这篇"；'' 是"有这篇但还没写内容"，两者不能混
-      const result = mustSucceed(await electronAPI.invoke('read-note', noteId)) as { content: string | null };
-      if (result.content === null || result.content === undefined) {
+      if (raw === null || raw === undefined) {
         setState('missing');
         return;
       }
-      const raw = result.content;
       // 标题跟其它地方一样只认 frontmatter.ts 那一套：再写一条"取首行去井号"，
       // 带 YAML 头的笔记就会把 `---` 当标题嵌出来。
       setTitle(extractTitle(raw));
@@ -180,7 +191,14 @@ export const Embed = Node.create({
   addOptions() {
     // 可嵌入的笔记清单由编辑器现算（wikiTargets：同目录里的其它笔记名），
     // 用函数而不是数组传进来，否则 configure 抓到的是首次渲染那一份的旧目录清单。
-    return { getTargets: () => [] as string[] };
+    //
+    // resolvePath 与 getTargets 是**一对**：目标名 → 笔记库里的文件路径。
+    // 它与双链 `[[…]]` 的跳转走**同一条真源**（noteResolve.resolveNotePath），
+    // 所以两个孪生功能不可能再解析到两个不同的存储去。
+    return {
+      getTargets: () => [] as string[],
+      resolvePath: null as ((noteId: string) => string | null) | null,
+    };
   },
 
   addAttributes() {

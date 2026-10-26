@@ -2,13 +2,17 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { modKeys } from './modifier';
+import { normalizeNoteTarget } from './noteResolve';
 
 /**
  * 解析 `[[目标#锚点|别名]]`，取出真正用于跳转的目标名。
  * 与 Rust 端 extract_links 保持同一套截断规则（# 与 | 之后都丢弃）。
+ *
+ * ⚠ 现在转调 `noteResolve.normalizeNoteTarget` —— 「什么算一个笔记名」
+ * 只有那一处定义（双链 / 嵌入 / 补全候选共用），避免两个归一化器分家。
  */
 export function parseWikiLinkTarget(inner: string): string {
-  return inner.split('#')[0].split('|')[0].trim();
+  return normalizeNoteTarget(inner);
 }
 
 /**

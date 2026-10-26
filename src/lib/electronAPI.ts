@@ -576,6 +576,10 @@ export const electronAPI = {
         case 'ask-notes':
         case 'rag-status':
           return { success: false, error: '浏览器模式没有检索索引' };
+        // 流式通道：正文走 Tauri 事件（ai-stream://token / done / error），
+        // 浏览器演示区没有事件通道 ⇒ 同样不可用（调用方会退回整段模式）。
+        case 'ai-chat-stream':
+          return { success: false, error: '浏览器模式不可用' };
         // 系统密钥库通道：浏览器演示区没有 keychain，密钥只在会话内存里有效，
         // 绝不退回 localStorage —— 那把明文写回去，正是这次迁移要消灭的东西。
         case 'save-secret':
@@ -759,6 +763,17 @@ export const electronAPI = {
             return { success: true, notes: s.notes, chunks: s.chunks };
           } catch (e: any) {
             return { success: false, error: e?.toString() || '索引状态不可用' };
+          }
+        }
+        // 流式聊天：命令本身**不带正文**，正文走 ai-stream://* 事件。
+        // ⚠ resolve 只代表「命令没报错」—— 调用方（src/lib/aiStream.ts）要等
+        //   done/error 事件才收尾，不能把 resolve 当成「答完了」。
+        case 'ai-chat-stream': {
+          try {
+            await invoke('ai_chat_stream', { config: args[0], messages: args[1] });
+            return { success: true };
+          } catch (e: any) {
+            return { success: false, error: e?.toString() || 'AI 流式请求失败' };
           }
         }
         // 敏感项（AI API Key 等）走 OS 密钥库：account 为命名空间化 key

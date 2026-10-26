@@ -19,6 +19,8 @@ import { isMarkdownPath, displayName } from './lib/fileTypes';
 import { disambiguateTabTitles } from './lib/tabTitles';
 import { recordRecentFile } from './lib/recentFiles';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
+import { resolveNotePath } from './lib/noteResolve';
+import { runAiStream } from './lib/aiStream';
 import { rebuildIndex, indexNote, unindexNote } from './lib/searchIndex';
 import { loadAiConfigFromStores, saveAiConfigToStores, DEFAULT_AI_CONFIG } from './lib/aiSecrets';
 import { StatusBar } from './components/StatusBar';
@@ -693,6 +695,48 @@ const App = () => {
    * （"当前正文# 会议记录\n\n**日期：**…"），存一次盘还被转义成 `\*\*日期`。
    * 空任务项在这里也顺手补上尾空格，否则模板里的裸 `- [ ]` 会退化成普通列表并吞掉下一条。
    */
+  /**
+   * AI 流式对话。
+   *
+   * Why（2026-10-25 实测出来的真缺口）：Rust 侧 `ai_chat_stream` 的 SSE 实现是完整的，
+   * 三个事件都 emit 了，而**前端一次都没调、一次都没 listen** ⇒ 整条流式链路是死的 ⇒
+   * 用户只能等整段生成完，中间只有一个「思考中…」。
+   *
+   * 现在：订阅 token/done/error 三个事件 → 触发后端流式命令 → 逐 token 回调。
+   * 浏览器演示区没有 Tauri 事件通道 ⇒ 退回整段模式（`runAIAction`）。
+   */
+  const runAIStreamChat = useCallback(async (
+    userMsg: string,
+    history: AIMessage[],
+    onDelta: (delta: string) => void,
+  ): Promise<string> => {
+    if (!aiConfig.enabled) {
+      throw new Error('AI 功能未启用，请先在 设置 → AI 服务商 中配置。');
+    }
+    if (!electronAPI.isTauri) {
+      // 演示区没有事件通道 ⇒ 整段返回（行为与从前一致）
+      return runAIAction('chat', userMsg, history);
+    }
+    const noteContent = currentNote?.content || '';
+    const noteTitle = currentNote?.title || '';
+    const truncated = noteContent.length > 8000 ? noteContent.slice(0, 8000) + '\n...[truncated]' : noteContent;
+    const messages: AIMessage[] = [
+      { role: 'system', content: '你是一个智能笔记助手，帮助用户整理和分析笔记内容。' },
+      ...(history || []),
+      { role: 'user', content: userMsg || `Note: ${noteTitle}\n\n${truncated}` },
+    ];
+    return runAiStream(
+      {
+        listen: (event, cb) => listen(event, cb),
+        start: async () => {
+          const r = await electronAPI.invoke('ai-chat-stream', aiConfig, messages);
+          if (!r.success) throw new Error(r.error || 'AI 流式请求失败');
+        },
+      },
+      onDelta,
+    );
+  }, [aiConfig, currentNote, runAIAction]);
+
   const insertMarkdown = useCallback((text: string) => {
     const editor = editorRef.current;
     if (!editor || !text) return;
@@ -1271,11 +1315,10 @@ const App = () => {
     if (!t) return;
     const existing = openTabsRef.current.find(x => x.title === t);
     if (existing) { setActiveTabId(existing.id); return; }
-    const m = allFiles.find(f => {
-      const fn = f.name?.replace(/\.md$/, '').replace(/\.markdown$/, '');
-      return fn === t || f.path?.endsWith(`/${t}.md`) || f.path?.endsWith(`/${t}.markdown`);
-    });
-    if (m) handleOpenFile(m.path);
+    // 「笔记名 → 文件路径」走唯一真源（noteResolve）：双链与嵌入共用，
+    // 两个功能不可能再解析到两个不同的存储去。
+    const path = resolveNotePath(allFiles, t);
+    if (path) handleOpenFile(path);
     else showToast(tr('toast', 'noteNotFound').replace('{name}', t), 'error');
   }, [allFiles, handleOpenFile, showToast]);
 
@@ -1293,6 +1336,14 @@ const App = () => {
     }
     return [...seen];
   }, [allFiles, currentNote?.filePath]);
+
+  // 嵌入块 `![[名字]]` 解析用的函数 —— **与双链 `[[名字]]` 同一条真源**
+  // （noteResolve.resolveNotePath）。原来嵌入走的是上一代架构的
+  // `~/.z-note/notes/{id}.md` ⇒ 界面永远显示「找不到这篇笔记」。
+  const resolveNote = useCallback(
+    (target: string) => resolveNotePath(allFiles, target),
+    [allFiles],
+  );
 
   const handleOpenFolder = useCallback((dirPath: string) => {
     if (dirPath) {
@@ -1366,6 +1417,7 @@ const App = () => {
             onTagClick={(tag: string) => handleTagClick(tag)}
             documentWide={rightPanelWide}
             wikiTargets={wikiTargets}
+            resolveNote={resolveNote}
           />
           </>
         );
@@ -1398,6 +1450,7 @@ const App = () => {
             onWikiLinkClick={handleWikiLinkNavigate}
             onTagClick={(tag: string) => handleTagClick(tag)}
             wikiTargets={wikiTargets}
+            resolveNote={resolveNote}
           />
         </>
       );
@@ -2207,6 +2260,7 @@ const App = () => {
               <Suspense fallback={<div className="panel-loading">加载中...</div>}>
                 <AIPanel
                   onAction={runAIAction}
+                  onStreamChat={runAIStreamChat}
                   onInsert={handleInsertText}
                   onClose={() => setShowAIPanel(false)}
                   enabled={aiConfig.enabled}

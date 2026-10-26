@@ -99,6 +99,9 @@ interface EditorProps {
   documentWide?: boolean;
   // `[[` 双链补全的候选笔记名（已去扩展名）
   wikiTargets?: string[];
+  // 笔记名 → 笔记库里的文件路径。**双链与嵌入共用**（noteResolve.resolveNotePath）：
+  // 原来嵌入走的是上一代架构的 ~/.z-note/notes ⇒ 永远「找不到这篇笔记」。
+  resolveNote?: (target: string) => string | null;
   // 从侧栏全文搜索结果点进来时：高亮这一篇里的所有匹配，并把光标落到第一处
   searchJump?: { query: string; line: number } | null;
   onSearchJumpDone?: () => void;
@@ -127,6 +130,7 @@ export const Editor = ({
   scrollSyncTarget,
   documentWide = false,
   wikiTargets,
+  resolveNote,
 }: EditorProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -156,6 +160,10 @@ export const Editor = ({
   // 候选笔记每次列目录都会变，但扩展只在编辑器创建时配置一次，所以走 ref 取最新值
   const wikiTargetsRef = useRef(wikiTargets);
   wikiTargetsRef.current = wikiTargets;
+  // 嵌入块解析笔记名用的同一个函数也得走 ref：目录清单每次刷新都变，
+  // 而扩展只在编辑器创建时配置一次 ⇒ 捕获首帧的闭包会让嵌入永远解析不到新文件。
+  const resolveNoteRef = useRef(resolveNote);
+  resolveNoteRef.current = resolveNote;
   const tagClickRef = useRef(onTagClick);
   tagClickRef.current = onTagClick;
 
@@ -247,7 +255,11 @@ export const Editor = ({
       Callout,
       DragHandle,
       Fold,
-      Embed.configure({ getTargets: () => wikiTargetsRef.current ?? [] }),
+      Embed.configure({
+        getTargets: () => wikiTargetsRef.current ?? [],
+        // 与双链同一条真源：笔记名 → 笔记库里的文件路径
+        resolvePath: (noteId: string) => resolveNoteRef.current?.(noteId) ?? null,
+      }),
       SearchEnhanced,
     ],
     content,

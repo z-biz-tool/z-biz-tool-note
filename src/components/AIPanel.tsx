@@ -4,6 +4,16 @@ import type { AIMessage } from '../types';
 
 interface AIPanelProps {
   onAction: (action: AIAction, context?: string, history?: AIMessage[]) => Promise<string>;
+  /**
+   * 流式对话（可选）。给了就走流式：逐 token 回调增量，最后 resolve 完整文本。
+   * 不给就退回整段模式（`onAction('chat', …)`）—— 浏览器演示区没有 Tauri 事件通道，
+   * 那里只能整段。
+   */
+  onStreamChat?: (
+    userMsg: string,
+    history: AIMessage[],
+    onDelta: (delta: string) => void,
+  ) => Promise<string>;
   onInsert: (text: string) => void;
   onClose: () => void;
   enabled: boolean;
@@ -25,16 +35,18 @@ const ACTIONS: Array<{ id: AIAction; label: string; icon: any; desc: string }> =
   { id: 'suggest-links', label: '推荐双链', icon: Network, desc: '推荐指向其他笔记的 [[双链]]' },
 ];
 
-export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, width }: AIPanelProps) => {
+export const AIPanel = ({ onAction, onStreamChat, onInsert, onClose, enabled, onOpenSettings, width }: AIPanelProps) => {
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<AIAction | null>(null);
+  // 流式进行中的正文（还没进 chat 列表 —— 收完再整条进去，避免半截历史）
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat, loading]);
+  }, [chat, loading, streamingText]);
 
   const runAction = async (action: AIAction) => {
     if (!enabled) {
@@ -65,12 +77,26 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
     setInput('');
     setLoading(true);
     setBusyAction('chat');
+    // 传最近 10 条对话历史
+    const history = chat
+      .map(m => ({ role: m.role, content: m.content }) as AIMessage)
+      .slice(-10);
     try {
-      const result = await onAction('chat', userMsg, chat.map(m => ({ role: m.role, content: m.content }) as AIMessage).slice(-10)); // 传最近 10 条对话历史
-      setChat(prev => [...prev, { role: 'assistant', content: result }]);
+      if (onStreamChat) {
+        // 流式：先把正文逐 token 显示出来，收完再整条进历史
+        setStreamingText('');
+        const result = await onStreamChat(userMsg, history, (delta) => {
+          setStreamingText(prev => (prev ?? '') + delta);
+        });
+        setChat(prev => [...prev, { role: 'assistant', content: result }]);
+      } else {
+        const result = await onAction('chat', userMsg, history);
+        setChat(prev => [...prev, { role: 'assistant', content: result }]);
+      }
     } catch (e: any) {
       setChat(prev => [...prev, { role: 'assistant', content: `请求失败：${e.message || e}` }]);
     } finally {
+      setStreamingText(null);
       setLoading(false);
       setBusyAction(null);
     }
@@ -128,9 +154,14 @@ export const AIPanel = ({ onAction, onInsert, onClose, enabled, onOpenSettings, 
               )}
             </div>
           ))}
-          {loading && busyAction === 'chat' && (
+          {loading && busyAction === 'chat' && streamingText === null && (
             <div className="ai-msg ai-msg-assistant">
               <Loader2 size={14} className="spin" /> 思考中…
+            </div>
+          )}
+          {streamingText !== null && (
+            <div className="ai-msg ai-msg-assistant">
+              <div className="ai-msg-content">{streamingText}</div>
             </div>
           )}
           <div ref={chatEndRef} />
