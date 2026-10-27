@@ -53,7 +53,9 @@ export const StatusBar = React.memo(({
       if (!isNaN(d.getTime())) {
         return `${t('status', 'saved')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
       }
-    } catch {}
+    } catch (e) {
+      console.warn("[statusBar] 解析保存时间失败，只显示「已保存」:", e);
+    }
     return t('status', 'saved');
   };
 
