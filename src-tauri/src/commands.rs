@@ -1199,6 +1199,36 @@ pub async fn ai_chat_stream(
 }
 
 
+/// 列出可选的 AI 服务商预设。
+///
+/// 单一事实源在 `cap-llm::presets` —— 前端**不许**再留第二份表。
+/// 以前设置页有 6 个手写按钮，连模型名一起写死（`glm-4-flash` /
+/// `moonshot-v1-8k` 这些早已换代），界面看着正常、点了就 404。
+#[tauri::command]
+pub fn list_llm_presets() -> Vec<crate::ai::PresetView> {
+    crate::ai::list_llm_presets()
+}
+
+/// 用「表单里的草稿配置」拉模型列表（不必先保存）。
+///
+/// 刻意收草稿而非读磁盘：用户是「填完 key 先点获取模型、满意了才保存」，
+/// 读磁盘会让他看到上一次的旧结果，误判新 key 不可用。
+#[tauri::command]
+pub async fn list_llm_models(
+    config: AiConfigPayload,
+) -> Result<Vec<String>, crate::ai::LlmFailure> {
+    crate::ai::list_models(&config).await
+}
+
+/// 测试连接：发一个 1 token 的对话。
+///
+/// 不用 `/models` 探活 —— 很多自建代理不实现它，会把「服务好好的、
+/// 只是没这个接口」误报成「连不上」。
+#[tauri::command]
+pub async fn test_ai_config(config: AiConfigPayload) -> Result<String, crate::ai::LlmFailure> {
+    crate::ai::test_connection(&config).await
+}
+
 /// 创建笔记备份（版本历史）
 /// 备份存储在 ~/.z-note/backups/{note_id}/ 目录下，文件名为 {timestamp}.md
 /// 最多保留 20 个备份版本

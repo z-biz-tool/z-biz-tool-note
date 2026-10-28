@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Save, Plus, Trash2, FileText, RotateCw } from 'lucide-react';
 import type { AIConfig, Template, Config } from '../types';
 import { getIndexStatus, rebuildIndex, type IndexStatus } from '../lib/searchIndex';
@@ -6,6 +6,34 @@ import { BUILTIN_TEMPLATES } from '../lib/templates';
 import { useI18n } from '../lib/i18n';
 import { useKeyboard } from '../hooks/useKeyboard';
 import type { KeyboardShortcut } from '../lib/keyboardShortcuts';
+import { electronAPI } from '../lib/electronAPI';
+
+/**
+ * 供应商预设的界面视图（由 Rust `list_llm_presets` 提供）。
+ *
+ * 前端**不留第二份表**：以前这里是 6 个手写按钮，地址与模型名都写死，
+ * 模型名半年一换代 ⇒ 用户点一下、看着全对、实际 404。
+ */
+interface PresetView {
+  id: string;
+  label: string;
+  base_url: string;
+  category: string;
+  category_label: string;
+  requires_api_key: boolean;
+  aliases: string[];
+  verified_on: string;
+}
+
+/** 结构化失败的界面视图（由 Rust `LlmFailure` 提供）。 */
+interface LlmFailure {
+  kind: string;
+  status?: number | null;
+  message: string;
+  hint: string;
+  /** 该把光标送进哪一栏 —— 与 hint 的文案必须一致。 */
+  focus: 'apiKey' | 'baseUrl' | 'model' | 'none';
+}
 
 interface SettingsDialogProps {
   open: boolean;
@@ -31,6 +59,19 @@ export const SettingsDialog = ({
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
 
+  // ── AI 服务商的交互状态 ──
+  // 预设、模型列表、进行中的动作、上一次失败/成功。全部是「瞬态」，
+  // 关窗即丢，不进 AIConfig（配置只存用户真正保存过的东西）。
+  const [presets, setPresets] = useState<PresetView[]>([]);
+  const [models, setModels] = useState<string[]>([]);
+  const [busy, setBusy] = useState<'models' | 'test' | null>(null);
+  const [failure, setFailure] = useState<LlmFailure | null>(null);
+  const [okText, setOkText] = useState<string | null>(null);
+  const keyRef = useRef<HTMLInputElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
+  const modelRef = useRef<HTMLInputElement>(null);
+  const advRef = useRef<HTMLDetailsElement>(null);
+
   // 外观滑块会直接改 CSS 变量（实时预览），取消时要退回已保存的配置
   const applyFontVars = (c: Config) => {
     document.documentElement.style.setProperty('--font-size-base', `${c.fontSize || 16}px`);
@@ -47,8 +88,29 @@ export const SettingsDialog = ({
       setAI(aiConfig);
       setTpls(templates.length ? templates : BUILTIN_TEMPLATES);
       setCfg(config);
+      // 每次打开都从干净状态开始：否则上次的「连接失败」会跟着出现在
+      // 下次打开的界面上，用户会以为刚刚又失败了一次。
+      setModels([]);
+      setFailure(null);
+      setOkText(null);
+      setBusy(null);
     }
   }, [open, aiConfig, templates, config]);
+
+  // 预设从 Rust 取（单一事实源在 cap-llm::presets）。
+  // 拿不到（浏览器演示区 / 后端异常）就留空，界面退回「自定义」手填地址 ——
+  // 不假装「一家服务商都没有」。
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void electronAPI
+      .invoke('list-llm-presets')
+      .then((r: any) => {
+        if (!cancelled && r?.success && Array.isArray(r.presets)) setPresets(r.presets);
+      })
+      .catch(() => { /* 读不到就用手填，不打扰用户 */ });
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     if (!open || tab !== 'search') return;
@@ -71,6 +133,110 @@ export const SettingsDialog = ({
     [config, onClose],
   );
   useKeyboard(escapeShortcuts, { enabled: open });
+
+  /**
+   * 当前选中的预设。
+   *
+   * 两级判定：先按存下来的 `provider` 认（用户选过的就是它），
+   * 认不到再按地址反查 —— 老配置里没有 `provider` 字段，
+   * 只按 provider 判会让所有存量用户都显示成「自定义」。
+   */
+  const currentPreset = useMemo(
+    () =>
+      presets.find(p => p.id === ai.provider) ??
+      presets.find(p => p.base_url === ai.baseURL) ??
+      null,
+    [presets, ai.provider, ai.baseURL],
+  );
+
+  /** 该服务商要不要密钥。Ollama 这类本地服务不需要，密钥框直接收起来。 */
+  const requiresKey = currentPreset ? currentPreset.requires_api_key : true;
+
+  /** 按分组排好（cap-llm 的预设本身已按组排列，这里只做归拢）。 */
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; items: PresetView[] }[] = [];
+    for (const p of presets) {
+      let g = out.find(x => x.key === p.category);
+      if (!g) {
+        g = { key: p.category, label: p.category_label, items: [] };
+        out.push(g);
+      }
+      g.items.push(p);
+    }
+    return out;
+  }, [presets]);
+
+  /** 换服务商：地址跟着走，模型名不动（预设不提供模型名，见 Rust 侧注释）。 */
+  const pickProvider = (id: string) => {
+    setFailure(null);
+    setOkText(null);
+    setModels([]);
+    const p = presets.find(x => x.id === id);
+    if (!p) {
+      // 自定义：保留用户已填的地址，只是不再挂任何厂商身份
+      setAI({ ...ai, provider: undefined });
+      return;
+    }
+    setAI({ ...ai, provider: p.id, baseURL: p.base_url });
+  };
+
+  /** 获取模型列表。失败要把结构化错误交给界面分流，不能只吞成一句文本。 */
+  const fetchModels = async () => {
+    setBusy('models');
+    setFailure(null);
+    setOkText(null);
+    const r: any = await electronAPI.invoke('list-llm-models', ai);
+    setBusy(null);
+    if (!r?.success) {
+      setFailure(
+        r?.failure ?? { kind: 'http', status: null, message: r?.error || '获取模型失败', hint: '', focus: 'none' },
+      );
+      return;
+    }
+    const list: string[] = Array.isArray(r.models) ? r.models : [];
+    setModels(list);
+    if (list.length === 0) {
+      // 空列表不是「成功」：用户点这个按钮就是为了拿一个能填的模型名
+      setFailure({
+        kind: 'notConfigured',
+        status: null,
+        message: tr('settings', 'fetchEmpty'),
+        hint: '',
+        focus: 'model',
+      });
+      return;
+    }
+    if (!ai.model.trim()) setAI({ ...ai, model: list[0] });
+  };
+
+  /** 测试连接：后端发一个 1 token 的对话，能回就说明 key/地址/模型三项全对。 */
+  const testConn = async () => {
+    setBusy('test');
+    setFailure(null);
+    setOkText(null);
+    const r: any = await electronAPI.invoke('test-ai-config', ai);
+    setBusy(null);
+    if (!r?.success) {
+      setFailure(
+        r?.failure ?? { kind: 'http', status: null, message: r?.error || '连接失败', hint: '', focus: 'none' },
+      );
+      return;
+    }
+    setOkText(r.detail || '');
+  };
+
+  /** 「去改密钥 / 去改地址 / 去选模型」—— 把光标和注意力一起送过去。 */
+  const focusFailure = (f: LlmFailure) => {
+    if (f.focus === 'apiKey') {
+      keyRef.current?.focus();
+    } else if (f.focus === 'baseUrl') {
+      // 地址在折叠区里：不先展开，focus 会落在一个看不见的输入框上
+      if (advRef.current) advRef.current.open = true;
+      urlRef.current?.focus();
+    } else if (f.focus === 'model') {
+      modelRef.current?.focus();
+    }
+  };
 
   if (!open) return null;
 
@@ -148,49 +314,118 @@ export const SettingsDialog = ({
                 />
               </label>
 
+              {/* 服务商：从 Rust 取预设（单一事实源）。
+                  改造前这里是一排手写按钮，连模型名一起写死 ——
+                  模型名半年一换代，点一下就 404，而界面看起来毫无异常。 */}
               <label className="settings-label">
-                <span>{tr('settings', 'baseURL')}</span>
-                <input
-                  type="text"
-                  value={ai.baseURL}
-                  onChange={(e) => setAI({ ...ai, baseURL: e.target.value })}
-                  placeholder="https://api.openai.com/v1"
-                />
+                <span>{tr('settings', 'provider')}</span>
+                <select
+                  value={currentPreset?.id ?? ''}
+                  onChange={(e) => pickProvider(e.target.value)}
+                  disabled={presets.length === 0}
+                >
+                  {presets.length === 0 && (
+                    <option value="">{tr('settings', 'providerCustom')}</option>
+                  )}
+                  {groups.map((g) => (
+                    <optgroup key={g.key} label={g.label}>
+                      {g.items.map((p) => (
+                        <option key={p.id} value={p.id}>{p.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  <option value="">{tr('settings', 'providerCustom')}</option>
+                </select>
               </label>
+              <p className="settings-hint">{tr('settings', 'providerHint')}</p>
 
-              <label className="settings-label">
-                <span>{tr('settings', 'apiKey')}</span>
-                <input
-                  type="password"
-                  value={ai.apiKey}
-                  onChange={(e) => setAI({ ...ai, apiKey: e.target.value })}
-                  placeholder="sk-..."
-                />
-              </label>
-              <p className="settings-hint">{tr('settings', 'apiKeyHint')}</p>
+              {requiresKey && (
+                <>
+                  <label className="settings-label">
+                    <span>{tr('settings', 'apiKey')}</span>
+                    <input
+                      ref={keyRef}
+                      type="password"
+                      value={ai.apiKey}
+                      onChange={(e) => setAI({ ...ai, apiKey: e.target.value })}
+                      placeholder="sk-..."
+                    />
+                  </label>
+                  <p className="settings-hint">{tr('settings', 'apiKeyHint')}</p>
+                </>
+              )}
 
-              <label className="settings-label">
+              {/* 模型名：可拉取、也可手填。datalist 而不是 select ——
+                  有些自建代理会临时挂一个不在列表里的模型名，
+                  换成下拉就把这条路堵死了。 */}
+              <div className="settings-label">
                 <span>{tr('settings', 'model')}</span>
-                <input
-                  type="text"
-                  value={ai.model}
-                  onChange={(e) => setAI({ ...ai, model: e.target.value })}
-                  placeholder="gpt-4o-mini / deepseek-chat / glm-4-flash / qwen-turbo / MiniMax-M3.1-Flash"
-                />
-              </label>
-
-              <div className="settings-presets">
-                <span>{tr('settings', 'presets')}</span>
-                <button onClick={() => setAI({ ...ai, baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' })}>OpenAI</button>
-                <button onClick={() => setAI({ ...ai, baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' })}>DeepSeek</button>
-                <button onClick={() => setAI({ ...ai, baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' })}>{tr('settings', 'zhipu')}</button>
-                <button onClick={() => setAI({ ...ai, baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' })}>Kimi</button>
-                {/* MiniMax 开放平台：OpenAI 兼容协议，点一下就填好地址与模型
-                    （2026-10-20 实测该端点连通）。注意这里**不改默认值** ——
-                    预置是「加一个选项」，不是「替用户改掉原来的选择」。 */}
-                <button onClick={() => setAI({ ...ai, baseURL: 'https://api.minimaxi.com/v1', model: 'MiniMax-M3.1-Flash' })}>MiniMax</button>
-                <button onClick={() => setAI({ ...ai, baseURL: 'http://localhost:11434/v1', model: 'llama3.1' })}>Ollama</button>
+                <div className="settings-inline">
+                  <input
+                    ref={modelRef}
+                    type="text"
+                    value={ai.model}
+                    onChange={(e) => setAI({ ...ai, model: e.target.value })}
+                    placeholder="deepseek-chat / qwen-plus …"
+                    list="ai-model-options"
+                  />
+                  <button type="button" onClick={fetchModels} disabled={busy !== null}>
+                    {busy === 'models' ? tr('settings', 'fetching') : tr('settings', 'fetchModels')}
+                  </button>
+                </div>
+                {models.length > 0 && (
+                  <datalist id="ai-model-options">
+                    {models.map((m) => <option key={m} value={m} />)}
+                  </datalist>
+                )}
               </div>
+              <p className="settings-hint">{tr('settings', 'modelHint')}</p>
+
+              {/* 地址折叠进「高级」：选服务商已经填好，绝大多数人不用看这一栏。
+                  自定义（自建代理）时默认展开，否则用户会找不到该填哪儿。 */}
+              <details className="settings-advanced" ref={advRef} open={!currentPreset}>
+                <summary>{tr('settings', 'advanced')}</summary>
+                <label className="settings-label">
+                  <span>{tr('settings', 'baseURL')}</span>
+                  <input
+                    ref={urlRef}
+                    type="text"
+                    value={ai.baseURL}
+                    onChange={(e) => setAI({ ...ai, baseURL: e.target.value })}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </label>
+                <p className="settings-hint">
+                  {tr('settings', 'advancedHint')}
+                  {currentPreset ? ` ${tr('settings', 'verifiedOn').replace('{date}', currentPreset.verified_on)}` : ''}
+                </p>
+              </details>
+
+              <div className="settings-inline settings-inline-end">
+                <button type="button" onClick={testConn} disabled={busy !== null}>
+                  {busy === 'test' ? tr('settings', 'testing') : tr('settings', 'testConn')}
+                </button>
+              </div>
+
+              {okText && <p className="settings-ok">{okText}</p>}
+
+              {/* 结构化失败：一句「为什么」+ 一个能点的动作。
+                  「请求失败，请重试」这种文案价值为零 —— 用户已经知道失败了。 */}
+              {failure && (
+                <div className="settings-failure">
+                  <strong>{failure.message.slice(0, 200)}</strong>
+                  {failure.hint && <p>{failure.hint}</p>}
+                  {failure.focus !== 'none' && (
+                    <button type="button" onClick={() => focusFailure(failure)}>
+                      {failure.focus === 'apiKey'
+                        ? tr('settings', 'focusApiKey')
+                        : failure.focus === 'baseUrl'
+                          ? tr('settings', 'focusBaseUrl')
+                          : tr('settings', 'focusModel')}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

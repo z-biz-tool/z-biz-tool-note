@@ -1396,7 +1396,8 @@ body {
   align-items: center;
 }
 .settings-label input[type="text"],
-.settings-label input[type="password"] {
+.settings-label input[type="password"],
+.settings-label select {
   padding: 8px 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
@@ -1406,7 +1407,8 @@ body {
   font-family: inherit;
 }
 .settings-label input[type="text"]:focus,
-.settings-label input[type="password"]:focus {
+.settings-label input[type="password"]:focus,
+.settings-label select:focus {
   outline: none;
   border-color: var(--accent-color);
 }
@@ -1415,25 +1417,108 @@ body {
   height: 16px;
   cursor: pointer;
 }
-.settings-presets {
+
+/* 输入框 + 行内按钮（获取模型 / 测试连接）。
+   做成一行是因为按钮的作用对象就是左边那个输入框 —— 分成两行，
+   用户会以为「获取模型」是一个独立的设置项。 */
+.settings-inline {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--text-muted);
+  gap: 8px;
+  align-items: stretch;
 }
-.settings-presets button {
-  padding: 4px 10px;
+.settings-inline input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+.settings-inline > button {
+  flex: none;
+  padding: 0 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
   cursor: pointer;
-  font-size: 11px;
+  white-space: nowrap;
   transition: all var(--transition);
 }
-.settings-presets button:hover {
+.settings-inline > button:hover:not(:disabled) {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.settings-inline > button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.settings-inline-end {
+  justify-content: flex-end;
+}
+
+/* 高级（默认折叠）：接口地址属「选错才需要看」的项，
+   摊在表单里会让人以为必须自己填。 */
+.settings-advanced {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+}
+.settings-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.settings-advanced[open] > summary {
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+.settings-advanced .settings-label input[type="text"] {
+  background: var(--bg-primary);
+}
+
+/* 连接成功的回执：只在真的连通时出现，所以用强调色而不是绿底大框 */
+.settings-ok {
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent-color);
+}
+
+/* 结构化失败：原始错误（可折叠视线）+ 一句「为什么」+ 一个能点的动作。
+   左边竖条是给「这里出事了」的视觉重量，不铺满红底 —— 
+   红底大框会被当成页面级崩溃，而这只是一个字段没填对。 */
+.settings-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-left: 3px solid #e5484d;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.settings-failure strong {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.settings-failure p {
+  margin: 0;
+  color: var(--text-muted);
+}
+.settings-failure button {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.settings-failure button:hover {
   border-color: var(--accent-color);
   color: var(--accent-color);
 }

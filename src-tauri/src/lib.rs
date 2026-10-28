@@ -81,6 +81,11 @@ pub fn run() {
             commands::find_backlinks,
             commands::ai_chat,
             commands::ai_chat_stream,
+            // AI 服务商预设 / 取模型 / 测连接（设置页用；预设是单一事实源，
+            // 前端不再自带一份写死模型名的快捷表）
+            commands::list_llm_presets,
+            commands::list_llm_models,
+            commands::test_ai_config,
             commands::create_backup,
             commands::list_backups,
             commands::restore_backup,

@@ -580,6 +580,13 @@ export const electronAPI = {
         // 浏览器演示区没有事件通道 ⇒ 同样不可用（调用方会退回整段模式）。
         case 'ai-chat-stream':
           return { success: false, error: '浏览器模式不可用' };
+        // 预设列表纯本地数据（来自 Rust 常量表），演示区没有 Rust ⇒ 空列表，
+        // 设置页会退回手填地址，不假装「一家都没有」。
+        case 'list-llm-presets':
+          return { success: true, presets: [] };
+        case 'list-llm-models':
+        case 'test-ai-config':
+          return { success: false, error: '浏览器演示区不发真实请求' };
         // 系统密钥库通道：浏览器演示区没有 keychain，密钥只在会话内存里有效，
         // 绝不退回 localStorage —— 那把明文写回去，正是这次迁移要消灭的东西。
         case 'save-secret':
@@ -742,6 +749,40 @@ export const electronAPI = {
             return { success: false, error: e?.toString() || 'AI 请求失败' };
           }
         }
+        // ── AI 服务商预设 / 取模型 / 测连接 ──────────────────────────
+        // 预设从 Rust 取（单一事实源在 cap-llm::presets）。前端不再自带
+        // 那份写死模型名的快捷表 —— 模型名半年一代，写死必过期。
+        case 'list-llm-presets': {
+          try {
+            const presets = await invoke<any[]>('list_llm_presets');
+            return { success: true, presets };
+          } catch (e: any) {
+            return { success: false, error: e?.toString() || '读取服务商列表失败' };
+          }
+        }
+        // 结构化失败要**原样透传**：Rust 侧 LlmFailure 带 kind/status/hint/focus，
+        // 界面靠 focus 决定把光标送进哪一栏。这里若只 retain 一句文本，
+        // 分流就退化成「所有错误同一句话」。
+        case 'list-llm-models': {
+          try {
+            const models = await invoke<string[]>('list_llm_models', {
+              config: toAiPayload(args[0]),
+            });
+            return { success: true, models };
+          } catch (e: any) {
+            return { success: false, error: e?.message || e?.toString() || '获取模型失败', failure: e };
+          }
+        }
+        case 'test-ai-config': {
+          try {
+            const detail = await invoke<string>('test_ai_config', {
+              config: toAiPayload(args[0]),
+            });
+            return { success: true, detail };
+          } catch (e: any) {
+            return { success: false, error: e?.message || e?.toString() || '连接失败', failure: e };
+          }
+        }
         // 问笔记（RAG）：检索与调用都在 Rust 侧（rag + cap-llm），回答经
         // ask://token / ask://done 事件流式到达，这条通道只负责发起与收尾状态。
         case 'ask-notes': {
@@ -770,7 +811,11 @@ export const electronAPI = {
         //   done/error 事件才收尾，不能把 resolve 当成「答完了」。
         case 'ai-chat-stream': {
           try {
-            await invoke('ai_chat_stream', { config: args[0], messages: args[1] });
+            // 这里以前直接把 args[0] 递过去，漏了 toAiPayload —— 而 ai-chat
+            // 那条是转过的。serde 不做大小写转换，Rust 侧直接报
+            // 「missing field base_url」，表现是流式对话永远失败、
+            // 退化成整段请求。两条通道必须用同一个转换函数。
+            await invoke('ai_chat_stream', { config: toAiPayload(args[0]), messages: args[1] });
             return { success: true };
           } catch (e: any) {
             return { success: false, error: e?.toString() || 'AI 流式请求失败' };

@@ -95,12 +95,25 @@ interface Translations {
     close: string;
     aiHint: string;
     enableAI: string;
+    provider: string;
+    providerHint: string;
+    providerCustom: string;
+    advanced: string;
+    advancedHint: string;
     baseURL: string;
     apiKey: string;
     apiKeyHint: string;
     model: string;
-    presets: string;
-    zhipu: string;
+    modelHint: string;
+    fetchModels: string;
+    fetching: string;
+    fetchEmpty: string;
+    testConn: string;
+    testing: string;
+    focusApiKey: string;
+    focusBaseUrl: string;
+    focusModel: string;
+    verifiedOn: string;
     fontSize: string;
     font: string;
     fontSystem: string;
@@ -274,12 +287,25 @@ const translations: Record<Language, Translations> = {
       aiHint: 'Works with any OpenAI-compatible endpoint: OpenAI, DeepSeek, Zhipu, Kimi, Ollama (',
       aiHintTail: '), etc.',
       enableAI: 'Enable AI assistant',
+      provider: 'Provider',
+      providerHint: 'Pick a provider to fill in the URL automatically. Model names change every few months — use “Fetch models” instead of typing one from memory.',
+      providerCustom: 'Custom (self-hosted proxy)',
+      advanced: 'Advanced: base URL',
+      advancedHint: 'You rarely need this. Set it only for a self-hosted proxy or a non-standard endpoint.',
       baseURL: 'Base URL',
       apiKey: 'API Key',
       apiKeyHint: 'The key is stored in your system keychain (macOS Keychain / Windows Credential Manager) — never in browser storage.',
       model: 'Model',
-      presets: 'Presets:',
-      zhipu: 'Zhipu',
+      modelHint: 'Fetch the list from the provider, or type a name manually.',
+      fetchModels: 'Fetch models',
+      fetching: 'Fetching…',
+      fetchEmpty: 'The provider returned no models. Check that the key has access, or type a model name manually.',
+      testConn: 'Test connection',
+      testing: 'Testing…',
+      focusApiKey: 'Edit key',
+      focusBaseUrl: 'Edit URL',
+      focusModel: 'Pick model',
+      verifiedOn: 'URL checked {date}',
       fontSize: 'Font size',
       font: 'Font',
       fontSystem: 'System default',
@@ -450,12 +476,25 @@ const translations: Record<Language, Translations> = {
       aiHint: '支持任意 OpenAI 兼容接口：OpenAI、DeepSeek、智谱、Kimi、Ollama（',
       aiHintTail: '）等。',
       enableAI: '启用 AI 助手',
+      provider: '服务商',
+      providerHint: '选一家就把地址填好了。模型名半年一换代，别凭记忆手填 —— 点「获取模型列表」现取。',
+      providerCustom: '自定义（自建代理）',
+      advanced: '高级：接口地址',
+      advancedHint: '一般不用改。只有自建代理或非标准端点才需要动这里。',
       baseURL: '接口地址 Base URL',
       apiKey: 'API Key',
       apiKeyHint: '密钥保存在系统密钥库（macOS 钥匙串 / Windows 凭据管理器 / Linux Secret Service），不会写入浏览器存储。',
       model: '模型',
-      presets: '预设：',
-      zhipu: '智谱',
+      modelHint: '从服务商拉取，或直接手填。',
+      fetchModels: '获取模型列表',
+      fetching: '获取中…',
+      fetchEmpty: '服务商没有返回任何模型。确认这个密钥有权限，或者直接手填模型名。',
+      testConn: '测试连接',
+      testing: '测试中…',
+      focusApiKey: '去填密钥',
+      focusBaseUrl: '去改地址',
+      focusModel: '去选模型',
+      verifiedOn: '地址核对于 {date}',
       fontSize: '字体大小',
       font: '字体',
       fontSystem: '系统默认',
