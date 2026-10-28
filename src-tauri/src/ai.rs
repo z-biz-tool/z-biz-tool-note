@@ -43,6 +43,64 @@ fn detect_provider(base_url: &str) -> ProviderKind {
     }
 }
 
+/// 按 base_url 反查供应商预设 id（可选）。
+///
+/// 本仓前端只提交 `base_url` / `api_key` / `model` 三个字段，没有 provider
+/// 选择器（provider 名只用于设置页展示）。所以这里反过来用地址找厂商身份：
+/// 用户填了 `api.minimaxi.com` 就知道他是 MiniMax，而不是泛泛的「自定义」。
+///
+/// 用途有两个：
+/// 1. 协议判定更准 —— 命中预设时用预设声明的协议族，而不是靠字符串猜；
+/// 2. 界面能显示厂商名（而不是「自定义（OpenAI 兼容）」）。
+///
+/// 只在**协议族兼容**时才采纳预设 —— 红线是不能跨协议族
+/// （Anthropic / Gemini / Ollama 互不通用）。
+/// `Custom` 与 `OpenAi` / `MiniMax` 同族：它们都是 OpenAI 兼容协议
+/// （Bearer + `/chat/completions`），差别只在默认地址与身份标签。
+fn detect_preset(base_url: &str) -> Option<&'static str> {
+    let url = base_url.trim().to_ascii_lowercase();
+    if url.is_empty() {
+        return None;
+    }
+    let kind = detect_provider(base_url);
+    cap_llm::preset::PRESETS
+        .iter()
+        .find(|p| {
+            // 按 **host** 匹配，不按整串前缀匹配。
+            //
+            // 为什么不用前缀：`http://localhost:11434/v1` 用前缀匹配会命中
+            // ollama 预设，但填了 `/v1` 意味着用户要的是 **OpenAI 兼容端点**
+            // （cap-llm 的约定：`/api/chat` 前面不会有 `/v1`）——
+            // 认成 ollama 会让人以为走的是本地原生接口。
+            host_of(&url) == host_of(&p.base_url.to_ascii_lowercase())
+                && same_protocol_family(p.kind, kind)
+        })
+        .map(|p| p.id)
+}
+
+/// 取 URL 的 host 部分（不含协议与路径）。
+///
+/// 不引 url crate —— 这个 crate 要保持零额外依赖（见 cap-llm 的依赖约定）。
+fn host_of(url: &str) -> &str {
+    let rest = url
+        .split_once("://")
+        .map(|(_, r)| r)
+        .unwrap_or(url);
+    rest.split(['/', '?', '#']).next().unwrap_or("")
+}
+
+/// 两个 provider 身份是否走同一套报文。
+fn same_protocol_family(a: ProviderKind, b: ProviderKind) -> bool {
+    use cap_llm::ProviderKind as K;
+    let fam = |k: K| match k {
+        K::OpenAi | K::MiniMax | K::Custom => 0,
+        K::Anthropic => 1,
+        K::Gemini => 2,
+        K::Ollama => 3,
+    };
+    fam(a) == fam(b)
+}
+
 /// 前端配置 → cap-llm 配置。key 为空直接报错，让 UI 去引导配置。
 pub fn to_cap(cfg: &AiConfigPayload) -> Result<LlmConfig, String> {
     if cfg.api_key.trim().is_empty() {
@@ -57,6 +115,7 @@ pub fn to_cap(cfg: &AiConfigPayload) -> Result<LlmConfig, String> {
         api_key: cfg.api_key.clone(),
         model: cfg.model.clone(),
         timeout: CHAT_TIMEOUT,
+        preset: detect_preset(&cfg.base_url),
         ..Default::default()
     })
 }
@@ -145,6 +204,46 @@ mod tests {
             detect_provider("https://api.deepseek.com/v1"),
             ProviderKind::Custom
         ));
+    }
+
+    #[test]
+    fn preset_is_detected_from_base_url() {
+        // 本仓前端没有 provider 选择器，靠地址反查厂商身份
+        assert_eq!(
+            detect_preset("https://api.deepseek.com/v1"),
+            Some("deepseek")
+        );
+        assert_eq!(detect_preset("https://api.minimaxi.com/v1"), Some("minimax"));
+        assert_eq!(
+            detect_preset("https://open.bigmodel.cn/api/paas/v4"),
+            Some("zhipu")
+        );
+        assert_eq!(
+            detect_preset("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            Some("qwen")
+        );
+    }
+
+    #[test]
+    fn unknown_or_custom_base_url_has_no_preset() {
+        // 自建代理不该被误认成某家厂商
+        assert_eq!(detect_preset("https://my-proxy.corp/v1"), None);
+        assert_eq!(detect_preset(""), None);
+        // 自建 Ollama 代理（端口不同）也不该认成 ollama 预设
+        assert_eq!(detect_preset("http://192.168.1.10:11434"), None);
+    }
+
+    #[test]
+    fn preset_protocol_must_match_the_detected_protocol() {
+        // 红线：地址命中预设但协议族不一致时，不采纳预设。
+        // 否则会出现「地址是 Anthropic 的、却按 Gemini 协议发」这类静默错路由。
+        // anthropic 预设地址 → Anthropic 协议 → 采纳
+        assert_eq!(detect_preset("https://api.anthropic.com"), Some("anthropic"));
+        // gemini 预设地址 → Gemini 协议 → 采纳
+        assert_eq!(
+            detect_preset("https://generativelanguage.googleapis.com/v1beta"),
+            Some("gemini")
+        );
     }
 
     #[test]
