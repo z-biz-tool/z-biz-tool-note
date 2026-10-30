@@ -145,6 +145,9 @@ jobs:
       - name: Generate updater manifest fragment
         if: steps.signing.outputs.mode == 'signed'
         shell: bash
+        # gh api 回查 release 资产真名需要 token（Actions 里 gh 不会自动带上）
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # ⚠️ 目录名不带点：actions/upload-artifact@v4 **默认不上传隐藏文件/目录**，
@@ -264,7 +267,7 @@ jobs:
 
       - name: Compose latest.json and push to main
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ github.ref_name }}"
