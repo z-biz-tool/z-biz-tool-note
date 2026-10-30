@@ -119,7 +119,12 @@ impl Bm25Index {
     }
 
     /// 检索 top_n。`only_path` 给了就只在那一篇里找（「问当前笔记」）。
-    pub fn search(&self, question: &str, top_n: usize, only_path: Option<&str>) -> Vec<(usize, f64)> {
+    pub fn search(
+        &self,
+        question: &str,
+        top_n: usize,
+        only_path: Option<&str>,
+    ) -> Vec<(usize, f64)> {
         let mut q_terms = tokenize(question);
         q_terms.sort();
         q_terms.dedup();
@@ -147,8 +152,7 @@ impl Bm25Index {
                 }
                 let tf = *tf as f64;
                 let dl = self.doc_len[*doc].max(1.0);
-                let norm =
-                    tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * (dl / avg_len)));
+                let norm = tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * (dl / avg_len)));
                 scores[*doc] += idf * norm;
             }
         }
@@ -163,11 +167,13 @@ impl Bm25Index {
             .map(|(i, s)| (i, *s))
             .collect();
         ranked.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal).then_with(|| {
-                let la = &self.chunks[a.0];
-                let lb = &self.chunks[b.0];
-                (la.path.as_str(), la.idx).cmp(&(lb.path.as_str(), lb.idx))
-            })
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    let la = &self.chunks[a.0];
+                    let lb = &self.chunks[b.0];
+                    (la.path.as_str(), la.idx).cmp(&(lb.path.as_str(), lb.idx))
+                })
         });
         ranked.truncate(top_n);
         ranked
@@ -233,7 +239,10 @@ mod tests {
         let idx = Bm25Index::build(chunks);
         let hits = idx.search("装依赖", 2, None);
         assert!(!hits.is_empty());
-        assert!(idx.chunks()[hits[0].0].text.contains("依赖"), "应该先命中部署那段");
+        assert!(
+            idx.chunks()[hits[0].0].text.contains("依赖"),
+            "应该先命中部署那段"
+        );
     }
 
     #[test]

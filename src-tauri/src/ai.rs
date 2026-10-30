@@ -83,10 +83,7 @@ fn detect_preset(base_url: &str) -> Option<&'static str> {
 ///
 /// 不引 url crate —— 这个 crate 要保持零额外依赖（见 cap-llm 的依赖约定）。
 fn host_of(url: &str) -> &str {
-    let rest = url
-        .split_once("://")
-        .map(|(_, r)| r)
-        .unwrap_or(url);
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
     rest.split(['/', '?', '#']).next().unwrap_or("")
 }
 
@@ -355,11 +352,9 @@ fn hint_for(kind: cap_llm::ErrorKind, status: Option<u16>) -> String {
              如果你开了代理，先关掉再试；海外厂商（OpenAI / Gemini / Anthropic）相反，需要代理。"
                 .into()
         }
-        (E::Timeout, _) => {
-            "等太久没等到回应。可能是网络到该地区的链路慢，也可能是模型正在排队。\
+        (E::Timeout, _) => "等太久没等到回应。可能是网络到该地区的链路慢，也可能是模型正在排队。\
              可以先换一个更小的模型试。"
-                .into()
-        }
+            .into(),
         (E::Http, Some(401)) | (E::Http, Some(403)) => {
             "API Key 无效、已过期，或这个 key 没有该模型的权限。请重新粘贴密钥；\
              若刚续费过，确认用的是新 key。"
@@ -372,16 +367,15 @@ fn hint_for(kind: cap_llm::ErrorKind, status: Option<u16>) -> String {
                 .into()
         }
         (E::Http, Some(429)) => {
-            "额度用尽或被限流。这不是配置写错了 —— 换个时段再试，或在服务商后台充值／提额。"
-                .into()
+            "额度用尽或被限流。这不是配置写错了 —— 换个时段再试，或在服务商后台充值／提额。".into()
         }
-        (E::Http, Some(s)) if s >= 500 => "服务商那边出故障了，不是你配置的问题。稍后重试即可。".into(),
+        (E::Http, Some(s)) if s >= 500 => {
+            "服务商那边出故障了，不是你配置的问题。稍后重试即可。".into()
+        }
         (E::Http, _) => "服务端拒绝了这次请求。原始错误见下方详情。".into(),
-        (E::Parse, _) => {
-            "对方回了内容，但不是预期的格式。多半是这个地址其实不是该协议的服务 —— \
+        (E::Parse, _) => "对方回了内容，但不是预期的格式。多半是这个地址其实不是该协议的服务 —— \
              例如把 Anthropic 的地址填在了 OpenAI 兼容这一档。"
-                .into()
-        }
+            .into(),
         (E::Unsupported, _) => "这家服务不支持当前操作。换一个厂商，或改用手动填写模型名。".into(),
         (E::Io, _) => "本机读写配置出错。检查配置文件所在目录是否可写。".into(),
     }
@@ -495,7 +489,10 @@ mod tests {
             detect_preset("https://api.deepseek.com/v1"),
             Some("deepseek")
         );
-        assert_eq!(detect_preset("https://api.minimaxi.com/v1"), Some("minimax"));
+        assert_eq!(
+            detect_preset("https://api.minimaxi.com/v1"),
+            Some("minimax")
+        );
         assert_eq!(
             detect_preset("https://open.bigmodel.cn/api/paas/v4"),
             Some("zhipu")
@@ -520,7 +517,10 @@ mod tests {
         // 红线：地址命中预设但协议族不一致时，不采纳预设。
         // 否则会出现「地址是 Anthropic 的、却按 Gemini 协议发」这类静默错路由。
         // anthropic 预设地址 → Anthropic 协议 → 采纳
-        assert_eq!(detect_preset("https://api.anthropic.com"), Some("anthropic"));
+        assert_eq!(
+            detect_preset("https://api.anthropic.com"),
+            Some("anthropic")
+        );
         // gemini 预设地址 → Gemini 协议 → 采纳
         assert_eq!(
             detect_preset("https://generativelanguage.googleapis.com/v1beta"),
@@ -586,7 +586,14 @@ mod tests {
             assert!(!p.verified_on.is_empty(), "{} 缺核对日期", p.id);
         }
         // 国内厂商必须覆盖到：这是本仓用户最可能买的几家
-        for id in ["deepseek", "qwen", "moonshot", "zhipu", "volcengine", "minimax"] {
+        for id in [
+            "deepseek",
+            "qwen",
+            "moonshot",
+            "zhipu",
+            "volcengine",
+            "minimax",
+        ] {
             assert!(all.iter().any(|p| p.id == id), "缺国内预设 {}", id);
         }
         // Ollama 不需要 key，界面要靠这个字段收起密钥框
@@ -643,7 +650,12 @@ mod tests {
         }
         for status in [401, 403, 404, 429, 500] {
             let h = hint_for(cap_llm::ErrorKind::Http, Some(status));
-            assert!(h.chars().count() >= 10, "HTTP {} 的提示太敷衍：{}", status, h);
+            assert!(
+                h.chars().count() >= 10,
+                "HTTP {} 的提示太敷衍：{}",
+                status,
+                h
+            );
         }
     }
 

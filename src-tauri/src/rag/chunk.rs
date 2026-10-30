@@ -283,7 +283,8 @@ mod tests {
 
     #[test]
     fn splits_on_headings_and_keeps_heading_path() {
-        let md = "# 安装\n\n第一步，装依赖。\n\n## macOS\n\n用 brew。\n\n## Windows\n\n用 winget。\n";
+        let md =
+            "# 安装\n\n第一步，装依赖。\n\n## macOS\n\n用 brew。\n\n## Windows\n\n用 winget。\n";
         let chunks = chunk_markdown("/n.md", "安装指南", md, DEFAULT_MAX_CHARS);
         assert_eq!(chunks.len(), 3, "三个小节应各成一片: {:?}", texts(&chunks));
         assert_eq!(chunks[0].heading, "安装");
@@ -295,7 +296,9 @@ mod tests {
     #[test]
     fn empty_note_yields_no_chunks() {
         assert!(chunk_markdown("/n.md", "空", "", DEFAULT_MAX_CHARS).is_empty());
-        assert!(chunk_markdown("/n.md", "空", "---\ntags: [a]\n---\n\n", DEFAULT_MAX_CHARS).is_empty());
+        assert!(
+            chunk_markdown("/n.md", "空", "---\ntags: [a]\n---\n\n", DEFAULT_MAX_CHARS).is_empty()
+        );
     }
 
     #[test]
@@ -309,7 +312,12 @@ mod tests {
 
     #[test]
     fn hash_tags_are_not_headings() {
-        let chunks = chunk_markdown("/n.md", "标签", "#work 这件事\n\n正文。\n", DEFAULT_MAX_CHARS);
+        let chunks = chunk_markdown(
+            "/n.md",
+            "标签",
+            "#work 这件事\n\n正文。\n",
+            DEFAULT_MAX_CHARS,
+        );
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].text.contains("#work"));
     }
@@ -341,7 +349,11 @@ mod tests {
         let chunks = chunk_markdown("/n.md", "长文", &md, 150);
         assert!(chunks.len() >= 2, "应至少切成两片: {:?}", texts(&chunks));
         for c in &chunks {
-            assert!(c.text.starts_with("这是一段"), "不该从句子中间切开: {}", c.text);
+            assert!(
+                c.text.starts_with("这是一段"),
+                "不该从句子中间切开: {}",
+                c.text
+            );
             // 上限 + 一个段落的余量（结片发生在读完最后一段之后）
             assert!(
                 c.text.chars().count() <= 150 + 40,
@@ -362,7 +374,12 @@ mod tests {
 
     #[test]
     fn anchor_strips_inline_markup() {
-        let chunks = chunk_markdown("/n.md", "t", "# H\n\n**重点**：`code` 与 [[双链]]。\n", DEFAULT_MAX_CHARS);
+        let chunks = chunk_markdown(
+            "/n.md",
+            "t",
+            "# H\n\n**重点**：`code` 与 [[双链]]。\n",
+            DEFAULT_MAX_CHARS,
+        );
         assert_eq!(chunks[0].anchor, "重点：code 与 双链。");
     }
 

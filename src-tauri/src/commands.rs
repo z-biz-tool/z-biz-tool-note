@@ -1198,7 +1198,6 @@ pub async fn ai_chat_stream(
     }
 }
 
-
 /// 列出可选的 AI 服务商预设。
 ///
 /// 单一事实源在 `cap-llm::presets` —— 前端**不许**再留第二份表。
@@ -1538,10 +1537,7 @@ pub async fn ask_notes(
 
     // 1. 检索
     let citations = search_rag(&index, &rag_state, &question, rag::DEFAULT_TOP_K, only_path)?;
-    let corpus_chunks = index
-        .corpus_status()
-        .map(|(_, c)| c)
-        .unwrap_or(0);
+    let corpus_chunks = index.corpus_status().map(|(_, c)| c).unwrap_or(0);
 
     // 2. 证据先发给前端（哪怕最终要走向「没找到」的兜底话术）
     let _ = app.emit(ask_events::CITATIONS, &citations);

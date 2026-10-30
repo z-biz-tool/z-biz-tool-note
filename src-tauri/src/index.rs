@@ -338,11 +338,9 @@ impl IndexStore {
     pub fn corpus_status(&self) -> Result<(usize, usize), String> {
         let conn = self.conn.lock();
         let notes: i64 = conn
-            .query_row(
-                "SELECT COUNT(DISTINCT path) FROM note_chunks",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT COUNT(DISTINCT path) FROM note_chunks", [], |r| {
+                r.get(0)
+            })
             .unwrap_or(0);
         let chunks: i64 = conn
             .query_row("SELECT COUNT(*) FROM note_chunks", [], |r| r.get(0))
@@ -458,10 +456,8 @@ impl IndexStore {
     #[allow(dead_code)]
     pub fn clear(&self) -> Result<(), String> {
         let conn = self.conn.lock();
-        conn.execute_batch(
-            "DELETE FROM notes_fts; DELETE FROM note_chunks; DELETE FROM notes;",
-        )
-        .map_err(|e| format!("清空失败: {}", e))?;
+        conn.execute_batch("DELETE FROM notes_fts; DELETE FROM note_chunks; DELETE FROM notes;")
+            .map_err(|e| format!("清空失败: {}", e))?;
         drop(conn);
         self.bump_chunks_epoch();
         Ok(())
@@ -770,11 +766,7 @@ mod tests {
     // ==================== 片段表（问笔记的语料） ====================
 
     fn temp_store(tag: &str) -> IndexStore {
-        let dir = std::env::temp_dir().join(format!(
-            "znote-idx-{}-{}",
-            tag,
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("znote-idx-{}-{}", tag, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         IndexStore::open_in(&dir).unwrap()
@@ -799,7 +791,9 @@ mod tests {
     #[test]
     fn reupsert_replaces_old_chunks() {
         let store = temp_store("reupsert");
-        store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store
+            .upsert_note("/n.md", "部署", NOTE, 1, 10, "", "")
+            .unwrap();
         store
             .upsert_note("/n.md", "部署", "# 部署\n\n只有一个小节。\n", 2, 10, "", "")
             .unwrap();
@@ -811,7 +805,9 @@ mod tests {
     #[test]
     fn deleting_note_drops_its_chunks() {
         let store = temp_store("delete");
-        store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store
+            .upsert_note("/n.md", "部署", NOTE, 1, 10, "", "")
+            .unwrap();
         store.delete_note("/n.md").unwrap();
         assert!(store.load_chunks().unwrap().is_empty());
         assert_eq!(store.corpus_status().unwrap(), (0, 0));
@@ -820,17 +816,24 @@ mod tests {
     #[test]
     fn rename_moves_chunks_with_the_note() {
         let store = temp_store("rename");
-        store.upsert_note("/a.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store
+            .upsert_note("/a.md", "部署", NOTE, 1, 10, "", "")
+            .unwrap();
         store.rename_note("/a.md", "/b.md").unwrap();
         let chunks = store.load_chunks().unwrap();
         assert_eq!(chunks.len(), 2);
-        assert!(chunks.iter().all(|c| c.path == "/b.md"), "改名后片段要跟着走");
+        assert!(
+            chunks.iter().all(|c| c.path == "/b.md"),
+            "改名后片段要跟着走"
+        );
     }
 
     #[test]
     fn clear_and_rebuild_drop_chunks() {
         let store = temp_store("rebuild");
-        store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
+        store
+            .upsert_note("/n.md", "部署", NOTE, 1, 10, "", "")
+            .unwrap();
         store.rebuild(Path::new("/tmp")).unwrap();
         assert!(store.load_chunks().unwrap().is_empty());
         assert!(store.chunks_epoch() > 0);

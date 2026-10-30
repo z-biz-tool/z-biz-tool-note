@@ -77,7 +77,11 @@ pub fn build_user_message(question: &str, citations: &[Citation]) -> String {
             c.no, c.title, c.heading, c.text
         ));
     }
-    format!("{}\n问题：{}", ctx.trim_end_matches(['-', '\n', ' ']), question)
+    format!(
+        "{}\n问题：{}",
+        ctx.trim_end_matches(['-', '\n', ' ']),
+        question
+    )
 }
 
 /// 把检索命中装成引用列表（编号从 1 开始，分数归一化）
@@ -117,8 +121,8 @@ pub fn no_evidence_message(corpus_chunks: usize, scoped: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::chunk::{chunk_markdown, DEFAULT_MAX_CHARS};
+    use super::*;
 
     fn corpus() -> Bm25Index {
         let mut chunks = chunk_markdown(
@@ -164,7 +168,10 @@ mod tests {
         let hits = idx.search("回滚", 1, None);
         let cites = to_citations(&idx, &hits);
         let msg = build_user_message("q", &cites);
-        assert!(!msg.contains("---\n\n问题"), "分隔线不该拖到问题前面: {msg}");
+        assert!(
+            !msg.contains("---\n\n问题"),
+            "分隔线不该拖到问题前面: {msg}"
+        );
     }
 
     #[test]
