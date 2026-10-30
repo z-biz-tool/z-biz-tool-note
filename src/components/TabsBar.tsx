@@ -4,6 +4,7 @@ import type { Note } from '../types';
 import { modKeys } from '../lib/modifier';
 import { useClampedMenuPos } from '../lib/useClampedMenuPos';
 import { disambiguateTabTitles } from '../lib/tabTitles';
+import { notify } from '../lib/dialogs';
 
 // 渐变色主题常量
 
@@ -61,6 +62,17 @@ export const TabsBar = React.memo(({
       onSelect(tabs[nextIndex].id);
     }
   }, [tabs, onSelect]);
+
+  const copyTabPath = useCallback((tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    navigator.clipboard.writeText(tab?.filePath || tabId).then(
+      () => notify('文件路径已复制', 'success'),
+      (e) => {
+        console.warn('[note] 复制文件路径失败:', e);
+        notify('复制失败，请手动复制', 'error');
+      },
+    );
+  }, [tabs]);
   
   // 鼠标滚轮切换标签
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -186,7 +198,7 @@ export const TabsBar = React.memo(({
           <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { onCloseOthers?.(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { onCloseOthers?.(contextMenu.tabId); setContextMenu(null); } }}>关闭其他标签</div>
           <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { onCloseToRight?.(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { onCloseToRight?.(contextMenu.tabId); setContextMenu(null); } }}>关闭右侧标签</div>
           <div className="tab-context-separator" />
-          <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { navigator.clipboard.writeText(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { navigator.clipboard.writeText(contextMenu.tabId); setContextMenu(null); } }}>复制文件路径</div>
+          <div className="tab-context-item" role="menuitem" tabIndex={0} onClick={() => { copyTabPath(contextMenu.tabId); setContextMenu(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { copyTabPath(contextMenu.tabId); setContextMenu(null); } }}>复制文件路径</div>
         </div>
       )}
     </div>
