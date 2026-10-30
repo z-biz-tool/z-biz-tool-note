@@ -593,6 +593,9 @@ export const electronAPI = {
         case 'load-secret':
         case 'delete-secret':
           return { success: false, error: '浏览器演示模式没有系统密钥库，密钥不会被保存' };
+        case 'zbiz-take-pending':
+          // 浏览器演示区没有家族深链
+          return [];
         default:
           return { success: false, error: '浏览器模式不可用' };
       }
@@ -893,6 +896,9 @@ export const electronAPI = {
           await invoke('restore_backup', { backupPath: args[0], targetPath: args[1] });
           return { success: true };
         }
+        // 家族统一深链（cap-hub）：取走队列里的 zbiz:// 交回前端处理
+        case 'zbiz-take-pending':
+          return await invoke<Array<{ product: string; action: string; params: Record<string, string> }>>('zbiz_take_pending');
         default:
           return { success: false, error: `未知通道: ${channel}` };
       }

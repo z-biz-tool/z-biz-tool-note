@@ -32,15 +32,18 @@ fn menu_item<R: Runtime>(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 深链队列：manage 给命令用、seed 给冷启动用，两处必须是同一份。
+    let zbiz_pending = cap_hub::receiver::SharedPending::default();
     tauri::Builder::default()
         // 单实例（2026-10-26 分发底座）：第二次启动聚焦已有窗口，不再开新进程。
         // 必须作为第一个注册的插件（tauri-plugin-single-instance 官方要求）。
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
+            cap_hub::receiver::handle_second_instance(app, &argv);
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -48,6 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // 更新安装完成后的「立即重启」
         .plugin(tauri_plugin_process::init())
+        .manage(zbiz_pending.clone())
         .invoke_handler(tauri::generate_handler![
             commands::list_notes,
             commands::read_note,
@@ -108,8 +112,11 @@ pub fn run() {
             secrets::save_secret,
             secrets::load_secret,
             secrets::delete_secret,
+            zbiz_take_pending,
         ])
-        .setup(|app| {
+        .setup(move |app| {
+            // 冷启动时带进来的 zbiz:// 先入队，前端挂上监听后再取走。
+            cap_hub::receiver::seed_cold_start(app.handle(), &zbiz_pending);
             // 初始化索引与 watcher 状态
             app.manage(index::IndexStore::open().expect("初始化搜索索引失败"));
             app.manage(watcher::WatcherState::new());
@@ -300,4 +307,12 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 取走队列里的深链（家族统一命令名）。
+#[tauri::command]
+fn zbiz_take_pending(
+    pending: tauri::State<'_, cap_hub::receiver::SharedPending>,
+) -> Vec<cap_hub::Handoff> {
+    cap_hub::receiver::take_pending_from(pending.inner())
 }

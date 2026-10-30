@@ -1893,6 +1893,37 @@ const App = () => {
     return () => { unlisten?.(); };
   }, []);
 
+  // 家族深链（zbiz://note/open?file=…）：box 等产品递过来的文件直接在这里打开。
+  // handleOpenFile 依赖较多、重注册监听会漏事件，用 ref 取最新一份。
+  const openFileRef = useRef(handleOpenFile);
+  useEffect(() => { openFileRef.current = handleOpenFile; }, [handleOpenFile]);
+
+  const applyZbizPending = useCallback(async () => {
+    try {
+      const items = await electronAPI.invoke('zbiz-take-pending') as
+        Array<{ product: string; action: string; params: Record<string, string> }> | undefined;
+      for (const h of items ?? []) {
+        const file = h.params?.file;
+        if (h.product === 'note' && h.action === 'open' && file) {
+          await openFileRef.current(file);
+        }
+      }
+    } catch (e) {
+      console.warn('[note] 处理家族深链失败:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!electronAPI.isTauri) return;
+    let unlisten: (() => void) | undefined;
+    // 冷启动时队列里已经有深链（前端还没挂监听），先主动取一次。
+    void applyZbizPending();
+    listen('zbiz-open', () => { void applyZbizPending(); })
+      .then(fn => { unlisten = fn; })
+      .catch(console.warn);
+    return () => { unlisten?.(); };
+  }, [applyZbizPending]);
+
   // Build command palette commands
   // 标题/分类统一中文（与应用其余 UI 一致），id 保留英文以支持英文前缀检索
   const commands: Command[] = useMemo(() => [
