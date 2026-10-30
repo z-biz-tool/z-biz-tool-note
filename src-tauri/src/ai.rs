@@ -450,6 +450,78 @@ where
     Ok(reply.content)
 }
 
+/// 音频 → 结构化会议纪要（Markdown 正文）。
+///
+/// 两步能力层组合，本仓只做「收参数、拼接、落笔记」：
+/// 1. `cap_llm::transcribe_file`：音频 → 文字（multipart 上传、状态码映射、
+///    密钥脱敏、超时都在 cap-llm）；
+/// 2. `cap_meeting::Minutes::from_transcript`：文字 → 议题/决议/待办，
+///    提示词与 JSON 容错解析都在 cap-meeting。
+///
+/// ## 转写模型独立传参，不复用 `cfg.model`
+///
+/// `cfg.model` 是**对话模型**，而纪要生成那一步用的就是它。转写要的是
+/// `whisper-1` 这类 ASR 模型，同一个 provider 的对话模型与转写模型几乎从不
+/// 相同。若这里偷懒复用，纪要生成会拿 whisper 去跑 chat（必然 400），
+/// 或反过来拿对话模型去打 `/audio/transcriptions`。所以 `asr_model` 是独立
+/// 参数，为空直接报错（错误已过 redact，不会回显任何密钥）。
+pub async fn minutes_from_audio(
+    cfg: &AiConfigPayload,
+    audio_path: &str,
+    asr_model: &str,
+    language: Option<&str>,
+    title: Option<&str>,
+) -> Result<String, String> {
+    let asr_model = asr_model.trim();
+    if asr_model.is_empty() {
+        return Err("未填写转写模型名（如 whisper-1）".to_string());
+    }
+    let cap = to_cap(cfg)?;
+
+    // 转写：temperature 0 = 贪心解码，结果最稳定可复现；verbose 拿分段
+    // （纪要按人/按话题切分时用得上，cap-meeting 当前只吃全文，先留着）。
+    let req = cap_llm::TranscriptionRequest {
+        model: asr_model.to_string(),
+        language: language
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        prompt: None,
+        temperature: Some(0.0),
+        verbose: true,
+    };
+    let transcript = cap_llm::transcribe_file(&cap, audio_path, &req)
+        .await
+        .map_err(llm_err)?;
+
+    // 空转写是 cap-llm 认可的合法结果（音频里没说话），但拿空文本去生成
+    // 纪要，模型会编出一场不存在的会。这里显式拦住，让用户回去看音频。
+    if transcript.text.trim().is_empty() {
+        return Err(
+            "转写结果为空：这段音频里没有识别到任何语音，请确认文件可播放、时长非 0".to_string(),
+        );
+    }
+
+    // 会议元信息：用户填的标题优先；source 记录音文件名，便于溯源。
+    let source_name = std::path::Path::new(audio_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned());
+    let meeting = cap_meeting::Meeting {
+        title: title
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        started_at: None,
+        participants: Vec::new(),
+        source: source_name,
+    };
+
+    let minutes = cap_meeting::Minutes::from_transcript(&cap, &meeting, &transcript.text)
+        .await
+        .map_err(llm_err)?;
+    Ok(minutes.to_markdown())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -558,6 +630,37 @@ mod tests {
     #[test]
     fn empty_messages_rejected() {
         assert!(to_messages(&[]).is_err());
+    }
+
+    // ── minutes_from_audio 的本地前置校验（不发网络请求的部分）──────────────
+    //
+    // 这两步在转写之前同步完成，能被单测覆盖；转写/生成本身要网络，
+    // 由集成或手动验证。这里守住的是「不该发的请求别发」。
+
+    #[tokio::test]
+    async fn minutes_rejects_blank_asr_model_before_network() {
+        let c = cfg("https://api.openai.com/v1");
+        let err = minutes_from_audio(&c, "/tmp/meeting.mp3", "   ", None, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("转写模型"),
+            "空转写模型要在发请求前拦下，实际: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn minutes_rejects_missing_key_before_network() {
+        // key 为空且协议族需要 key：to_cap 先报错，转写请求根本不会发出。
+        let mut c = cfg("https://api.openai.com/v1");
+        c.api_key = String::new();
+        let err = minutes_from_audio(&c, "/tmp/meeting.mp3", "whisper-1", None, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("API Key"),
+            "空 key 要在发请求前拦下，实际: {err}"
+        );
     }
 
     #[test]

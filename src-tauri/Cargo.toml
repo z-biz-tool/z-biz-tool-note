@@ -44,6 +44,9 @@ cap-img = "0.3.0"
 # 能力层：统一 AI 接入（协议/鉴权/SSE 解码/脱敏都在 cap-llm，本仓只留提示词）。
 # cap-llm 尚未发 crates.io，与 file 仓一致走 path 依赖。
 cap-llm = { path = "../../z-biz-tool-capability/crates/cap-llm" }
+# 能力层：会议纪要（转写文本 → 议题/决议/待办的结构化纪要 + Markdown 渲染）。
+# 提示词与 JSON 容错解析都在 cap-meeting，本仓只做「选文件、发请求、落笔记」。
+cap-meeting = { path = "../../z-biz-tool-capability/crates/cap-meeting" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 notify = "6"
 parking_lot = "0.12"

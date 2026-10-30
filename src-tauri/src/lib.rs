@@ -90,6 +90,8 @@ pub fn run() {
             commands::list_llm_presets,
             commands::list_llm_models,
             commands::test_ai_config,
+            // 会议纪要：音频 → 转写（cap-llm）→ 结构化纪要（cap-meeting）
+            commands::minutes_from_audio,
             commands::create_backup,
             commands::list_backups,
             commands::restore_backup,
@@ -178,6 +180,14 @@ pub fn run() {
                     "create-daily",
                     "今日日记",
                     Some("CmdOrCtrl+Shift+D"),
+                )?)
+                // 会议纪要：选音频 → 转写 + 结构化 → 预览/存成笔记。
+                // 无快捷键：低频、且要先弹对话框选文件填参数，快捷键收益低。
+                .item(&menu_item(
+                    handle,
+                    "meeting-minutes",
+                    "从音频生成会议纪要…",
+                    None,
                 )?)
                 .item(&menu_item(
                     handle,

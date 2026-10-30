@@ -27,6 +27,7 @@ import { StatusBar } from './components/StatusBar';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { CommandPalette } from './components/CommandPalette';
 import { QuickInsert } from './components/QuickInsert';
+import { MeetingMinutesDialog } from './components/MeetingMinutesDialog';
 import { Breadcrumb } from './components/Breadcrumb';
 import { TabsBar } from './components/TabsBar';
 import { Welcome } from './components/Welcome';
@@ -219,6 +220,8 @@ const App = () => {
   // 引用回跳：先开文件，等目标笔记真正加载后再让编辑器滚到锚点
   const pendingAnchorRef = useRef<{ path: string; anchor: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  // 会议纪要弹窗（选音频 → 转写 + 结构化 → 预览/存笔记）
+  const [showMeetingMinutes, setShowMeetingMinutes] = useState(false);
 
   // 字体配置
   const [config, setConfig] = useState<Config>({
@@ -977,7 +980,9 @@ const App = () => {
    * 就继续往下走，于是要么凭空开出一篇空白笔记、要么整条链路静默失败。合并成走桥层的一份，
    * 并把失败说给用户听。
    */
-  const createAndOpenNote = useCallback(async (filePath: string, content: string, okToast: string) => {
+  // title 可选：日记等按日期命名的场景默认用 todayTitle()；会议纪要这类
+  // 「文件名是主题、不是日期」的场景要传自己的标题，否则 tab 会显示成今天的日期。
+  const createAndOpenNote = useCallback(async (filePath: string, content: string, okToast: string, title?: string) => {
     const dir = filePath.substring(0, filePath.lastIndexOf('/'));
     try {
       mustSucceed(await electronAPI.invoke('ensure-dir', dir));
@@ -993,7 +998,7 @@ const App = () => {
     }
     openNote({
       id: filePath,
-      title: todayTitle(),
+      title: title?.trim() || todayTitle(),
       content: result.content,
       filePath,
       lastModified: new Date().toISOString(),
@@ -1809,6 +1814,7 @@ const App = () => {
     'export-html': handleExportHtml,
     'export-pdf': handleExportPdf,
     'create-daily': handleCreateDaily,
+    'meeting-minutes': () => setShowMeetingMinutes(true),
     'version-history': () => setShowVersionHistory(true),
     'close-tab': () => { if (activeTabIdRef.current) closeTab(activeTabIdRef.current); },
     'find': () => setShowFindReplace(true),
@@ -1931,6 +1937,7 @@ const App = () => {
     { id: 'save', title: '保存', shortcut: 'Cmd+S', category: '文件', action: handleSave },
     { id: 'save-as', title: '另存为', shortcut: 'Cmd+Shift+S', category: '文件', action: handleSaveAs },
     { id: 'daily-note', title: '今日日记', shortcut: 'Cmd+Shift+D', category: '文件', action: handleCreateDaily },
+    { id: 'meeting-minutes', title: '从音频生成会议纪要', category: 'AI', action: () => setShowMeetingMinutes(true) },
     { id: 'open-folder', title: '打开文件夹', shortcut: 'Cmd+Shift+O', category: '文件', action: handleOpenFolderDialog },
     { id: 'version-history', title: '版本历史', shortcut: 'Cmd+Shift+H', category: '文件', action: () => setShowVersionHistory(true) },
     { id: 'insert-template', title: '从模板插入', shortcut: 'Cmd+Shift+I', category: '插入', action: () => setShowQuickInsert(true) },
@@ -2439,6 +2446,20 @@ const App = () => {
           refreshKnowledgeIndex(currentDir);
         }}
         onClose={() => setShowQuickInsert(false)}
+      />
+
+      <MeetingMinutesDialog
+        open={showMeetingMinutes}
+        aiConfig={aiConfig}
+        currentDir={currentDir}
+        onSaveNote={createAndOpenNote}
+        onSaved={() => {
+          if (currentDir) {
+            refreshFileList(currentDir);
+            refreshKnowledgeIndex(currentDir);
+          }
+        }}
+        onClose={() => setShowMeetingMinutes(false)}
       />
 
       {showVersionHistory && currentNote?.filePath && (

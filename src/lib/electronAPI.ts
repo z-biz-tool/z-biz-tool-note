@@ -37,15 +37,24 @@ export const errText = (e: unknown): string =>
   String((e as Error | null)?.message || e || '未知错误').slice(0, 60);
 
 /**
- * 前端 AIConfig（驼峰 baseURL）→ Rust AiConfigPayload（snake_case base_url）。
- * ai-chat / ask-notes 两个通道共用；字段名错位会让 serde 报 missing field，
- * 且报错出现在 Rust 反序列化层，调用方完全看不出是自己传错了键名。
+ * 前端 AIConfig → Rust AiConfigPayload 的 wire 归一。
+ *
+ * 契约（两侧都有测试钉死，改动要双向同步）：
+ * - Rust `AiConfigPayload` 用 `#[serde(rename = "baseURL"/"apiKey")]` 只认**驼峰**，
+ *   并有 `rejects_snake_case_shape` 测试显式拒绝 snake_case；
+ * - 本函数负责把「用户设置里可能存的两种写法」（历史上有过 snake_case 的版本）
+ *   归一成 Rust 唯一认的驼峰形状。字段名错位会让 serde 报 missing field，
+ *   且报错出现在 Rust 反序列化层，调用方完全看不出是自己传错了键名。
+ *
+ * ⚠ 曾经的线上断链：本函数一度输出 snake_case（`base_url`/`api_key`），
+ * 而 Rust 那侧已改成只认 camelCase —— 桌面端每条 AI 通道都在反序列化这步失败。
+ * 修的是这里：出口必须是 `baseURL`/`apiKey`。
  */
-function toAiPayload(cfg: unknown): { base_url: string; api_key: string; model: string } {
+function toAiPayload(cfg: unknown): { baseURL: string; apiKey: string; model: string } {
   const c = (cfg ?? {}) as Record<string, unknown>;
   return {
-    base_url: String(c.baseURL ?? c.base_url ?? ''),
-    api_key: String(c.apiKey ?? c.api_key ?? ''),
+    baseURL: String(c.baseURL ?? c.base_url ?? ''),
+    apiKey: String(c.apiKey ?? c.api_key ?? ''),
     model: String(c.model ?? ''),
   };
 }
@@ -573,6 +582,12 @@ export const electronAPI = {
           return { success: false, error: '浏览器模式没有搜索索引' };
         case 'ai-chat':
           return { success: false, error: '浏览器模式不可用' };
+        // 会议纪要（选音频 → 转写 + 结构化）依赖真实文件与 AI 请求，浏览器演示区都没有。
+        // 返回失败形状而非抛异常，让 UI 能直接把原因显示出来。
+        case 'pick-audio-file':
+          return { canceled: true };
+        case 'minutes-from-audio':
+          return { success: false, error: '浏览器模式不可用' };
         case 'ask-notes':
         case 'rag-status':
           return { success: false, error: '浏览器模式没有检索索引' };
@@ -664,6 +679,48 @@ export const electronAPI = {
           }
           return { canceled: true };
         }
+        // 选音频文件（会议纪要用）：按常见录音格式过滤。
+        // 与 show-open-dialog（directory-only）分开是必要的 —— 那条选的是目录。
+        case 'pick-audio-file': {
+          await loadDialog();
+          if (dialogOpen) {
+            const result = await dialogOpen({
+              multiple: false,
+              filters: [
+                {
+                  name: '音频',
+                  extensions: ['mp3', 'm4a', 'wav', 'webm', 'ogg', 'flac', 'aac', 'mp4'],
+                },
+              ],
+            });
+            const filePath = Array.isArray(result) ? result[0] : result;
+            return filePath ? { canceled: false, filePath: String(filePath) } : { canceled: true };
+          }
+          return { canceled: true };
+        }
+        // 会议纪要：音频 → 转写（cap-llm）→ 结构化纪要（cap-meeting）→ Markdown。
+        // config 走 toAiPayload 归一（Rust 只认驼峰）；asr_model 独立传参，不复用对话模型。
+        case 'minutes-from-audio': {
+          try {
+            const [audioPath, asrModel, language, title, aiConfig] = args as [
+              string,
+              string,
+              string | undefined,
+              string | undefined,
+              unknown,
+            ];
+            const markdown = await invoke<string>('minutes_from_audio', {
+              config: toAiPayload(aiConfig),
+              audioPath,
+              asrModel,
+              language: language ?? null,
+              title: title ?? null,
+            });
+            return { success: true, markdown };
+          } catch (e: any) {
+            return { success: false, error: e?.toString() || '生成会议纪要失败' };
+          }
+        }
         case 'list-files': {
           const files = await invoke<any[]>('list_dir', { path: args[0] });
           return { success: true, files: (files || []).map(normalizeFileEntry) };
@@ -742,9 +799,9 @@ export const electronAPI = {
         }
         case 'ai-chat': {
           try {
-            // 前端 AIConfig 用驼峰 baseURL，Rust AiConfigPayload 是 snake_case base_url。
-            // serde 不做大小写转换，之前把对象原样递过去，Rust 侧直接报
-            // 「missing field base_url」—— 这条通道一直是断的，2026-10-26 修复。
+            // Rust AiConfigPayload 只认驼峰（baseURL/apiKey），必须过 toAiPayload 归一。
+            // 原样递过去或传错形状，serde 会报 missing field，且报错在反序列化层，
+            // 调用方看不出是键名问题。
             const config = toAiPayload(args[0]);
             const content = await invoke<string>('ai_chat', { config, messages: args[1] });
             return { success: true, content };
@@ -814,10 +871,9 @@ export const electronAPI = {
         //   done/error 事件才收尾，不能把 resolve 当成「答完了」。
         case 'ai-chat-stream': {
           try {
-            // 这里以前直接把 args[0] 递过去，漏了 toAiPayload —— 而 ai-chat
-            // 那条是转过的。serde 不做大小写转换，Rust 侧直接报
-            // 「missing field base_url」，表现是流式对话永远失败、
-            // 退化成整段请求。两条通道必须用同一个转换函数。
+            // 与 ai-chat 共用 toAiPayload：Rust 只认驼峰。曾有版本这里漏了转换、
+            // 直接递 args[0]，serde 报 missing field，表现是流式对话永远失败、
+            // 退化成整段请求。凡是带 config 的通道都必须走同一个转换函数。
             await invoke('ai_chat_stream', { config: toAiPayload(args[0]), messages: args[1] });
             return { success: true };
           } catch (e: any) {

@@ -1228,6 +1228,31 @@ pub async fn test_ai_config(config: AiConfigPayload) -> Result<String, crate::ai
     crate::ai::test_connection(&config).await
 }
 
+/// 从音频生成会议纪要：转写（cap-llm）+ 结构化（cap-meeting）→ Markdown 正文。
+///
+/// 只做「收参数、校验路径、调封装」—— 协议/上传/脱敏在 cap-llm，
+/// 提示词/JSON 解析在 cap-meeting（见 ai.rs 的 minutes_from_audio）。
+/// 前端拿到 markdown 后自己决定「预览」还是「落成笔记」。
+#[tauri::command]
+pub async fn minutes_from_audio(
+    config: AiConfigPayload,
+    audio_path: String,
+    asr_model: String,
+    language: Option<String>,
+    title: Option<String>,
+) -> Result<String, String> {
+    // 音频来自用户选择的路径，必须过白名单校验（防越权读任意文件）。
+    validate_path(&audio_path)?;
+    crate::ai::minutes_from_audio(
+        &config,
+        &audio_path,
+        &asr_model,
+        language.as_deref(),
+        title.as_deref(),
+    )
+    .await
+}
+
 /// 创建笔记备份（版本历史）
 /// 备份存储在 ~/.z-note/backups/{note_id}/ 目录下，文件名为 {timestamp}.md
 /// 最多保留 20 个备份版本
