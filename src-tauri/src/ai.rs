@@ -299,7 +299,7 @@ fn probe_cap(cfg: &AiConfigPayload) -> Result<LlmConfig, LlmFailure> {
 /// 预设展示名（识别不出来时按协议族给个中性称呼）。
 fn preset_label(cap: &LlmConfig) -> &'static str {
     cap.preset
-        .and_then(|id| cap_llm::preset::find(id))
+        .and_then(cap_llm::preset::find)
         .map(|p| p.label)
         .unwrap_or_else(|| cap.kind.label())
 }

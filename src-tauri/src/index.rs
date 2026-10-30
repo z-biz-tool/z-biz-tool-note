@@ -833,6 +833,6 @@ mod tests {
         store.upsert_note("/n.md", "部署", NOTE, 1, 10, "", "").unwrap();
         store.rebuild(Path::new("/tmp")).unwrap();
         assert!(store.load_chunks().unwrap().is_empty());
-        assert_eq!(store.chunks_epoch() > 0, true);
+        assert!(store.chunks_epoch() > 0);
     }
 }
