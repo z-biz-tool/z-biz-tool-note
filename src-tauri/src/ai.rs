@@ -862,7 +862,10 @@ mod tests {
         .await
         .expect("流式调用失败");
 
-        assert!(n > 1, "应收到多个增量，实际 {n} 个（可能是串成了一次性返回）");
+        assert!(
+            n > 1,
+            "应收到多个增量，实际 {n} 个（可能是串成了一次性返回）"
+        );
         assert_eq!(acc, full, "增量拼接应等于最终内容");
         assert!(!full.trim().is_empty(), "返回为空（网关 {gw}）");
         println!("[note stream → {gw}] {n} 个增量 / {}", full.trim());
