@@ -1,0 +1,16 @@
+{
+  "id": "note",
+  "displayName": "ZenNote",
+  "description": "WYSIWYG Markdown 笔记 + 知识图谱 + AI + 问笔记（RAG，含 kb 并入的检索/切片/引用能力）",
+  "acceptsDeepLink": true,
+  "actions": [
+    "open",
+    "search"
+  ],
+  "keywords": [
+    "笔记",
+    "markdown",
+    "知识图谱",
+    "RAG"
+  ]
+}
