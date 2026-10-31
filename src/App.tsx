@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { startDeepLinkReceiver } from 'z-biz-tool-shared/protocol';
+import { resolveNoteDeepLink, type HandoffItem } from './_shared/deepLink';
 import { electronAPI, mustSucceed, formatMtime, errText } from './lib/electronAPI';
 import { DialogHost, ToastHost, confirmDialog, notify, promptDialog, validateUrl, type ToastKind } from './lib/dialogs';
 import { applyTheme, storedThemeName, THEMES } from './lib/themes';
@@ -1900,35 +1902,51 @@ const App = () => {
   }, []);
 
   // 家族深链（zbiz://note/open?file=…）：box 等产品递过来的文件直接在这里打开。
+  //
+  // 机制（冷启动补取 + zbiz-open 监听 + 不静默吞掉）在共享层 startDeepLinkReceiver，
+  // 本仓只提供语义：resolveNoteDeepLink 决定「打开哪个文件、定位到哪」。
+  //
   // handleOpenFile 依赖较多、重注册监听会漏事件，用 ref 取最新一份。
   const openFileRef = useRef(handleOpenFile);
   useEffect(() => { openFileRef.current = handleOpenFile; }, [handleOpenFile]);
 
-  const applyZbizPending = useCallback(async () => {
-    try {
-      const items = await electronAPI.invoke('zbiz-take-pending') as
-        Array<{ product: string; action: string; params: Record<string, string> }> | undefined;
-      for (const h of items ?? []) {
-        const file = h.params?.file;
-        if (h.product === 'note' && h.action === 'open' && file) {
-          await openFileRef.current(file);
-        }
-      }
-    } catch (e) {
-      console.warn('[note] 处理家族深链失败:', e);
-    }
-  }, []);
-
   useEffect(() => {
     if (!electronAPI.isTauri) return;
-    let unlisten: (() => void) | undefined;
-    // 冷启动时队列里已经有深链（前端还没挂监听），先主动取一次。
-    void applyZbizPending();
-    listen('zbiz-open', () => { void applyZbizPending(); })
-      .then(fn => { unlisten = fn; })
-      .catch(console.warn);
-    return () => { unlisten?.(); };
-  }, [applyZbizPending]);
+    const stop = startDeepLinkReceiver({
+      productId: "note",
+      invoke: () => electronAPI.invoke('zbiz-take-pending') as Promise<HandoffItem[]>,
+      listen: (event, handler) => listen(event, handler),
+      translate: (item) => {
+        const out = resolveNoteDeepLink(item);
+        if (!out.file) {
+          return { ok: false, problem: out.problem ?? '深链里没有可打开的文件' };
+        }
+        return {
+          ok: true,
+          effect: { file: out.file, query: out.query, line: out.line },
+        };
+      },
+      onProblem: (msg) => {
+        console.warn('[note] 深链:', msg);
+        showToast(msg, 'error');
+      },
+      onEffect: (effect) => {
+        const file = String(effect.file ?? '');
+        if (!file) return;
+        void openFileRef.current(file).then(() => {
+          // 打开之后再定位：定位依赖编辑器已挂载并拿到正文，
+          // 先定位再打开的话定位指令会落在一个还没加载的编辑器上。
+          const query = effect.query ? String(effect.query) : null;
+          const line = typeof effect.line === 'number' ? effect.line : null;
+          if (query) {
+            setSearchJump({ path: file, query, line: line ?? 1 });
+          }
+        });
+      },
+      log: (msg, item) => console.debug('[note] 深链', msg, item),
+    });
+    return stop;
+  }, [showToast]);
 
   // Build command palette commands
   // 标题/分类统一中文（与应用其余 UI 一致），id 保留英文以支持英文前缀检索
