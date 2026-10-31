@@ -7,6 +7,7 @@ import { useI18n } from '../lib/i18n';
 import { useKeyboard } from '../hooks/useKeyboard';
 import type { KeyboardShortcut } from '../lib/keyboardShortcuts';
 import { electronAPI } from '../lib/electronAPI';
+import { findPreset, llmNeedsApiKey } from '../lib/llmNeedsKey';
 
 /**
  * 供应商预设的界面视图（由 Rust `list_llm_presets` 提供）。
@@ -137,20 +138,27 @@ export const SettingsDialog = ({
   /**
    * 当前选中的预设。
    *
-   * 两级判定：先按存下来的 `provider` 认（用户选过的就是它），
-   * 认不到再按地址反查 —— 老配置里没有 `provider` 字段，
-   * 只按 provider 判会让所有存量用户都显示成「自定义」。
+   * 2026-10-31 修：此前只按 `p.id === ai.provider` 或**整串**地址相等来找。
+   * 后端 `detect_preset()` 是按 **host** 反查的 —— `http://localhost:11434/v1`
+   * 与 `http://localhost:11434` 是同一个服务，尾斜杠、`/v1` 后缀不该影响身份。
+   * 前端整串比较 ⇒ 同一个服务前后端得出不同结论（判据分裂）。
    */
   const currentPreset = useMemo(
-    () =>
-      presets.find(p => p.id === ai.provider) ??
-      presets.find(p => p.base_url === ai.baseURL) ??
-      null,
+    () => findPreset(presets, ai.provider, ai.baseURL),
     [presets, ai.provider, ai.baseURL],
   );
 
-  /** 该服务商要不要密钥。Ollama 这类本地服务不需要，密钥框直接收起来。 */
-  const requiresKey = currentPreset ? currentPreset.requires_api_key : true;
+  /**
+   * 该服务商要不要密钥。
+   *
+   * 2026-10-31 修：此前是 `currentPreset ? currentPreset.requires_api_key : true`
+   * —— 只认预设，自定义地址一律要 Key。而后端 `to_cap()` 放行私网地址
+   * （自建服务没有鉴权层），于是出现**判据分裂**：后端放行、前端逼用户
+   * 填一个无处可用的密钥，且没有任何编译错误能暴露它。
+   *
+   * shared 的 `needsApiKey()` 是 Rust `LlmConfig::needs_api_key()` 的逐条镜像。
+   */
+  const requiresKey = llmNeedsApiKey(presets, ai.provider, ai.baseURL);
 
   /** 按分组排好（cap-llm 的预设本身已按组排列，这里只做归拢）。 */
   const groups = useMemo(() => {
