@@ -101,20 +101,20 @@ fn same_protocol_family(a: ProviderKind, b: ProviderKind) -> bool {
 
 /// 前端配置 → cap-llm 配置。key 为空直接报错，让 UI 去引导配置。
 ///
-/// ## 免密钥的协议族要放行
+/// ## 免密钥的服务要放行
 ///
-/// 本地 Ollama 根本没有 key（`requires_api_key() == false`）。这里若无条件
-/// 要求 key，Ollama 用户会被逼着填一个假密钥 —— 后端不校验它，用户却以为
-/// 自己配错了，反过来去查网络。协议族自己知道要不要 key，就按它说的来。
+/// 判定不看本函数，看 [`LlmConfig::needs_api_key`] —— 那里集中了两种免 Key
+/// 情形：① 选了登记「免 Key」的预设（如 `zbiz-local`、`ollama`）；
+/// ② 地址落在本机 / 局域网（用户没选预设、直接把 mini 的地址粘进来的常见场景）。
+///
+/// 2026-10-31 修：此前这里只看 `kind.requires_api_key()`，而 `Custom` 恒为
+/// 「要 key」，于是本地网关用户在设置页填好地址和模型后，仍被要求编一个假密钥。
 pub fn to_cap(cfg: &AiConfigPayload) -> Result<LlmConfig, String> {
     let kind = detect_provider(&cfg.base_url);
-    if cfg.api_key.trim().is_empty() && kind.requires_api_key() {
-        return Err("AI 未配置：请先在 设置 → AI 服务商 填写 API Key".to_string());
-    }
     if cfg.base_url.trim().is_empty() && cfg.model.trim().is_empty() {
         return Err("AI 配置不完整：base_url 与 model 都为空".to_string());
     }
-    Ok(LlmConfig {
+    let cap = LlmConfig {
         kind,
         base_url: cfg.base_url.clone(),
         api_key: cfg.api_key.clone(),
@@ -122,7 +122,11 @@ pub fn to_cap(cfg: &AiConfigPayload) -> Result<LlmConfig, String> {
         timeout: CHAT_TIMEOUT,
         preset: detect_preset(&cfg.base_url),
         ..Default::default()
-    })
+    };
+    if cap.needs_api_key() && cap.api_key.trim().is_empty() {
+        return Err("AI 未配置：请先在 设置 → AI 服务商 填写 API Key".to_string());
+    }
+    Ok(cap)
 }
 
 /// 角色映射：前端的字符串 role → cap-llm 的枚举。
@@ -786,5 +790,81 @@ mod tests {
         let msg = llm_err(err);
         assert!(msg.contains("401"), "原始错误要保留：{}", msg);
         assert!(msg.contains("API Key 无效"), "缺动作提示：{}", msg);
+    }
+
+    // ==================== 真实网关直连 ====================
+
+    /// 对真实网关做一次端到端调用（**未设 `ZBIZ_GW` 时静默跳过**）。
+    ///
+    /// 目的不是「能不能发出 HTTP」——那由 cap-llm 的用例覆盖——而是钉死
+    /// note 自己的这条链路：`AiConfigPayload → to_cap → chat` 在**不填
+    /// API Key** 的情况下能否跑通。2026-10-31 之前这里会直接报
+    /// 「请先在设置里填写 API Key」，把指向本地网关的用户挡在门外。
+    ///
+    /// ```sh
+    /// ZBIZ_GW=http://192.168.31.249:8200/v1 ZBIZ_MODEL=zBiz-Text-35B \
+    ///   cargo test -p z-biz-tool-note live_zbiz -- --nocapture
+    /// ```
+    #[tokio::test]
+    async fn live_zbiz_gateway_accepts_keyless_and_replies() {
+        let Ok(gw) = std::env::var("ZBIZ_GW") else {
+            return;
+        };
+        let model = std::env::var("ZBIZ_MODEL").unwrap_or_else(|_| "zBiz-Text-35B".to_string());
+        let cfg = AiConfigPayload {
+            base_url: gw.clone(),
+            api_key: String::new(), // 本地网关没有鉴权层
+            model,
+        };
+
+        let cap = to_cap(&cfg).expect("免 Key 的本地网关必须通过校验");
+        assert!(!cap.needs_api_key(), "私有地址不该要求 key");
+
+        let msgs = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "用一句话介绍你自己，不超过30字。".to_string(),
+        }];
+        let out = chat(&cfg, &msgs).await.expect("真实调用失败");
+        assert!(!out.trim().is_empty(), "返回为空（网关 {gw}）");
+        assert!(
+            out.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+            "应返回中文，实际：{out}"
+        );
+        println!("[note → {gw}] {}", out.trim());
+    }
+
+    /// 流式链路：**UI 实际用的就是这条**（非流式只是它的退化情况）。
+    ///
+    /// 断言三件事：收到多个增量、拼接结果等于最终内容、没有协议层报错。
+    /// 未设 `ZBIZ_GW` 时静默跳过。
+    #[tokio::test]
+    async fn live_zbiz_gateway_streams_deltas() {
+        let Ok(gw) = std::env::var("ZBIZ_GW") else {
+            return;
+        };
+        let model = std::env::var("ZBIZ_MODEL").unwrap_or_else(|_| "zBiz-Text-35B".to_string());
+        let cfg = AiConfigPayload {
+            base_url: gw.clone(),
+            api_key: String::new(),
+            model,
+        };
+        let msgs = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "从一数到五，只输出数字和逗号。".to_string(),
+        }];
+
+        let mut n = 0usize;
+        let mut acc = String::new();
+        let full = chat_stream(&cfg, &msgs, |t| {
+            n += 1;
+            acc.push_str(t);
+        })
+        .await
+        .expect("流式调用失败");
+
+        assert!(n > 1, "应收到多个增量，实际 {n} 个（可能是串成了一次性返回）");
+        assert_eq!(acc, full, "增量拼接应等于最终内容");
+        assert!(!full.trim().is_empty(), "返回为空（网关 {gw}）");
+        println!("[note stream → {gw}] {n} 个增量 / {}", full.trim());
     }
 }
