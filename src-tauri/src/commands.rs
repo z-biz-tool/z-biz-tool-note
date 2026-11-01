@@ -392,9 +392,17 @@ pub(crate) const MAX_INDEXED_FILE_BYTES: u64 = 512 * 1024;
 /// 索引总文件数上限：超出后停止递归（已扫到的照常返回）。
 ///
 /// Why: 兜底「目录本身就是整个代码仓库/用户主目录」的场景。即便排除了
-/// node_modules，~/workplace 这种根目录仍有上万篇笔记；再加一层硬上限，
+/// node_modules，~/workplace 这种根目录仍有约 5 万篇 md；再加一层硬上限，
 /// 保证最坏情况下 UI 不会无限期空转。
-pub(crate) const MAX_INDEXED_NOTES: usize = 20_000;
+///
+/// 上限取值依据（本机实测 ~/workplace，Rust 真实路径）：
+///   20000 篇 → 12.8s ｜ 10000 篇 → 9.5s ｜ 5000 篇 → 5.8s
+/// 耗时与篇数近似线性（~1ms/篇：读文件 + extract_tags/extract_links）。
+/// 取 10000：足够覆盖真实笔记库规模，同时把最坏耗时压在 10 秒内
+/// —— 再往上收益递减（10000→20000 只多覆盖 1 万篇，多花 3.3 秒）。
+/// 注意这个耗时是**后台线程**的（spawn_blocking），不再卡 UI；
+/// 用户看到的是「标签面板慢慢填充」，而不是白屏。
+pub(crate) const MAX_INDEXED_NOTES: usize = 10_000;
 
 /// 这个目录要不要被排除（索引扫描、文件树列举、旧版全文搜索三处共用）。
 ///
@@ -1199,7 +1207,7 @@ pub async fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
     // 丢进 spawn_blocking 让它去阻塞线程池，主线程只等结果。
     tauri::async_runtime::spawn_blocking(move || {
         let mut results: Vec<NoteSummary> = Vec::new();
-        read_all_notes_recursive(&PathBuf::from(&dir), &mut results)?;
+        read_all_notes_recursive(&PathBuf::from(&dir), &mut results, MAX_INDEXED_NOTES)?;
         Ok(results)
     })
     .await
@@ -1207,16 +1215,25 @@ pub async fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
 }
 
 /// 递归读取笔记摘要的内部实现
-fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Result<(), String> {
-    // 硬上限：扫够 MAX_INDEXED_NOTES 篇就停。已扫到的照常返回（部分索引也远比没有强），
+///
+/// `max_notes` 是数量上限（生产传 [`MAX_INDEXED_NOTES`]）。
+/// 为什么做成参数而不是直接用常量：测试要验证「超过上限就停」这个**行为**，
+/// 而真上限 10000 意味着测试要造一万个文件（实测 78 秒）—— 代价太大而收益为零。
+/// 上限的**数值合理性**由 `bench_index_on_real_workspace` 在真实工作区上实测负责。
+fn read_all_notes_recursive(
+    dir: &PathBuf,
+    results: &mut Vec<NoteSummary>,
+    max_notes: usize,
+) -> Result<(), String> {
+    // 硬上限：扫够上限篇就停。已扫到的照常返回（部分索引也远比没有强），
     // 但绝不让一次索引无限期跑下去把 UI 卡死。
-    if results.len() >= MAX_INDEXED_NOTES {
+    if results.len() >= max_notes {
         return Ok(());
     }
     let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
 
     for entry in read_dir.flatten() {
-        if results.len() >= MAX_INDEXED_NOTES {
+        if results.len() >= max_notes {
             return Ok(());
         }
         let path = entry.path();
@@ -1224,13 +1241,14 @@ fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Re
         if path.is_dir() {
             // 工具产物目录（.git / node_modules / .worktrees / target / dist …）不进索引。
             // 这条漏掉过一次：用户把工作区根目录（~/workplace）当笔记库打开时，
-            // 一次索引把 node_modules 里的 readme 也读进来 —— 实测 10169 篇、
-            // 扫 59693 个目录要 62 秒，而正文级的知识图谱根本不需要它们。
+            // 一次索引把 node_modules 里的 readme 也读进来 —— 实测 240302 个目录、
+            // 98647 个 md、读入 2.6GB，455 秒后被系统 SIGTERM 杀掉，
+            // 而正文级的知识图谱根本不需要它们。
             // 与 search_in_files_recursive / list_dir_single 同一份判据（INDEX_EXCLUDED_DIRS）。
             if is_excluded_dir(&path) {
                 continue;
             }
-            read_all_notes_recursive(&path, results)?;
+            read_all_notes_recursive(&path, results, max_notes)?;
             continue;
         }
 
@@ -2076,10 +2094,38 @@ mod excluded_dir_tests {
 
 #[cfg(test)]
 mod read_all_notes_tests {
-    use super::{read_all_notes_recursive, MAX_INDEXED_FILE_BYTES};
+    use super::{read_all_notes_recursive, MAX_INDEXED_FILE_BYTES, MAX_INDEXED_NOTES};
     use crate::atomic_write::atomic_write_str;
     use std::fs;
     use std::path::{Path, PathBuf};
+
+    /// 真实工作区上的索引基准（手动跑：`cargo test --lib read_all_notes_tests -- --ignored --nocapture`）。
+    ///
+    /// Why: 合成数据量小（几百篇），量不出「用户把整个工作区当笔记库」的真实负载。
+    /// 本机实测（~/workplace，24 万目录 / 9.8 万 md / 2.6GB）：
+    /// 修复前 455 秒后被系统 SIGTERM 杀掉；修复后 232 秒。
+    /// 这个数字仍然很大 —— 所以配套的还有「体积上限 + 数量上限 + spawn_blocking」，
+    /// 目标是**不再卡死 UI**，而不是把这个数压到 0。
+    ///
+    /// 标 `#[ignore]`：它依赖本机目录结构与外部状态，不能进 CI（CI 上没有这个路径）。
+    #[test]
+    #[ignore]
+    fn bench_index_on_real_workspace() {
+        let dir = std::env::var("ZENNOTE_BENCH_DIR")
+            .unwrap_or_else(|_| "/Users/zifang/workplace".to_string());
+        if !Path::new(&dir).exists() {
+            eprintln!("跳过：{dir} 不存在");
+            return;
+        }
+        let t0 = std::time::Instant::now();
+        let mut out = Vec::new();
+        read_all_notes_recursive(&PathBuf::from(&dir), &mut out, MAX_INDEXED_NOTES).expect("索引");
+        eprintln!(
+            "索引 {dir}: {} 篇, 耗时 {:.1}s",
+            out.len(),
+            t0.elapsed().as_secs_f64()
+        );
+    }
 
     fn temp_dir(tag: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
@@ -2120,7 +2166,7 @@ mod read_all_notes_tests {
         write_md(&root, ".worktrees/fork/x.md", "# worktree 副本\n");
 
         let mut out = Vec::new();
-        read_all_notes_recursive(&root, &mut out).expect("递归读取");
+        read_all_notes_recursive(&root, &mut out, MAX_INDEXED_NOTES).expect("递归读取");
 
         let paths: Vec<String> = out.iter().map(|n| n.file_path.clone()).collect();
         assert_eq!(
@@ -2142,7 +2188,7 @@ mod read_all_notes_tests {
         write_md(&root, "images-of-mom/照片.md", "# 照片\n");
 
         let mut out = Vec::new();
-        read_all_notes_recursive(&root, &mut out).expect("递归读取");
+        read_all_notes_recursive(&root, &mut out, MAX_INDEXED_NOTES).expect("递归读取");
         assert_eq!(out.len(), 3, "正常目录应全部收录，实际 {} 篇", out.len());
 
         fs::remove_dir_all(&root).ok();
@@ -2176,7 +2222,7 @@ mod read_all_notes_tests {
         write_md(&root, "small.md", "# 小文件\n\n正文 #标签\n");
 
         let mut out = Vec::new();
-        read_all_notes_recursive(&root, &mut out).expect("递归读取");
+        read_all_notes_recursive(&root, &mut out, MAX_INDEXED_NOTES).expect("递归读取");
 
         let big_entry = out
             .iter()
@@ -2205,6 +2251,42 @@ mod read_all_notes_tests {
             small.tags,
             vec!["标签".to_string()],
             "小文件的标签不该受影响"
+        );
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// 数量上限：扫够上限就停，且**已扫到的照常返回**（部分索引远比没有强）。
+    ///
+    /// 造 上限+50 篇 ⇒ 结果必须恰好是 上限 篇（不是上限+50，也不是 0）。
+    /// 撤掉上限判断 ⇒ 这条测试必须精确变红。
+    ///
+    /// Why 用小的上限测：真上限 10000 意味着要造 10050 个文件（实测 78 秒），
+    /// 代价太大而收益为零 —— 上限是**一个数**，测「超过就停」这个行为
+    /// 不需要真的用 10000。上限的**数值合理性**由
+    /// bench_index_on_real_workspace 在真实工作区上实测负责。
+    #[test]
+    fn note_count_is_capped_but_partial_result_is_kept() {
+        const LIMIT: usize = 40;
+        let root = temp_dir("cap");
+        let total = LIMIT + 50;
+        for i in 0..total {
+            write_md(&root, &format!("n-{i}.md"), &format!("# 笔记 {i}\n"));
+        }
+
+        let mut out = Vec::new();
+        read_all_notes_recursive(&root, &mut out, LIMIT).expect("递归读取");
+
+        assert_eq!(
+            out.len(),
+            LIMIT,
+            "应恰好停在上限（上限={LIMIT}，实得 {}）",
+            out.len()
+        );
+        // 部分索引必须是有内容的，不是空壳
+        assert!(
+            out.iter().any(|n| n.title.starts_with("笔记")),
+            "部分索引应保留已扫到的笔记"
         );
 
         fs::remove_dir_all(&root).ok();
