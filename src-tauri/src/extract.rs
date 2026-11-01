@@ -82,6 +82,7 @@ pub fn extract_title(content: &str) -> String {
 /// - `#` 后第一个字符必须是字母 / 汉字 / 下划线（Obsidian 同款）——
 ///   `#0`、`#0000ff`、`#0（main` 这类纯数字/标点开头的一律排除；
 /// - 行首标题（`# 标题`，# 后有空格）不算标签。
+///
 /// 结果排序：HashSet 的迭代顺序每次运行都不一样，侧栏标签会来回跳，所以固定排一次序。
 pub fn extract_tags(content: &str) -> Vec<String> {
     let (block, body) = split_frontmatter(content).unwrap_or(("", content));
