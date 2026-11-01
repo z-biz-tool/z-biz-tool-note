@@ -594,6 +594,8 @@ export const electronAPI = {
         case 'ask-notes':
         case 'rag-status':
           return { success: false, error: '浏览器模式没有检索索引' };
+        case 'import-document':
+          return { success: false, error: '浏览器演示区不支持导入外部文档' };
         // 流式通道：正文走 Tauri 事件（ai-stream://token / done / error），
         // 浏览器演示区没有事件通道 ⇒ 同样不可用（调用方会退回整段模式）。
         case 'ai-chat-stream':
@@ -867,6 +869,16 @@ export const electronAPI = {
             return { success: true, notes: s.notes, chunks: s.chunks };
           } catch (e: any) {
             return { success: false, error: e?.toString() || '索引状态不可用' };
+          }
+        }
+        // 外部文档 → Markdown 笔记（原 kb 仓上传问答的承接入口）。
+        // 解析在 Rust 侧（cap-doc），这里只传路径、收落盘后的笔记 id。
+        case 'import-document': {
+          try {
+            const id = await invoke<string>('import_document', { path: args[0] });
+            return { success: true, noteId: id };
+          } catch (e: any) {
+            return { success: false, error: typeof e === 'string' ? e : e?.message || '导入失败' };
           }
         }
         // 流式聊天：命令本身**不带正文**，正文走 ai-stream://* 事件。

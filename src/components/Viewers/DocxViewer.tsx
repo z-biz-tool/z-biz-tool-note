@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import mammoth from 'mammoth';
 import { baseName } from '../../lib/fileTypes';
 import { Loader2 } from 'lucide-react';
+import { ImportAsNoteButton } from './ImportAsNoteButton';
 
 interface Props {
   filePath: string;
@@ -39,6 +40,7 @@ export const DocxViewer = ({ filePath, dataUrl }: Props) => {
       <div className="viewer-toolbar">
         <span className="viewer-title" title={filePath}>📝 {name}</span>
         <span className="toolbar-label">Word 文档</span>
+        <ImportAsNoteButton filePath={filePath} />
       </div>
       <div className="viewer-body docx-viewer-body">
         {error && <div className="docx-error">解析失败: {error}</div>}

@@ -62,6 +62,7 @@ pub fn run() {
             commands::save_config,
             commands::export_note,
             commands::import_note,
+            commands::import_document,
             commands::list_trash,
             commands::restore_note,
             commands::permanent_delete_note,

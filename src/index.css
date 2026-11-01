@@ -2991,6 +2991,29 @@ body {
   align-items: center;
   gap: 6px;
 }
+/* 「转为笔记」按钮（pdf/docx 查看器）：外部文档进检索语料的唯一入口 */
+.viewer-import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #222);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.viewer-import-btn:hover:not(:disabled) {
+  background: var(--bg-hover, #f0f0f0);
+  border-color: var(--border-strong, #c8c8c8);
+}
+.viewer-import-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .toolbar-btn {
   display: inline-flex;
   align-items: center;

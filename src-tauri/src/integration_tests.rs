@@ -639,3 +639,113 @@ fn inline_tags_reject_code_fragments() {
         tags
     );
 }
+
+/// import_document：外部文档 → Markdown 笔记。
+///
+/// 钉三条：① 支持的类型真能导出非空笔记；② 认不得的类型在入口就被挡
+/// （不产生笔记文件、不把二进制乱码切进索引）；③ 落盘走原子写。
+/// 注：pdf/docx/pptx 的解析正确性由 cap-doc 自己的 81 条测试保证（含真实
+/// zip 结构的用例），这里钉的是 note 命令层的路由与入库形态。
+#[test]
+fn import_document_routes_by_extension() {
+    use crate::atomic_write::atomic_write;
+    let dir = tempfile_dir("import-doc");
+    let src = dir.path().join("会议记录.txt");
+    atomic_write(
+        &src,
+        "第一条结论：项目按期交付。\n第二条结论：下季度立项。".as_bytes(),
+    )
+    .unwrap();
+
+    let note_id = crate::commands::import_document_blocking(&src).expect("txt 应能导入");
+    let note_path = crate::commands::notes_dir().join(format!("{}.md", note_id));
+    let content = std::fs::read_to_string(&note_path).expect("导入后的笔记应存在");
+    assert!(
+        content.contains("第一条结论：项目按期交付。"),
+        "正文要保留: {}",
+        content
+    );
+    assert!(
+        content.starts_with("# 会议记录"),
+        "标题来自文件名: {}",
+        content
+    );
+    assert!(
+        content.contains("从 会议记录.txt 导入"),
+        "要带来源行: {}",
+        content
+    );
+
+    // 阴性对照：认不得的类型必须报错，且不留半截笔记
+    let bad = dir.path().join("photo.xlsx");
+    atomic_write(&bad, b"PK\x03\x04fake-xlsx-bytes").unwrap();
+    let err = crate::commands::import_document_blocking(&bad).unwrap_err();
+    assert!(err.contains("暂不支持"), "错误要指路: {}", err);
+
+    // 旧版 .doc 给出明确指引
+    let doc = dir.path().join("旧文档.doc");
+    atomic_write(&doc, b"OLE binary").unwrap();
+    let err = crate::commands::import_document_blocking(&doc).unwrap_err();
+    assert!(
+        err.contains("另存为 .docx"),
+        "旧 .doc 错误要指明出路: {}",
+        err
+    );
+
+    let _ = std::fs::remove_file(&note_path);
+}
+
+/// import_document 对空文本文件要报错，不落空笔记
+#[test]
+fn import_document_rejects_empty_text() {
+    use crate::atomic_write::atomic_write;
+    let dir = tempfile_dir("import-doc-empty");
+    let src = dir.path().join("空白.md");
+    atomic_write(&src, "   \n  ".as_bytes()).unwrap();
+    let err = crate::commands::import_document_blocking(&src).unwrap_err();
+    assert!(
+        err.contains("没提取到任何文本"),
+        "空文件错误要可读: {}",
+        err
+    );
+}
+
+/// 测试用临时目录（随作用域删除）。integration_tests 不引 dev 依赖，
+/// 就地做一个最小版：原子创建、撞名重试、Drop 清理。
+fn tempfile_dir(tag: &str) -> TempTestDir {
+    TempTestDir::new(tag)
+}
+
+struct TempTestDir {
+    path: std::path::PathBuf,
+}
+
+impl TempTestDir {
+    fn new(tag: &str) -> Self {
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let pid = std::process::id();
+        for _ in 0..1000 {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path =
+                std::env::temp_dir().join(format!("znote-test-{}-{}-{}-{}", tag, pid, nonce, seq));
+            if std::fs::create_dir_all(&path).is_ok() {
+                return Self { path };
+            }
+        }
+        panic!("连续 1000 次都没能建出唯一临时目录（tag={tag}）");
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for TempTestDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}

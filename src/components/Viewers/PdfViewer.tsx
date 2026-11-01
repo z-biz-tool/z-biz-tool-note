@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Loader2 } from 'lucide-react';
 import { baseName } from '../../lib/fileTypes';
+import { ImportAsNoteButton } from './ImportAsNoteButton';
 
 // vite ?url import: 让 worker bundle 跟主程序走,避免跨域
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -112,6 +113,7 @@ export const PdfViewer = ({ filePath, dataUrl }: Props) => {
           <a className="toolbar-btn" href={dataUrl} download={name} title="下载 PDF">
             <Download size={16} />
           </a>
+          <ImportAsNoteButton filePath={filePath} />
         </div>
       </div>
       <div className="viewer-body pdf-viewer-body">

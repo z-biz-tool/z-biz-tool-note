@@ -319,7 +319,7 @@ impl Default for Config {
 }
 
 /// 获取笔记数据目录 ~/.z-note/notes/
-fn notes_dir() -> PathBuf {
+pub(crate) fn notes_dir() -> PathBuf {
     let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let dir = base.join(".z-note").join("notes");
     if !dir.exists() {
@@ -636,6 +636,82 @@ pub fn import_note(path: String) -> Result<String, String> {
     let note_path = notes_dir().join(format!("{}.md", id));
     atomic_write_str(&note_path, &content)?;
     Ok(id.to_string())
+}
+
+/// 导入外部文档为 Markdown 笔记（原 kb 仓「上传文档问答」能力的承接入口）。
+///
+/// 支持 pdf（cap-doc）/ docx / pptx（cap-doc::ooxml）/ 纯文本类；docx/pptx
+/// 在文件查看器里只是**只读预览**，索引和问笔记都吃不到它们 —— 转成
+/// Markdown 后才能被 BM25 检索、被 RAG 引用。
+///
+/// 返回落盘后的笔记 id（`~/.z-note/notes/<id>.md`），由前端打开该笔记。
+#[tauri::command]
+pub async fn import_document(path: String) -> Result<String, String> {
+    // 解析是分钟级以下但 docx/pptx zip 解压可能到百毫秒级，不占 IPC 线程
+    let source = validate_path(&path)?;
+    tauri::async_runtime::spawn_blocking(move || import_document_blocking(&source))
+        .await
+        .map_err(|e| format!("导入任务失败: {}", e))?
+}
+
+/// 仅供集成测试（integration_tests.rs）复用；非 pub crate，pub(crate) 即包内可见
+pub(crate) fn import_document_blocking(source: &std::path::Path) -> Result<String, String> {
+    let file_name = source
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .ok_or_else(|| "路径无文件名".to_string())?;
+    let ext = source
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    // 旧版 .doc（OLE 二进制）zip 打不开，会落到「暂不支持」的泛化报错；
+    // 提前用扩展名给出准确指引，别让用户对着解析错误猜
+    if ext == "doc" {
+        return Err("旧版 .doc 读不了，请在 Word 里另存为 .docx 再导入".to_string());
+    }
+
+    // 文本类直接读；pdf/docx/pptx 走 cap-doc。认不得的在这里挡掉，
+    // 不让二进制乱码被当成正文切进索引
+    let body = match ext.as_str() {
+        "pdf" => {
+            let text = cap_doc::extract_pdf_text(&source.to_string_lossy())?;
+            let cleaned = text.trim().to_string();
+            // cap-doc 对扫描件返回提示句而非 Err —— 那句话不该被当成正文入库
+            if cleaned.starts_with("无法提取PDF文本内容") {
+                return Err("PDF 里没有文字层（扫描件？），需要先 OCR 才能导入".to_string());
+            }
+            cleaned
+        }
+        "docx" => cap_doc::extract_docx_text(source)?.full,
+        "pptx" => cap_doc::extract_pptx_text(source)?.with_page_marks,
+        "md" | "markdown" | "txt" | "csv" | "log" => {
+            fs::read_to_string(source).map_err(|e| format!("读取文件失败: {}", e))?
+        }
+        other => {
+            return Err(format!(
+                "暂不支持 .{other} 导入（支持 pdf / docx / pptx / md / txt / csv）"
+            ))
+        }
+    };
+
+    let body = body.trim().to_string();
+    if body.is_empty() {
+        return Err("这份文件里没提取到任何文本（扫描件或纯图片？）".to_string());
+    }
+
+    let title = file_name
+        .rsplit_once('.')
+        .map(|(stem, _)| stem.to_string())
+        .unwrap_or_else(|| file_name.clone());
+
+    let markdown = format!("# {}\n\n> 从 {} 导入\n\n{}\n", title, file_name, body);
+
+    let uuid = Uuid::new_v4().to_string();
+    let id = uuid[..8].to_string();
+    let note_path = notes_dir().join(format!("{}.md", id));
+    atomic_write_str(&note_path, &markdown)?;
+    Ok(id)
 }
 
 /// 列出回收站笔记
