@@ -2243,10 +2243,7 @@ mod read_all_notes_tests {
             .iter()
             .find(|n| n.file_path.ends_with("small.md"))
             .expect("小文件应被收录");
-        assert_eq!(
-            small.title, "小文件",
-            "小文件应正常读正文取标题"
-        );
+        assert_eq!(small.title, "小文件", "小文件应正常读正文取标题");
         assert_eq!(
             small.tags,
             vec!["标签".to_string()],
