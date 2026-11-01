@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Folder, FileText, Search, Plus, ChevronRight, ChevronDown,
   Home, Clock, Files, Hash, Settings, Sparkles, Calendar, X, ScanSearch
@@ -114,6 +114,39 @@ export const Sidebar = ({
   const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(listRecentFolders);
   const [showFolderMenu, setShowFolderMenu] = useState(false);
   useEffect(() => subscribeRecentFolders(() => setRecentFolders(listRecentFolders())), []);
+
+  // ── 子树预览浮层（2026-11-01）──────────────────────────────
+  // 侧栏窄、层级一深缩进就吃掉行宽，深处的名字被挤成一条缝。
+  // 点目录行尾部的「⟩」从行旁弹出该目录的子树浮层：紧凑列表、
+  // 可继续逐层下钻、点文件直接打开 —— 树不必在窄栏里一路缩进。
+  const [peek, setPeek] = useState<{ path: string; name: string; x: number; y: number } | null>(null);
+
+  /** 点「⟩」：以按钮在视口中的位置锚定浮层 */
+  const handlePeek = (e: React.MouseEvent, file: FileItem) => {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // 同一个按钮再点一次 = 收起
+    setPeek(prev => prev && prev.path === file.path
+      ? null
+      : { path: file.path, name: file.name, x: rect.right + 6, y: rect.top });
+  };
+
+  // 浮层开着时点外面 / 按 Esc 收起
+  useEffect(() => {
+    if (!peek) return;
+    const close = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement;
+      if (t.closest('.sidebar-peek-menu') || t.closest('.sidebar-peek-trigger')) return;
+      setPeek(null);
+    };
+    const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setPeek(null); };
+    document.addEventListener('mousedown', close, true);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close, true);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [peek]);
 
   /** 点目录名：有历史就弹出列表，没有就直接走打开对话框 */
   const handleDirNameClick = () => {
@@ -640,6 +673,16 @@ export const Sidebar = ({
               {expandedFolders.has(file.path) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               <Folder size={15} />
               <span>{file.name}</span>
+              {/* 子树预览：不展开主树也能看这个目录里有什么（层级深时窄栏缩进不可用） */}
+              <span
+                className={`sidebar-peek-trigger ${peek?.path === file.path ? 'active' : ''}`}
+                role="button"
+                aria-label={`预览 ${file.name} 的子目录`}
+                title="预览子目录"
+                onClick={(e) => handlePeek(e, file)}
+              >
+                <ChevronRight size={12} />
+              </span>
             </button>
             {expandedFolders.has(file.path) && (file as any).children && renderFileTree((file as any).children, depth + 1)}
           </>
@@ -931,6 +974,19 @@ export const Sidebar = ({
         />
       )}
 
+      {/* 子树预览浮层：锚在触发行旁，紧凑列出该目录的内容，可逐层下钻 */}
+      {peek && (
+        <PeekTree
+          dirPath={peek.path}
+          dirName={peek.name}
+          x={peek.x}
+          y={peek.y}
+          onOpenFile={onOpenFile}
+          onClose={() => setPeek(null)}
+          onOpenFolder={onOpenFolder}
+        />
+      )}
+
       <div
         className="sidebar-footer"
         style={{
@@ -963,3 +1019,139 @@ export const Sidebar = ({
     </div>
   );
 };
+
+// ==================== 子树预览浮层 ====================
+
+/** 面包屑段：PeekTree 逐层下钻时用于返回上层 */
+interface PeekCrumb {
+  name: string;
+  path: string;
+}
+
+/**
+ * 点目录行的「⟩」弹出的紧凑子树。与主树不同，它按需懒加载：
+ * listFiles 只给一层，浮层里下钻才请求下一层，不 hydrate 整棵。
+ *
+ * 下钻语义：内容整个换成子目录 + 面包屑多一节；「返回」逐级回退。
+ * 浮层位置固定在锚点（触发行右侧），下钻不跳动 —— 换内容不换锚点。
+ */
+function PeekTree({
+  dirPath, dirName, x, y, onOpenFile, onClose, onOpenFolder,
+}: {
+  dirPath: string;
+  dirName: string;
+  x: number;
+  y: number;
+  onOpenFile: (path: string) => void;
+  onClose: () => void;
+  onOpenFolder: (dirPath: string) => void;
+}) {
+  // 面包屑：根是触发预览的那个目录，drill 往里追加
+  const [crumbs, setCrumbs] = useState<PeekCrumb[]>([{ name: dirName, path: dirPath }]);
+  const current = crumbs[crumbs.length - 1];
+  const [items, setItems] = useState<FileItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { listFiles } = useFileOperations();
+
+  useEffect(() => {
+    let cancelled = false;
+    setItems(null);
+    setError(null);
+    void listFiles(current.path).then(r => {
+      if (cancelled) return;
+      if (r.success && r.files) {
+        setItems(r.files.filter((f: FileItem) => !f.name.startsWith('.')));
+      } else {
+        setError(r.error || '读取失败');
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.path]);
+
+  // 视口收口：右溢出弹到锚点左侧，下溢出上移。高度按条数估算，
+  // maxHeight 交给 CSS 的滚动容器兜底，这里只求别出屏。
+  const style = useMemo(() => {
+    const W = 272;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const left = x + W > vw - 8 ? Math.max(8, x - W - 44) : x;
+    const top = Math.min(Math.max(8, y - 4), vh - 200);
+    return { left, top, width: W };
+  }, [x, y]);
+
+  const drill = (item: FileItem) => {
+    setCrumbs(prev => [...prev, { name: item.name, path: item.path }]);
+  };
+
+  return (
+    <div className="sidebar-peek-menu" role="menu" aria-label={`${dirName} 的内容`} style={style}>
+      <div className="sidebar-peek-head">
+        {/* 面包屑：一级时不显示（头部已有目录名），两级起显示「根 / 子」 */}
+        {crumbs.length > 1 ? (
+          <nav className="sidebar-peek-crumbs" aria-label="预览路径">
+            {crumbs.map((c, i) => (
+              <span key={c.path} className="sidebar-peek-crumb">
+                {i > 0 && <span className="sidebar-peek-crumb-sep">/</span>}
+                {i < crumbs.length - 1 ? (
+                  <button onClick={() => setCrumbs(prev => prev.slice(0, i + 1))} title={c.path}>
+                    {c.name}
+                  </button>
+                ) : (
+                  <span className="sidebar-peek-crumb-here">{c.name}</span>
+                )}
+              </span>
+            ))}
+          </nav>
+        ) : (
+          <>
+            <Folder size={13} />
+            <span className="sidebar-peek-title" title={current.path}>{current.name}</span>
+          </>
+        )}
+        <span style={{ flex: 1 }} />
+        <button
+          className="sidebar-peek-open"
+          title="把这个文件夹设为工作区（侧栏主树切换过去）"
+          onClick={() => { onOpenFolder(current.path); onClose(); }}
+        >
+          在此打开
+        </button>
+        <button className="sidebar-peek-close" onClick={onClose} aria-label="关闭预览">
+          <X size={12} />
+        </button>
+      </div>
+      <div className="sidebar-peek-list">
+        {items === null ? (
+          <div className="sidebar-peek-empty">读取中…</div>
+        ) : error ? (
+          <div className="sidebar-peek-empty">{error}</div>
+        ) : items.length === 0 ? (
+          <div className="sidebar-peek-empty">空目录</div>
+        ) : (
+          items.map(item => (
+            <div key={item.path} className="sidebar-peek-row">
+              <button
+                className={`sidebar-peek-item ${item.isDirectory ? 'is-dir' : ''}`}
+                onClick={() => (item.isDirectory ? drill(item) : (onOpenFile(item.path), onClose()))}
+                title={item.path}
+              >
+                {item.isDirectory ? <Folder size={13} /> : <FileText size={13} />}
+                <span>{item.isDirectory ? item.name : displayName(item.path)}</span>
+              </button>
+              {item.isDirectory && (
+                <button
+                  className="sidebar-peek-drill"
+                  title="预览此子目录"
+                  aria-label={`预览 ${item.name}`}
+                  onClick={() => drill(item)}
+                >
+                  <ChevronRight size={11} />
+                </button>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
