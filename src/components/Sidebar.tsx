@@ -10,6 +10,7 @@ import { searchNotes } from '../lib/searchIndex';
 import { confirmDialog, notify, promptDialog } from '../lib/dialogs';
 import { displayName, isMarkdownPath } from '../lib/fileTypes';
 import { clearRecentFiles, formatRecentTime, listRecentFiles, mutateRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
+import { clearRecentFolders, folderDisplayName, listRecentFolders, recordRecentFolder, subscribeRecentFolders, type RecentFolder } from '../lib/recentFolders';
 import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
@@ -108,6 +109,32 @@ export const Sidebar = ({
   // 真源在 lib/recentFiles（App 记、这里读）：谁写都会广播，侧栏只要跟着刷新，
   // 不再自己读写 localStorage、自己拼显示名
   useEffect(() => subscribeRecentFiles(() => setRecentFiles(listRecentFiles())), []);
+
+  // 「最近文件夹」与弹出菜单：App 记账（handleOpen* 三处），这里只读
+  const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(listRecentFolders);
+  const [showFolderMenu, setShowFolderMenu] = useState(false);
+  useEffect(() => subscribeRecentFolders(() => setRecentFolders(listRecentFolders())), []);
+
+  /** 点目录名：有历史就弹出列表，没有就直接走打开对话框 */
+  const handleDirNameClick = () => {
+    if (listRecentFolders().length <= 1) {
+      handleFolderSelect();
+      return;
+    }
+    setShowFolderMenu(v => !v);
+  };
+
+  // 点菜单外面就收起（capture 阶段拦，避免先触发文件树的点击）
+  useEffect(() => {
+    if (!showFolderMenu) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('.sidebar-folder-menu') || t.closest('.sidebar-dir-name')) return;
+      setShowFolderMenu(false);
+    };
+    document.addEventListener('mousedown', close, true);
+    return () => document.removeEventListener('mousedown', close, true);
+  }, [showFolderMenu]);
 
   // 相对时间的参照点：不跟着走的话"刚刚"能一直挂一小时。
   // 只在「最近打开」这一页开着时掐表，别的页不养定时器。
@@ -680,9 +707,52 @@ export const Sidebar = ({
             <button className="toolbar-btn" onClick={handleFolderSelect} title={modKeys('打开文件夹（Cmd+Shift+O）')} style={{ width: 28, height: 28 }}>
               <Folder size={14} />
             </button>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            {/* 点名字弹出「最近文件夹」：切目录不用每次都走 Cmd+Shift+O 再翻目录树。
+                只有一个条目时（就是当前这个）弹出也没有信息量，此时直接走打开对话框。 */}
+            <button
+              className="sidebar-dir-name"
+              onClick={handleDirNameClick}
+              title={currentDir || '打开文件夹'}
+            >
               {currentDir ? currentDir.split('/').pop() : '未打开文件夹'}
-            </span>
+            </button>
+            {showFolderMenu && (
+              <div className="sidebar-folder-menu" role="menu">
+                <div className="sidebar-folder-menu-head">
+                  <span>最近打开的文件夹</span>
+                  {recentFolders.length > 0 && (
+                    <button
+                      className="sidebar-folder-menu-clear"
+                      onClick={() => { clearRecentFolders(); }}
+                      title="清空列表（不删除文件夹）"
+                    >
+                      清空
+                    </button>
+                  )}
+                </div>
+                {recentFolders.length === 0 ? (
+                  <div className="sidebar-folder-menu-empty">还没有记录</div>
+                ) : (
+                  recentFolders.map(f => (
+                    <button
+                      key={f.path}
+                      className={`sidebar-folder-menu-item ${f.path === currentDir ? 'active' : ''}`}
+                      onClick={() => { setShowFolderMenu(false); onOpenFolder(f.path); }}
+                      title={f.path}
+                    >
+                      <Folder size={13} />
+                      <span className="sidebar-folder-menu-name">{folderDisplayName(f.path)}</span>
+                      <span className="sidebar-folder-menu-time">{formatRecentTime(f.lastOpened, now)}</span>
+                    </button>
+                  ))
+                )}
+                <div className="sidebar-folder-menu-sep" />
+                <button className="sidebar-folder-menu-item" onClick={() => { setShowFolderMenu(false); handleFolderSelect(); }}>
+                  <Folder size={13} />
+                  <span>打开其它文件夹…</span>
+                </button>
+              </div>
+            )}
           </div>
           <div
             className={`sidebar-file-list ${dropTargetDir === currentDir ? 'drop-target' : ''}`}

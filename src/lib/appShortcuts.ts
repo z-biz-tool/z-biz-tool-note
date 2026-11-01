@@ -42,6 +42,8 @@ export interface AppShortcutActions {
   openFolder: () => void;
   /** AI 助手面板 */
   toggleAiPanel: () => void;
+  /** 问笔记（RAG 检索问答面板） */
+  toggleAskPanel: () => void;
   /** 设置面板 */
   openSettings: () => void;
   /** 今日日记 */
@@ -89,6 +91,8 @@ export function createAppShortcuts(a: AppShortcutActions): KeyboardShortcut[] {
     { key: 'o', cmd: true, shift: true, handler: a.openFolder },
     // Cmd+J 切换 AI 助手
     { key: 'j', cmd: true, handler: a.toggleAiPanel },
+    // Cmd+Shift+A 问笔记（与 Cmd+J 的 AI 助手同一族；A = Ask）
+    { key: 'a', cmd: true, shift: true, handler: a.toggleAskPanel },
     // Cmd+, 打开设置（macOS 惯例）
     { key: ',', cmd: true, handler: a.openSettings },
     // Cmd+Shift+D 今日日记（Cmd+D 让给多光标）

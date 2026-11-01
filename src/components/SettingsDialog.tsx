@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Save, Plus, Trash2, FileText, RotateCw } from 'lucide-react';
+import { Save, Plus, Trash2, FileText, RotateCw, Sparkles, Type, Search } from 'lucide-react';
 import type { AIConfig, Template, Config } from '../types';
 import { getIndexStatus, rebuildIndex, type IndexStatus } from '../lib/searchIndex';
 import { BUILTIN_TEMPLATES } from '../lib/templates';
@@ -285,28 +285,39 @@ export const SettingsDialog = ({
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={tr('settings', 'title')} onClick={closeAndRevert}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{tr('settings', 'title')}</h2>
-          <button className="toolbar-btn" onClick={closeAndRevert} aria-label={tr('settings', 'close')}><X size={16} /></button>
-        </div>
+      {/* 设置弹窗固定 760×540：左侧竖排导航 + 右侧内容区。
+          以前 tab 是顶部横排、modal-body 高度跟着内容走 ⇒ 切 tab 窗口上下跳。
+          现在弹窗尺寸恒定，切 tab 只有右侧内容滚动，窗口纹丝不动。 */}
+      <div className="modal-dialog settings-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="settings-layout">
+          <aside className="settings-nav">
+            <div className="settings-nav-title">{tr('settings', 'title')}</div>
+            <button className={`settings-nav-item ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>
+              <Sparkles size={15} />
+              <span>{tr('settings', 'tabAI')}</span>
+            </button>
+            <button className={`settings-nav-item ${tab === 'appearance' ? 'active' : ''}`} onClick={() => setTab('appearance')}>
+              <Type size={15} />
+              <span>{tr('settings', 'tabAppearance')}</span>
+            </button>
+            <button className={`settings-nav-item ${tab === 'templates' ? 'active' : ''}`} onClick={() => setTab('templates')}>
+              <FileText size={15} />
+              <span>{tr('settings', 'tabTemplates')}</span>
+            </button>
+            <button className={`settings-nav-item ${tab === 'search' ? 'active' : ''}`} onClick={() => setTab('search')}>
+              <Search size={15} />
+              <span>{tr('settings', 'tabSearch')}</span>
+            </button>
+            <div className="settings-nav-footer">
+              <button className="btn-secondary" onClick={closeAndRevert}>{tr('settings', 'cancel')}</button>
+              <button className="btn-primary" onClick={handleSave}>
+                <Save size={14} /> {tr('settings', 'save')}
+              </button>
+            </div>
+          </aside>
 
-        <div className="modal-tabs">
-          <button className={`modal-tab ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>
-            {tr('settings', 'tabAI')}
-          </button>
-          <button className={`modal-tab ${tab === 'appearance' ? 'active' : ''}`} onClick={() => setTab('appearance')}>
-            {tr('settings', 'tabAppearance')}
-          </button>
-          <button className={`modal-tab ${tab === 'templates' ? 'active' : ''}`} onClick={() => setTab('templates')}>
-            {tr('settings', 'tabTemplates')}
-          </button>
-          <button className={`modal-tab ${tab === 'search' ? 'active' : ''}`} onClick={() => setTab('search')}>
-            {tr('settings', 'tabSearch')}
-          </button>
-        </div>
-
-        <div className="modal-body">
+          <section className="settings-content">
+            <div className="settings-content-body">
           {tab === 'ai' && (
             <div className="settings-form">
               <p className="settings-hint">
@@ -571,13 +582,8 @@ export const SettingsDialog = ({
               )}
             </div>
           )}
-        </div>
-
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={closeAndRevert}>{tr('settings', 'cancel')}</button>
-          <button className="btn-primary" onClick={handleSave}>
-            <Save size={14} /> {tr('settings', 'save')}
-          </button>
+            </div>
+          </section>
         </div>
       </div>
     </div>

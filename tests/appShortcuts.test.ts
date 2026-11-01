@@ -34,6 +34,7 @@ const ACTION_NAMES = [
   "toggleEditorMode",
   "openFolder",
   "toggleAiPanel",
+  "toggleAskPanel",
   "openSettings",
   "createDailyNote",
   "toggleKnowledgeGraph",
@@ -124,6 +125,14 @@ test("⌘+Shift+O 打开文件夹", () => {
 
 test("⌘+J 切换 AI 面板", () => {
   assert.deepEqual(press(cmd("j")), ["toggleAiPanel"]);
+});
+
+test("⌘+Shift+A 问笔记面板（A = Ask，与 ⌘+J 同族）", () => {
+  assert.deepEqual(press(cmd("a", true)), ["toggleAskPanel"]);
+});
+
+test("⌘+A（不带 Shift）不命中任何条目 —— 全选必须留给编辑器", () => {
+  assert.deepEqual(press(cmd("a")), []);
 });
 
 test("⌘+, 打开设置（key 是逗号）", () => {
@@ -221,7 +230,7 @@ test("其它快捷键都 preventDefault（避免浏览器的 Cmd+S 另存为弹�
 
 /* ───────────────────── 表本身的形状 ───────────────────── */
 
-test("表里 21 条，一条不多一条不少（多一条就是重复绑定，少一条就是漏搬）", () => {
+test("表里 22 条，一条不多一条不少（多一条就是重复绑定，少一条就是漏搬）", () => {
   const shortcuts = tableWithCalls([]);
   assert.equal(shortcuts.length, ACTION_NAMES.length);
   assert.equal(new Set(shortcuts.map((s) => s.handler)).size, ACTION_NAMES.length, "动作不该重复");

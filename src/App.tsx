@@ -20,6 +20,7 @@ import type { FileKind } from './lib/fileTypes';
 import { isMarkdownPath, displayName } from './lib/fileTypes';
 import { disambiguateTabTitles } from './lib/tabTitles';
 import { recordRecentFile } from './lib/recentFiles';
+import { recordRecentFolder } from './lib/recentFolders';
 import { parseWikiLinkTarget } from './lib/WikiLinkExtension';
 import { resolveNotePath } from './lib/noteResolve';
 import { runAiStream } from './lib/aiStream';
@@ -488,6 +489,11 @@ const App = () => {
     // Load current dir
     const savedDir = localStorage.getItem('currentDir');
     if (savedDir) {
+      // 冷启动兜底登记：根目录清单落盘在 ~/.z-note/workspace-roots.json，
+      // 但用户可能换机器/手动清过。只要前端还在用这个目录，就补登记一次，
+      // 否则重启后树又会静默收空（与 2026-10-31 的「打开文件夹不展开」同源）。
+      void electronAPI.invoke('register-workspace-root', savedDir);
+      recordRecentFolder(savedDir);
       setCurrentDir(savedDir);
       refreshFileList(savedDir);
       refreshKnowledgeIndex(savedDir);
@@ -1354,6 +1360,9 @@ const App = () => {
 
   const handleOpenFolder = useCallback((dirPath: string) => {
     if (dirPath) {
+      // 登记「授权工作区根」：后端白名单只放行用户显式打开的目录及其子树
+      void electronAPI.invoke('register-workspace-root', dirPath);
+      recordRecentFolder(dirPath);
       setCurrentDir(dirPath);
       localStorage.setItem('currentDir', dirPath);
       refreshFileList(dirPath);
@@ -1364,6 +1373,8 @@ const App = () => {
   const handleOpenFolderDialog = useCallback(async () => {
     const result = await electronAPI.invoke('show-open-dialog');
     if (!result.canceled && result.filePath) {
+      void electronAPI.invoke('register-workspace-root', result.filePath);
+      recordRecentFolder(result.filePath);
       setCurrentDir(result.filePath);
       localStorage.setItem('currentDir', result.filePath);
       refreshFileList(result.filePath);
@@ -1825,6 +1836,7 @@ const App = () => {
     'toggle-backlinks': () => setShowBacklinks(prev => !prev),
     'toggle-graph': () => setShowKnowledgeGraph(prev => !prev),
     'toggle-ai': () => setShowAIPanel(prev => !prev),
+    'toggle-ask': () => setShowAskPanel(prev => !prev),
     'toggle-source': () => setEditorMode(prev => prev === 'wysiwyg' ? 'source' : 'wysiwyg'),
     'toggle-focus': () => setFocusMode(prev => !prev),
     'toggle-typewriter': () => setTypewriterMode(prev => !prev),
@@ -1869,6 +1881,7 @@ const App = () => {
         toggleEditorMode: () => setEditorMode(prev => (prev === 'wysiwyg' ? 'source' : 'wysiwyg')),
         openFolder: () => menuActionsRef.current['open-folder']?.(),
         toggleAiPanel: () => setShowAIPanel(prev => !prev),
+        toggleAskPanel: () => setShowAskPanel(prev => !prev),
         openSettings: () => setShowSettings(true),
         createDailyNote: () => menuActionsRef.current['create-daily']?.(),
         toggleKnowledgeGraph: () => setShowKnowledgeGraph(prev => !prev),
@@ -1975,7 +1988,7 @@ const App = () => {
     { id: 'next-tab', title: '下一个标签页', shortcut: 'Cmd+Shift+]', category: '视图', action: () => switchTab(1) },
     { id: 'prev-tab', title: '上一个标签页', shortcut: 'Cmd+Shift+[', category: '视图', action: () => switchTab(-1) },
     { id: 'toggle-ai', title: '切换 AI 助手', shortcut: 'Cmd+J', category: 'AI', action: () => setShowAIPanel(prev => !prev) },
-    { id: 'toggle-ask', title: '问我的笔记（带出处检索问答）', category: 'AI', action: () => setShowAskPanel(prev => !prev) },
+    { id: 'toggle-ask', title: '问我的笔记（带出处检索问答）', shortcut: 'Cmd+Shift+A', category: 'AI', action: () => setShowAskPanel(prev => !prev) },
     { id: 'toggle-find', title: '查找与替换', shortcut: 'Cmd+F', category: '编辑', action: () => setShowFindReplace(true) },
     { id: 'quick-switch', title: '快速切换文件', shortcut: 'Cmd+P', category: '跳转', action: () => setShowQuickSwitcher(true) },
     { id: 'open-settings', title: '打开设置', shortcut: 'Cmd+,', category: '设置', action: () => setShowSettings(true) },
@@ -2088,6 +2101,7 @@ const App = () => {
             onOpenFolder={handleOpenFolderDialog}
             onCreateDaily={handleCreateDaily}
             onOpenGuide={openWelcomeGuide}
+            onOpenAsk={() => setShowAskPanel(true)}
             onOpenFile={handleSearchResultOpen}
             currentDir={currentDir}
           />

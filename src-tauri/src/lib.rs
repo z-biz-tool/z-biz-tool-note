@@ -78,6 +78,9 @@ pub fn run() {
             commands::move_to_trash,
             commands::rename_file,
             commands::file_exists,
+            // 用户显式打开文件夹时登记「授权工作区根」：其整棵子树随后放行。
+            // 没有这一步，二级目录（~/workplace/ceo）会被白名单拒掉 ⇒ 树展开后是空的。
+            commands::register_workspace_root,
             commands::list_dir,
             commands::list_dir_recursive,
             commands::search_in_files,
@@ -243,6 +246,12 @@ pub fn run() {
                     "toggle-ai",
                     "切换 AI 助手",
                     Some("CmdOrCtrl+J"),
+                )?)
+                .item(&menu_item(
+                    handle,
+                    "toggle-ask",
+                    "问笔记（检索问答）",
+                    Some("CmdOrCtrl+Shift+A"),
                 )?)
                 .separator()
                 .item(&menu_item(handle, "toggle-source", "切换源码模式", None)?)

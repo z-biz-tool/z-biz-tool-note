@@ -412,6 +412,50 @@ fn validate_path_allows_whitelisted() {
     }
 }
 
+/// 已登记的工作区根：整棵子树放行（2026-10-31「打开文件夹树不展开」的回归钉）。
+/// 原白名单只放行家目录一级子目录，`~/workplace/ceo` 这类二级目录根层列得出来、
+/// 一展开就被拒 ⇒ 箭头翻下去、子节点是空的。
+#[test]
+fn workspace_root_allows_subtree() {
+    use crate::commands::{register_workspace_root, validate_path};
+    // 注意不能用 tempdir：temp 根整棵都在白名单里，「登记前被拒」测不出来。
+    // 家目录的**二级**子目录原本被拒（白名单只放行一级），正是线上 bug 的形状。
+    let home = dirs::home_dir().expect("无主目录");
+    let root = home.join(".z-note-ws-root-test");
+    let sub = root.join("deep").join("nested");
+    std::fs::create_dir_all(&sub).expect("创建嵌套目录");
+
+    // 先清掉上次运行落盘的登记：根清单是全局持久文件，不清理的话
+    // 本测试第二次跑「登记前被拒」的断言就永远过不去（测试自污染）。
+    crate::commands::unregister_workspace_root_for_test(&root.to_string_lossy());
+
+    // 登记前：家目录二级子目录，必须被拒
+    assert!(
+        validate_path(&sub.to_string_lossy()).is_err(),
+        "登记前 {} 不应放行",
+        sub.display()
+    );
+
+    // 登记后：根与任意深度的子树都放行
+    register_workspace_root(root.to_string_lossy().into_owned());
+    assert!(
+        validate_path(&root.to_string_lossy()).is_ok(),
+        "登记后的根 {} 应放行",
+        root.display()
+    );
+    assert!(
+        validate_path(&sub.to_string_lossy()).is_ok(),
+        "登记后子树 {} 应放行",
+        sub.display()
+    );
+
+    // 敏感区域不因登记机制而放行：/etc 永远拒绝
+    assert!(validate_path("/etc/passwd").is_err(), "/etc 必须始终被拒绝");
+
+    // 清理测试目录
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// validate_path_allow_nonexistent：未存在路径也能校验（用于新建文件/目录）
 #[test]
 fn validate_nonexistent_path() {

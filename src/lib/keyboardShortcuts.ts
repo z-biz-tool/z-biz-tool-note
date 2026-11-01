@@ -109,6 +109,11 @@ export function attachKeyboardShortcuts(
 
   const handler = (ev: Event) => {
     const keyboardEvent = ev as KeyboardEvent;
+    // 别人已经消费过的按键不再接手：编辑器（Tiptap/ProseMirror）对 Cmd+B 这类
+    // 组合会 preventDefault，但事件照样冒泡到 window —— 不挡的话一次按键
+    // 全局表又跑一遍（加粗的同时切了侧栏）。注意这只在「冒泡阶段的 window
+    // 监听」里有意义：消费方在更早的阶段已经处理完了。
+    if (keyboardEvent.defaultPrevented) return;
     const hit = resolveShortcut(shortcuts, keyboardEvent);
     if (!hit) return;
     if (hit.preventDefault !== false) keyboardEvent.preventDefault();

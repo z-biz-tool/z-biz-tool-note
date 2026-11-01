@@ -32,17 +32,100 @@ fn in_temp_root(path: &Path) -> bool {
     temp_roots().iter().any(|r| path.starts_with(r))
 }
 
+// ==================== 授权工作区根 ====================
+//
+// 用户在「打开文件夹」对话框里显式选中的目录：整棵子树随后放行。
+//
+// Why: 原白名单只放行「家目录一级子目录」，`~/workplace/ceo` 这种二级目录
+// 根层列得出来、一展开就被判「路径不在允许范围内」⇒ 箭头翻下去、子节点
+// 却是空的，看起来像「打开一个文件夹连个树都没展开」。
+//
+// 信任模型不变：根目录只来自用户自己的显式选择（show-open-dialog），
+// 应用绝不代用户登记；敏感区域黑名单（/etc、~/.ssh 等）在登记时同样生效。
+// 登记落盘到 ~/.z-note/workspace-roots.json，重启后恢复（与前端记住
+// currentDir 的行为对齐，否则重启后树又会静默收空）。
+
+const WORKSPACE_ROOTS_FILE: &str = "workspace-roots.json";
+
+fn workspace_roots_path() -> PathBuf {
+    let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let dir = base.join(".z-note");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).ok();
+    }
+    dir.join(WORKSPACE_ROOTS_FILE)
+}
+
+/// 读取已登记的工作区根（canonical 化后比较；文件缺失/损坏按空表处理）
+fn read_workspace_roots() -> Vec<PathBuf> {
+    let text = match fs::read_to_string(workspace_roots_path()) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    let raw: Vec<String> = serde_json::from_str(&text).unwrap_or_default();
+    raw.into_iter()
+        .map(|p| {
+            PathBuf::from(&p)
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(p))
+        })
+        .collect()
+}
+
+/// 用户显式打开文件夹时登记；登记失败不影响打开动作本身（校验时兜底逐条比对）
+#[tauri::command]
+pub fn register_workspace_root(path: String) {
+    let canonical = match Path::new(&path).canonicalize() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut roots = read_workspace_roots();
+    // 存原串还是 canonical：存 canonical（读取时也会再做一次，容忍目录改名后失效），
+    // /var 与 /private/var 这类 macOS symlink 抖动才不会造成假分裂
+    if roots.iter().any(|r| r == &canonical) {
+        return;
+    }
+    roots.push(canonical);
+    if let Ok(json) = serde_json::to_string_pretty(&roots) {
+        let _ = atomic_write_str(&workspace_roots_path(), &json);
+    }
+}
+
+/// 路径是否落在某个已登记的工作区根之内
+fn in_workspace_root(canonical: &Path) -> bool {
+    read_workspace_roots()
+        .iter()
+        .any(|r| canonical.starts_with(r))
+}
+
+/// 测试辅助：从登记清单里摘掉一条（workspace_root_allows_subtree 要先清
+/// 上次运行落盘的登记，否则第二次跑「登记前被拒」永远过不去）
+#[cfg(test)]
+pub fn unregister_workspace_root_for_test(path: &str) {
+    let canonical = match Path::new(path).canonicalize() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let roots: Vec<PathBuf> = read_workspace_roots()
+        .into_iter()
+        .filter(|r| r != &canonical)
+        .collect();
+    if let Ok(json) = serde_json::to_string_pretty(&roots) {
+        let _ = atomic_write_str(&workspace_roots_path(), &json);
+    }
+}
+
 /// 验证路径是否在允许的目录范围内（防止路径遍历攻击）
 ///
 /// 允许的目录（按优先级）：
-/// 1. 当前打开的笔记库目录（运行时由 caller 注入；这里查不到则用 home）
+/// 1. 已登记的工作区根（用户显式打开过的文件夹，整棵子树）
 /// 2. 用户主目录下允许的子目录：`Documents/`、`Desktop/`、`Downloads/`、`Notes/`
 /// 3. `~/.z-note/`（应用自身数据）
 /// 4. `/tmp/` 与本平台的临时目录（导出临时文件）
 ///
 /// 设计取舍：
-/// - 仍允许主目录主要是为了兼容"~/Documents/MyNotes" 类典型笔记库位置
-/// - 同时收紧到常见子目录；不允许 ~/.ssh、~/.aws、~/Library 等敏感区域
+/// - 白名单收紧到常见子目录 + 用户显式登记的工作区根；
+///   不允许 ~/.ssh、~/.aws、~/Library 等敏感区域
 pub(crate) fn validate_path(path: &str) -> Result<PathBuf, String> {
     let canonical = std::path::Path::new(path)
         .canonicalize()
@@ -51,6 +134,11 @@ pub(crate) fn validate_path(path: &str) -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取主目录".to_string())?;
     // canonicalize home 避免 symlink 误判
     let canonical_home = home.canonicalize().unwrap_or_else(|_| home.clone());
+
+    // 0. 已登记的工作区根（用户显式打开过的文件夹，整棵子树放行）
+    if in_workspace_root(&canonical) {
+        return Ok(canonical);
+    }
 
     // 1. 应用数据目录 ~/.z-note
     let app_data = canonical_home.join(".z-note");
@@ -125,6 +213,12 @@ pub(crate) fn validate_path_allow_nonexistent(path: &str) -> Result<PathBuf, Str
     let home = dirs::home_dir().ok_or_else(|| "无法获取主目录".to_string())?;
     let canonical_home = home.canonicalize().unwrap_or_else(|_| home.clone());
 
+    // 0. 已登记的工作区根（用户显式打开过的文件夹，整棵子树放行）
+    if in_workspace_root(&candidate_canonical) {
+        return Ok(candidate_canonical);
+    }
+
+    // 1. 应用数据目录 ~/.z-note
     let app_data = canonical_home.join(".z-note");
     if candidate_canonical.starts_with(&app_data) {
         return Ok(candidate_canonical);

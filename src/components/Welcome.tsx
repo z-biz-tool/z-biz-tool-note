@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, FolderOpen, Calendar, BookOpen, Clock, Sparkles, FileText, ArrowRight } from 'lucide-react';
+import { Plus, FolderOpen, Calendar, BookOpen, Clock, Sparkles, FileText, ArrowRight, ScanSearch } from 'lucide-react';
 import type { RecentFile } from '../types';
 import { listRecentFiles, subscribeRecentFiles } from '../lib/recentFiles';
 import { modKeys } from '../lib/modifier';
@@ -9,6 +9,7 @@ interface WelcomeProps {
   onOpenFolder: () => void;
   onCreateDaily: () => void;
   onOpenGuide: () => void;
+  onOpenAsk: () => void;
   onOpenFile: (path: string) => void;
   currentDir: string;
 }
@@ -18,7 +19,7 @@ interface WelcomeProps {
  * 最近列表只从 lib/recentFiles 读（记录点在 App），显示名也在那儿统一推导，
  * 免得侧栏叫「Welcome」、这里却叫「Welcome.md」。
  */
-export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, onOpenFile, currentDir }: WelcomeProps) => {
+export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, onOpenAsk, onOpenFile, currentDir }: WelcomeProps) => {
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>(listRecentFiles);
 
   useEffect(() => subscribeRecentFiles(() => setRecentFiles(listRecentFiles())), []);
@@ -55,6 +56,13 @@ export const Welcome = ({ onNewNote, onOpenFolder, onCreateDaily, onOpenGuide, o
               <span>今日日记</span>
               <ArrowRight size={14} />
             </button>
+            {currentDir && (
+              <button className="welcome-action" onClick={onOpenAsk}>
+                <ScanSearch size={18} />
+                <span>问你的笔记</span>
+                <span className="welcome-action-kbd">{modKeys('⇧⌘A')}</span>
+              </button>
+            )}
             <button className="welcome-action" onClick={onOpenGuide}>
               <BookOpen size={18} />
               <span>使用指南</span>

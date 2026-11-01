@@ -480,6 +480,9 @@ export const electronAPI = {
           const fs = demoFs();
           return fs.files.includes(p) || fs.dirs.includes(p);
         }
+        // 浏览器演示区没有 Rust 后端，登记是 no-op
+        case 'register-workspace-root':
+          return { success: true };
         case 'ensure-dir': {
           const fs = demoFs();
           const dir = String(args[0]);
@@ -919,6 +922,11 @@ export const electronAPI = {
         // 文件树mutations：走桥层而不是组件里裸调 invoke，浏览器模式才有同一条链路可测
         case 'file-exists':
           return await invoke<boolean>('file_exists', { path: args[0] });
+        // 登记「授权工作区根」：用户显式打开的文件夹，整棵子树随后放行。
+        // 登记失败不影响打开动作（校验时兜底逐条比对），所以吞掉异常。
+        case 'register-workspace-root':
+          try { await invoke('register_workspace_root', { path: args[0] }); } catch { /* 忽略 */ }
+          return { success: true };
         case 'rename-file': {
           await invoke('rename_file', { oldPath: args[0], newPath: args[1] });
           return { success: true };
