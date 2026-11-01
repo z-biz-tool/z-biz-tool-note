@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Folder, FileText, Search, Plus, ChevronRight, ChevronDown,
-  Home, Clock, Files, Hash, Settings, Sparkles, Calendar, X, ScanSearch
+  Home, Clock, Files, Hash, Settings, Sparkles, Calendar, X, ScanSearch, PanelLeftOpen
 } from 'lucide-react';
 import type { FileItem, Note, RecentFile, Tag } from '../types';
 import { useFileOperations } from '../hooks/useFileOperations';
@@ -74,13 +74,15 @@ interface SidebarProps {
   onOpenAsk?: () => void;
   onCreateDaily?: () => void;
   width?: number;
+  /** 折叠态(44px 小柱)里唯一的出路：点它恢复展开。没有它用户 Cmd+B 后就永远回不来了 */
+  onToggle?: () => void;
 }
 
 type TabType = 'files' | 'recent' | 'search' | 'tags';
 
 export const Sidebar = ({
   isOpen, currentDir, currentNote, onOpenFile, onNewNote, onOpenFolder, onRefresh, refreshKey, onRename, onDelete,
-  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onOpenAsk, onCreateDaily, width,
+  tags = [], onTagClick, activeTag, onOpenSettings, onOpenAI, onOpenAsk, onCreateDaily, width, onToggle,
 }: SidebarProps) => {
   const { t: tr } = useI18n();
   const { listFiles, listFilesRecursive, showOpenDialog } = useFileOperations();
@@ -708,6 +710,10 @@ export const Sidebar = ({
   if (!isOpen) {
     return (
       <div className="sidebar-collapsed">
+        {/* 展开按钮放最上面：这是折叠态里唯一能回去的入口 */}
+        <button className="toolbar-btn" onClick={onToggle} title={modKeys('展开侧边栏（Cmd+B）')}>
+          <PanelLeftOpen size={18} />
+        </button>
         <button className="toolbar-btn" onClick={handleFolderSelect} title={modKeys('打开文件夹（Cmd+Shift+O）')}>
           <Home size={18} />
         </button>

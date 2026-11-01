@@ -2054,6 +2054,7 @@ const App = () => {
         onOpenAsk={() => setShowAskPanel(true)}
         onCreateDaily={handleCreateDaily}
         width={sidebarWidth}
+        onToggle={() => setSidebarOpen(prev => !prev)}
       />
       {sidebarOpen && (
         <Resizer

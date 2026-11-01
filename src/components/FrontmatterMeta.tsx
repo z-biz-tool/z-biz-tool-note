@@ -1,7 +1,10 @@
 import { useState, type KeyboardEvent } from 'react';
-import { ChevronDown, ChevronRight, Hash, Calendar, FileText, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Hash, Calendar, FileText, X } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 import { sanitizeAlias, sanitizeTag } from '../lib/frontmatter';
+
+/** chip 超过这个数就折叠，只露前几个 + 「+N」；模板笔记几十个 tag 平铺一条根本没法看 */
+const CHIP_VISIBLE_LIMIT = 6;
 
 interface FrontmatterMetaProps {
   meta: Record<string, unknown>;
@@ -28,6 +31,7 @@ function ChipEditor({
   sanitize: (s: string) => string;
 }) {
   const [draft, setDraft] = useState('');
+  const [expandedItems, setExpandedItems] = useState(false);
   const canEdit = editable && !!onChange;
 
   const commit = () => {
@@ -39,9 +43,66 @@ function ChipEditor({
 
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-      {items.map(item => (
+      {items.slice(0, CHIP_VISIBLE_LIMIT).map(item => (
         <span
           key={item}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 2,
+            padding: '1px 6px',
+            borderRadius: 4,
+            background: 'var(--tag-bg, rgba(102,126,234,0.1))',
+            color: 'var(--tag-color, #667eea)',
+          }}
+        >
+          {item}
+          {canEdit && (
+            <button
+              type="button"
+              aria-label={removeLabel(item)}
+              title={removeLabel(item)}
+              onClick={() => onChange!(items.filter(x => x !== item))}
+              style={{
+                border: 'none',
+                background: 'none',
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              <X size={10} />
+            </button>
+          )}
+        </span>
+      ))}
+      {items.length > CHIP_VISIBLE_LIMIT && (
+        <button
+          type="button"
+          onClick={() => setExpandedItems(v => !v)}
+          title={!expandedItems ? items.slice(CHIP_VISIBLE_LIMIT).join('、') : undefined}
+          style={{
+            border: 'none',
+            background: 'none',
+            color: 'var(--tag-color, #667eea)',
+            cursor: 'pointer',
+            padding: '1px 6px',
+            fontSize: 12,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 2,
+          }}
+        >
+          +{items.length - CHIP_VISIBLE_LIMIT}
+          {expandedItems ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+        </button>
+      )}
+      {/* 展开后把剩余的补在后面；输入框保持唯一，仍在末尾 */}
+      {expandedItems && items.slice(CHIP_VISIBLE_LIMIT).map(item => (
+        <span
+          key={`extra-${item}`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',

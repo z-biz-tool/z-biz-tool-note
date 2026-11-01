@@ -146,6 +146,8 @@ export const Editor = ({
   }, []);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
   const noteIdRef = useRef<string>('');
+  // 当前已灌入编辑器的原始 markdown 基准（不是往返后的形态，理由见内容同步 effect）
+  const loadedContentRef = useRef<string>('');
   // 编辑器状态 LRU 缓存：上限 30（多标签用户）
   // Map 保持插入顺序；超出时淘汰最早插入的 key（FIFO，等同 LRU 近似）
   // 真实 LRU 需记录访问时间，鉴于切换频次不高，FIFO 已足够
@@ -321,9 +323,17 @@ export const Editor = ({
       }
       noteIdRef.current = currentFilePath;
       docReplaced = true;
-    } else if (content !== editor.getMarkdown()) {
-      // 同一笔记内容外部更新（罕见）：同上，程序性替换不应产生脏标记/自动保存
+      // 记住"我们灌进去的原文"：getMarkdown() 是往返后的形态，大文档（几百 KB）
+      // 往返必有出入，拿它当基准会让下面的比较**永远为真**——任何无关 state
+      // 变化（点个标签、开关个面板）都会整篇 setContent 重灌，大文档同步重解析
+      // 就是秒级卡死 + 闪白（"点标签右边白屏"的根因）。基准必须是原始 prop。
+      loadedContentRef.current = content;
+    } else if (content !== loadedContentRef.current) {
+      // 同一笔记内容外部更新（罕见）：同上，程序性替换不应产生脏标记/自动保存。
+      // 编辑器内部的改动走 onUpdate→onChange→content 回来时值等于 loadedContentRef，
+      // 不会进这个分支；只有真正来自外部（搜索替换、AI 改写、frontmatter 写回）才重灌。
       editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false });
+      loadedContentRef.current = content;
       docReplaced = true;
     }
 
