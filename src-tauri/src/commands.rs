@@ -380,6 +380,22 @@ pub(crate) const INDEX_EXCLUDED_DIRS: &[&str] = &[
     ".work",
 ];
 
+/// 索引单文件体积上限：超过这个大小就只登记路径与标题，不读正文。
+///
+/// Why: 用户工作区里有 7MB 的长篇拆解稿（`龙象传说_深度拆解.md` 4.2MB、
+/// `邪性总裁_深度拆解.md` 7MB）。全文读进来 + 跑一遍 extract_tags/extract_links
+/// 就要几百毫秒到数秒，一次索引里这类文件有几十个，足以把 UI 卡死几十秒。
+/// 代价是这类大文件不进标签/链接索引 —— 可以接受：它们是「素材/拆解稿」，
+/// 正文级的知识图谱本来也不需要它们。
+pub(crate) const MAX_INDEXED_FILE_BYTES: u64 = 512 * 1024;
+
+/// 索引总文件数上限：超出后停止递归（已扫到的照常返回）。
+///
+/// Why: 兜底「目录本身就是整个代码仓库/用户主目录」的场景。即便排除了
+/// node_modules，~/workplace 这种根目录仍有上万篇笔记；再加一层硬上限，
+/// 保证最坏情况下 UI 不会无限期空转。
+pub(crate) const MAX_INDEXED_NOTES: usize = 20_000;
+
 /// 这个目录要不要被排除（索引扫描、文件树列举、旧版全文搜索三处共用）。
 ///
 /// 只看**目录名**，不看整条路径 —— 判据是「这个目录本身是工具产物」，
@@ -1177,24 +1193,69 @@ fn search_in_files_recursive(
 #[tauri::command]
 pub async fn read_all_notes(dir: String) -> Result<Vec<NoteSummary>, String> {
     validate_path(&dir)?;
-    let mut results: Vec<NoteSummary> = Vec::new();
-    read_all_notes_recursive(&PathBuf::from(&dir), &mut results)?;
-    Ok(results)
+    // 整棵树的扫描 + 逐篇 extract_tags/extract_links 是**重活**（工作区根目录
+    // 实测 62 秒 / 10169 篇）。async fn 但函数体是同步 IO 时，Tauri 会在
+    // 主线程上跑它 ⇒ UI 直接冻住（"点标签右边白屏"的另一半原因）。
+    // 丢进 spawn_blocking 让它去阻塞线程池，主线程只等结果。
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results: Vec<NoteSummary> = Vec::new();
+        read_all_notes_recursive(&PathBuf::from(&dir), &mut results)?;
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("索引任务失败: {}", e))?
 }
 
 /// 递归读取笔记摘要的内部实现
 fn read_all_notes_recursive(dir: &PathBuf, results: &mut Vec<NoteSummary>) -> Result<(), String> {
+    // 硬上限：扫够 MAX_INDEXED_NOTES 篇就停。已扫到的照常返回（部分索引也远比没有强），
+    // 但绝不让一次索引无限期跑下去把 UI 卡死。
+    if results.len() >= MAX_INDEXED_NOTES {
+        return Ok(());
+    }
     let read_dir = fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))?;
 
     for entry in read_dir.flatten() {
+        if results.len() >= MAX_INDEXED_NOTES {
+            return Ok(());
+        }
         let path = entry.path();
 
         if path.is_dir() {
+            // 工具产物目录（.git / node_modules / .worktrees / target / dist …）不进索引。
+            // 这条漏掉过一次：用户把工作区根目录（~/workplace）当笔记库打开时，
+            // 一次索引把 node_modules 里的 readme 也读进来 —— 实测 10169 篇、
+            // 扫 59693 个目录要 62 秒，而正文级的知识图谱根本不需要它们。
+            // 与 search_in_files_recursive / list_dir_single 同一份判据（INDEX_EXCLUDED_DIRS）。
+            if is_excluded_dir(&path) {
+                continue;
+            }
             read_all_notes_recursive(&path, results)?;
             continue;
         }
 
         if !is_markdown_path(&path) {
+            continue;
+        }
+
+        // 超大文件不读正文：单文件 7MB（长篇拆解稿）光读进来就要几百毫秒，
+        // 再跑一遍 extract_tags/extract_links 更慢，会把整次索引拖成分钟级。
+        // 判据必须在**读之前**看 metadata —— 先读再判等于没判（那正是要避免的开销）。
+        // 标题用文件名的 stem 兜底，标签/链接宁可漏也不要卡住 UI。
+        let oversized = entry
+            .metadata()
+            .map(|m| m.len() > MAX_INDEXED_FILE_BYTES)
+            .unwrap_or(false);
+        if oversized {
+            results.push(NoteSummary {
+                file_path: path.to_string_lossy().to_string(),
+                title: path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                tags: Vec::new(),
+                links: Vec::new(),
+            });
             continue;
         }
 
@@ -1226,9 +1287,14 @@ pub async fn find_backlinks(
     if !note_path.is_empty() {
         validate_path(&note_path)?;
     }
-    let mut results: Vec<BacklinkEntry> = Vec::new();
-    find_backlinks_recursive(&PathBuf::from(&dir), &note_title, &note_path, &mut results)?;
-    Ok(results)
+    // 同 read_all_notes：整树扫描是重活，别占着主线程。
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results: Vec<BacklinkEntry> = Vec::new();
+        find_backlinks_recursive(&PathBuf::from(&dir), &note_title, &note_path, &mut results)?;
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("反链搜索失败: {}", e))?
 }
 
 /// 递归查找反向链接的内部实现
@@ -1244,6 +1310,11 @@ fn find_backlinks_recursive(
         let path = entry.path();
 
         if path.is_dir() {
+            // 同 read_all_notes_recursive：工具产物目录不进反链搜索。
+            // 漏掉这条时，在工作区根目录上找反链要扫 6 万个目录。
+            if is_excluded_dir(&path) {
+                continue;
+            }
             find_backlinks_recursive(&path, note_title, note_path, results)?;
             continue;
         }
@@ -1998,6 +2069,143 @@ mod excluded_dir_tests {
         let paths: Vec<String> = out.iter().cloned().collect();
         assert_eq!(paths.len(), 1, "只应收主库那篇，实际收了：{paths:?}");
         assert!(paths[0].contains("main"), "收下的应是主库笔记：{paths:?}");
+
+        fs::remove_dir_all(&root).ok();
+    }
+}
+
+#[cfg(test)]
+mod read_all_notes_tests {
+    use super::{read_all_notes_recursive, MAX_INDEXED_FILE_BYTES};
+    use crate::atomic_write::atomic_write_str;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "zennote-ran-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&p).expect("建临时目录");
+        p
+    }
+
+    fn write_md(dir: &Path, rel: &str, body: &str) {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("建父目录");
+        }
+        atomic_write_str(&path, body).expect("写 md");
+    }
+
+    /// 正例：工具产物目录里的 md **不进**索引。
+    ///
+    /// 这条是本次真 bug 的判据：`read_all_notes_recursive` 曾漏掉
+    /// `is_excluded_dir`，用户把工作区根目录当笔记库打开时，
+    /// 一次索引把 node_modules 的 readme 全读进来（实测 10169 篇 / 62 秒）。
+    /// 撤掉排除判断 ⇒ 这条测试必须精确变红。
+    #[test]
+    fn tool_dirs_are_skipped() {
+        let root = temp_dir("excl");
+        write_md(&root, "notes/真笔记.md", "# 真笔记\n\n正文 #标签\n");
+        write_md(&root, "node_modules/pkg/readme.md", "# 依赖说明\n");
+        write_md(&root, ".git/some.md", "# git 内部\n");
+        write_md(&root, "target/out.md", "# 构建产物\n");
+        write_md(&root, ".worktrees/fork/x.md", "# worktree 副本\n");
+
+        let mut out = Vec::new();
+        read_all_notes_recursive(&root, &mut out).expect("递归读取");
+
+        let paths: Vec<String> = out.iter().map(|n| n.file_path.clone()).collect();
+        assert_eq!(
+            paths.len(),
+            1,
+            "只应收 notes/ 真笔记，实际收了 {paths:?}（工具产物目录没被排除）"
+        );
+        assert!(paths[0].contains("真笔记"), "收下的应是真笔记：{paths:?}");
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// 阴性对照：正常目录（名字里含排除词的一部分）**不能**被误伤。
+    #[test]
+    fn normal_dirs_are_kept() {
+        let root = temp_dir("keep");
+        write_md(&root, "my-notes/笔记.md", "# 笔记\n");
+        write_md(&root, "work/工作.md", "# 工作\n");
+        write_md(&root, "images-of-mom/照片.md", "# 照片\n");
+
+        let mut out = Vec::new();
+        read_all_notes_recursive(&root, &mut out).expect("递归读取");
+        assert_eq!(out.len(), 3, "正常目录应全部收录，实际 {} 篇", out.len());
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// 超大文件：登记路径与标题，但**不读正文**。
+    ///
+    /// 用户工作区里有 7MB 的长篇拆解稿，全读进来 + extract_tags/extract_links
+    /// 一次索引就多花几十秒。
+    ///
+    /// 判据要能区分「读了正文」和「没读正文」：正文首行放一个独特的 H1，
+    /// 文件名 stem 另取一个。读了正文 ⇒ title 是 H1；没读 ⇒ title 是文件名 stem。
+    /// （早期版本用「标签为空」当判据，而大文件正文里本来就没标签 ⇒ 撤掉修复
+    /// 测试照样绿 —— 判据没有牙齿。）
+    #[test]
+    fn oversized_file_is_registered_without_body() {
+        let root = temp_dir("big");
+        // 造一个**确实超过**上限的文件：中文一字 3 字节，
+        // 按字节数算 repetitions，别用字符数估算（估小了这条测试就是假阳性）。
+        let big = format!(
+            "# 正文里的标题标记\n\n{}\n",
+            "很长的正文内容。".repeat((MAX_INDEXED_FILE_BYTES as usize / 24) + 128)
+        );
+        assert!(
+            big.len() as u64 > MAX_INDEXED_FILE_BYTES,
+            "造出来的文件必须真的超过上限（{} vs {}）",
+            big.len(),
+            MAX_INDEXED_FILE_BYTES
+        );
+        write_md(&root, "big.md", &big);
+        write_md(&root, "small.md", "# 小文件\n\n正文 #标签\n");
+
+        let mut out = Vec::new();
+        read_all_notes_recursive(&root, &mut out).expect("递归读取");
+
+        let big_entry = out
+            .iter()
+            .find(|n| n.file_path.ends_with("big.md"))
+            .expect("大文件仍应被登记（只是不读正文）");
+        assert_eq!(
+            big_entry.title, "big",
+            "超限文件不该读正文（title 应回落到文件名 stem，而不是正文 H1）"
+        );
+        assert!(
+            big_entry.tags.is_empty(),
+            "大文件不该提取标签（那要求读正文）：{:?}",
+            big_entry.tags
+        );
+        // 小文件照常读正文：title 取自 H1、标签照常提取
+        // —— 证明上限不是把索引整体掐掉
+        let small = out
+            .iter()
+            .find(|n| n.file_path.ends_with("small.md"))
+            .expect("小文件应被收录");
+        assert_eq!(
+            small.title, "小文件",
+            "小文件应正常读正文取标题"
+        );
+        assert_eq!(
+            small.tags,
+            vec!["标签".to_string()],
+            "小文件的标签不该受影响"
+        );
 
         fs::remove_dir_all(&root).ok();
     }

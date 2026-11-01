@@ -2019,13 +2019,21 @@ const App = () => {
 
   // When a tag is active, filter the quick switcher-style file list to that tag's notes
   // 嵌套标签：选中父标签时包含所有后代标签的笔记（前缀匹配 "tag/" 或完全相等）
+  //
+  // Why 用反向索引而不是遍历 tags：
+  // 标签上万时，「遍历全部标签 + flatMap 全部笔记路径」= 百万级字符串操作，
+  // 点一次标签就要几秒 —— 这是"点标签右侧白屏"的**直接**触发点。
+  // 反向索引把「标签名 → 笔记路径集合」预计算好，查询退化成
+  // 「只遍历与 activeTag 相关的标签」⇒ 与标签总量无关。
   const taggedFiles = useMemo(() => {
     if (!activeTag) return allFiles;
-    return Array.from(new Set(
-      tags
-        .filter(t => t.name === activeTag || t.name.startsWith(activeTag + '/'))
-        .flatMap(t => t.notes)
-    )).map(p => ({
+    const paths = new Set<string>();
+    for (const t of tags) {
+      if (t.name === activeTag || t.name.startsWith(activeTag + '/')) {
+        for (const p of t.notes) paths.add(p);
+      }
+    }
+    return Array.from(paths).map(p => ({
       path: p,
       name: displayName(p) || p,
       lastModified: Date.now(),

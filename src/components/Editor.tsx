@@ -146,8 +146,11 @@ export const Editor = ({
   }, []);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
   const noteIdRef = useRef<string>('');
-  // 当前已灌入编辑器的原始 markdown 基准（不是往返后的形态，理由见内容同步 effect）
-  const loadedContentRef = useRef<string>('');
+  // 编辑器当前「往返态」的内容指纹：onUpdate 时记下 App 侧收到的 markdown。
+  // 外部更新检测靠它比对——**不能**用 editor.getMarkdown() 当基准（650KB 文档
+  // 序列化本身就是卡顿源），也不能用 App 传进来的原始 source（编辑器回传的是
+  // 往返形态，两者永不相等 ⇒ 每敲一个字都会被误判成"外部更新"而整篇重灌）。
+  const lastSyncedRef = useRef<string>('');
   // 编辑器状态 LRU 缓存：上限 30（多标签用户）
   // Map 保持插入顺序；超出时淘汰最早插入的 key（FIFO，等同 LRU 近似）
   // 真实 LRU 需记录访问时间，鉴于切换频次不高，FIFO 已足够
@@ -267,6 +270,9 @@ export const Editor = ({
     content,
     onUpdate: ({ editor }) => {
       const markdown = editor.getMarkdown();
+      // 记下 App 侧已经收到的往返态：之后 App 把同一个值传回来时，
+      // 不该被当成"外部更新"再灌一遍。
+      lastSyncedRef.current = markdown;
       onChange(markdown);
       // 防抖更新统计信息和标题列表
       if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
@@ -323,19 +329,21 @@ export const Editor = ({
       }
       noteIdRef.current = currentFilePath;
       docReplaced = true;
-      // 记住"我们灌进去的原文"：getMarkdown() 是往返后的形态，大文档（几百 KB）
-      // 往返必有出入，拿它当基准会让下面的比较**永远为真**——任何无关 state
-      // 变化（点个标签、开关个面板）都会整篇 setContent 重灌，大文档同步重解析
-      // 就是秒级卡死 + 闪白（"点标签右边白屏"的根因）。基准必须是原始 prop。
-      loadedContentRef.current = content;
-    } else if (content !== loadedContentRef.current) {
-      // 同一笔记内容外部更新（罕见）：同上，程序性替换不应产生脏标记/自动保存。
-      // 编辑器内部的改动走 onUpdate→onChange→content 回来时值等于 loadedContentRef，
-      // 不会进这个分支；只有真正来自外部（搜索替换、AI 改写、frontmatter 写回）才重灌。
+    } else if (content !== lastSyncedRef.current && content !== editor.getMarkdown()) {
+      // 同一笔记内容**真的**被外部改了（搜索替换、AI 改写、frontmatter 写回）。
+      //
+      // 判据必须两头都在：
+      //  · content !== lastSyncedRef —— App 侧收到过的往返态跟现在传进来的不一样；
+      //  · content !== editor.getMarkdown() —— 编辑器里现在就是这个内容（往返后），
+      //    说明只是格式归一化的差异，不是真改动。
+      // 只看第二个会有个致命问题：getMarkdown() 对 650KB 文档要跑一次完整序列化，
+      // 每次重渲染都做一遍 = 白屏的真正来源（同步序列化 + 同步解析，比对本身不便宜）。
+      // 所以第一个条件不成立时**根本不调用 getMarkdown()**（短路），大文档不受影响。
       editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false });
-      loadedContentRef.current = content;
       docReplaced = true;
     }
+    // 灌完之后同步基准 = App 侧当前的往返态
+    if (docReplaced) lastSyncedRef.current = content;
 
     // 字数/大纲/双链都只在 onUpdate 里刷新，而上面刻意不发 onUpdate 事件，
     // 于是打开或切换笔记后状态栏仍是上一篇的数字、大纲是空的，要敲一个字才归位。

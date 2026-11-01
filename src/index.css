@@ -2120,6 +2120,70 @@ body {
   white-space: nowrap;
 }
 
+/* 标签过滤框：标签上万时唯一的「够得着后面那些标签」的路 */
+.tag-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 2px 8px 6px;
+}
+.tag-filter-icon {
+  position: absolute;
+  left: 7px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.tag-filter-input {
+  width: 100%;
+  padding: 4px 22px 4px 24px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  outline: none;
+}
+.tag-filter-input:focus {
+  border-color: var(--accent-color);
+}
+.tag-filter-clear {
+  position: absolute;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+.tag-filter-clear:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* 「显示全部」：渲染预算用尽时的出口 */
+.tag-more-btn {
+  margin: 6px 8px;
+  padding: 5px 8px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+}
+.tag-more-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
 /* ===== Feature 4: Breadcrumb navigation ===== */
 .breadcrumb-bar {
   display: flex;
