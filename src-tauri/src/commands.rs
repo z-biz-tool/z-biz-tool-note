@@ -353,6 +353,44 @@ fn id_from_filename(filename: &str) -> String {
     filename.trim_end_matches(".md").to_string()
 }
 
+/// 扫描时要跳过的目录名（**单一事实来源**）。
+///
+/// 为什么单独成一份常量：note 与 OPC 的 z-kb 会指向同一批文件夹，两边各写一份
+/// 排除规则必然漂移 —— 一份漏了 `.worktrees`，索引就会翻倍。所以这里是**可导出的
+/// 单一清单**，跨仓对齐时以本表为准。
+///
+/// 内容分三类：
+/// - 版本控制与依赖：`.git` / `node_modules` / `target` / `dist`
+/// - 本应用自身产物：`.z-note` / `images` / `.trash`
+/// - **工具链副本目录**：`.worktrees` / `.work` —— 这是重复索引的真正病根。
+///   git worktree 与临时工作副本里的笔记，与主库同内容各存一份；
+///   2026-10-31 实测：一次索引 22082 篇里有 7269 篇（21 万片段）是 worktree 副本。
+///
+/// 注意：watcher 侧靠「跳过点开头目录」天然覆盖了这些（见 `watcher.rs`），
+/// 但 watcher 跳的是**所有**点开头目录，这里是更精确的白名单 —— 两者口径不同是有意的。
+pub(crate) const INDEX_EXCLUDED_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    ".z-note",
+    "images",
+    ".trash",
+    ".worktrees",
+    ".work",
+];
+
+/// 这个目录要不要被排除（索引扫描、文件树列举、旧版全文搜索三处共用）。
+///
+/// 只看**目录名**，不看整条路径 —— 判据是「这个目录本身是工具产物」，
+/// 而不是「路径里出现过某个字符串」。后者会把用户自己建的 `notes/work/`
+/// 之类的正常目录也误伤。
+pub(crate) fn is_excluded_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| INDEX_EXCLUDED_DIRS.contains(&name))
+}
+
 /// 这篇文件算不算 markdown 笔记。
 ///
 /// 口径跟前端 `fileTypes.isMarkdownPath` 对齐（那里 kindOf 查表得到 'markdown'，
@@ -1021,6 +1059,11 @@ fn list_dir_single(dir: &PathBuf) -> Result<Vec<FileEntry>, String> {
 
         // 只显示目录和常见文件类型
         let is_dir = metadata.is_dir();
+        // 工具产物目录（.git / node_modules / .worktrees …）不进文件树：
+        // 与索引侧同一份清单，用户看到的树与被检索的语料保持一致。
+        if is_dir && is_excluded_dir(&path) {
+            continue;
+        }
         let is_file = !is_dir;
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if !is_dir
@@ -1089,6 +1132,9 @@ fn search_in_files_recursive(
         let path = entry.path();
 
         if path.is_dir() {
+            if is_excluded_dir(&path) {
+                continue;
+            }
             search_in_files_recursive(&path, query_lower, results)?;
             continue;
         }
@@ -1827,12 +1873,8 @@ fn scan_md_recursive(
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            // 跳过常见排除目录
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(
-                name,
-                ".git" | "node_modules" | ".z-note" | "images" | ".trash"
-            ) {
+            // 跳过排除目录（单一清单见 INDEX_EXCLUDED_DIRS）
+            if is_excluded_dir(&path) {
                 continue;
             }
             scan_md_recursive(&path, out)?;
@@ -1867,6 +1909,98 @@ pub async fn start_watch(
 pub async fn stop_watch(watcher: State<'_, WatcherState>) -> Result<(), String> {
     watcher.unwatch();
     Ok(())
+}
+
+#[cfg(test)]
+mod excluded_dir_tests {
+    use super::{is_excluded_dir, scan_md_recursive};
+    use crate::atomic_write::atomic_write_str;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "zennote-excl-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&p).expect("建临时目录");
+        p
+    }
+
+    fn write_md(dir: &Path, rel: &str) {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("建父目录");
+        }
+        // 走原子写：全仓有「写入点不许裸 fs::write」的门禁（atomic_write.rs），
+        // 测试代码同样受它管。
+        atomic_write_str(&path, "# 标题\n\n正文内容。\n").expect("写 md");
+    }
+
+    /// 阴性对照：清单不能是空的，也不能包含会把正常目录误伤的条目。
+    ///
+    /// 这条是防「判据被削成永真」的那道闸 —— 如果 `INDEX_EXCLUDED_DIRS` 变成空数组，
+    /// `all()` 在空集合上恒真，测试会安静地通过，而功能已经失效。
+    #[test]
+    fn excluded_list_is_not_empty_and_has_no_wildcard() {
+        let list = super::INDEX_EXCLUDED_DIRS;
+        assert!(!list.is_empty(), "排除清单不能为空，否则功能静默失效");
+        assert!(
+            list.iter().all(|n| !n.is_empty() && !n.contains('*')),
+            "排除项要写具体目录名，不能用通配符：{list:?}"
+        );
+        assert!(
+            list.iter().all(|n| !n.contains('/')),
+            "排除项只能是目录名，不能含路径分隔符：{list:?}"
+        );
+    }
+
+    /// 反例：正常目录**不能**被排除（否则用户的 `work/` `dist/` 笔记会消失）
+    #[test]
+    fn normal_dirs_are_not_excluded() {
+        for name in ["notes", "work", "dist-notes", "my-work", "images-of-mom"] {
+            assert!(
+                !is_excluded_dir(&PathBuf::from("/x").join(name)),
+                "{name} 不该被排除"
+            );
+        }
+    }
+
+    /// 正例：工具产物目录要被排除
+    #[test]
+    fn tool_dirs_are_excluded() {
+        for name in [".git", "node_modules", ".worktrees", ".work", "target"] {
+            assert!(
+                is_excluded_dir(&PathBuf::from("/x").join(name)),
+                "{name} 该被排除"
+            );
+        }
+    }
+
+    /// 端到端：扫描时不进 worktree 副本，但主库笔记照常收
+    #[test]
+    fn scan_skips_worktree_copies_but_keeps_main_notes() {
+        let root = temp_dir("scan");
+        write_md(&root, "main/部署.md");
+        write_md(&root, ".worktrees/fork-abc/部署.md"); // 副本，应被跳过
+        write_md(&root, ".work/digest/部署.md"); // 副本，应被跳过
+        write_md(&root, "node_modules/pkg/readme.md"); // 依赖，应被跳过
+
+        let mut out = std::collections::HashSet::new();
+        scan_md_recursive(&root, &mut out).expect("扫描目录");
+
+        let paths: Vec<String> = out.iter().cloned().collect();
+        assert_eq!(paths.len(), 1, "只应收主库那篇，实际收了：{paths:?}");
+        assert!(paths[0].contains("main"), "收下的应是主库笔记：{paths:?}");
+
+        fs::remove_dir_all(&root).ok();
+    }
 }
 
 #[cfg(test)]
