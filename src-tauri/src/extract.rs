@@ -75,6 +75,13 @@ pub fn extract_title(content: &str) -> String {
 /// 口径跟前端 `lib/frontmatter.ts` 的 extractTagsSmart 一致（编辑器里的 FrontmatterMeta
 /// 面板显示的就是那套）。原先这里只认 `#tag`，于是写了 `tags: [reading, work]` 的笔记
 /// 在编辑器面板里有标签、侧栏「标签」列表和图谱里却一个都没有。
+///
+/// 2026-11-01 收紧正文 `#tag` 的判定（此前标签面板被代码碎片淹没）：
+/// - 代码围栏（``` / ~~~）内的 `#` 一律不算 —— 技术笔记里色号 `#0000ff`、
+///   shell 注释 `#0`、`#include` 全在围栏里，以前全被当成标签收进库；
+/// - `#` 后第一个字符必须是字母 / 汉字 / 下划线（Obsidian 同款）——
+///   `#0`、`#0000ff`、`#0（main` 这类纯数字/标点开头的一律排除；
+/// - 行首标题（`# 标题`，# 后有空格）不算标签。
 /// 结果排序：HashSet 的迭代顺序每次运行都不一样，侧栏标签会来回跳，所以固定排一次序。
 pub fn extract_tags(content: &str) -> Vec<String> {
     let (block, body) = split_frontmatter(content).unwrap_or(("", content));
@@ -83,18 +90,49 @@ pub fn extract_tags(content: &str) -> Vec<String> {
         return from_front;
     }
     let mut tags = std::collections::HashSet::new();
+    let mut fence_open: Option<String> = None; // 开栏标记（``` 或 ~~~，等长闭合才算关）
     for line in body.lines() {
-        for word in line.split_whitespace() {
-            if word.starts_with('#') && word.len() > 1 {
-                let tag = word
-                    .trim_start_matches('#')
-                    .trim_matches(|c: char| {
-                        !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c)
-                    })
-                    .to_string();
-                if !tag.is_empty() && tag.chars().count() < 20 {
-                    tags.insert(tag);
+        let trimmed = line.trim_start();
+        let marker: String = trimmed
+            .chars()
+            .take_while(|c| *c == '`' || *c == '~')
+            .collect();
+        match &fence_open {
+            Some(open) => {
+                // 栏内：只认等长同标记、后面没有别的内容的行作闭合
+                if marker == *open && trimmed[marker.len()..].trim().is_empty() {
+                    fence_open = None;
                 }
+                continue; // 栏内其余行一律不做标签提取
+            }
+            None => {
+                if !marker.is_empty() {
+                    fence_open = Some(marker);
+                    continue;
+                }
+            }
+        }
+        for word in line.split_whitespace() {
+            if !word.starts_with('#') || word.len() < 2 {
+                continue;
+            }
+            let rest = &word[1..];
+            // 标题前缀（# 后有空格）与纯数字/标点开头（色号、代码注释）都不算
+            let first = rest.chars().next().unwrap_or(' ');
+            if first.is_whitespace()
+                || !(first.is_alphabetic()
+                    || ('\u{4e00}'..='\u{9fff}').contains(&first)
+                    || first == '_')
+            {
+                continue;
+            }
+            let tag = rest
+                .trim_matches(|c: char| {
+                    !c.is_alphanumeric() && !('\u{4e00}'..='\u{9fff}').contains(&c) && c != '_'
+                })
+                .to_string();
+            if !tag.is_empty() && tag.chars().count() < 20 {
+                tags.insert(tag);
             }
         }
     }

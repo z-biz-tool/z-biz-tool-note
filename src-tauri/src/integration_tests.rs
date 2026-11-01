@@ -569,3 +569,73 @@ async fn markdown_notes_cover_both_extensions() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// 正文 #tag 收紧规则（2026-11-01）真值表。
+/// 修复前标签面板被代码碎片淹没：色号 #0000ff、shell 注释 #0、#include、
+/// `000;\n` 这类代码碎块全被当成标签。规则：
+/// ① 代码围栏内的 # 一律不算；② # 后首字符必须是字母/汉字/下划线；③ # 后带空格是标题。
+#[test]
+fn inline_tags_reject_code_fragments() {
+    use crate::extract::extract_tags;
+
+    // ① 代码围栏里的色号/注释不是标签
+    let fenced = "正文有 #真标签。\n\n```css\n.color { fill: #0000ff; stroke: #000080 }\n```\n\n```bash\n#0 这是注释\n#include <stdio.h>\n```\n";
+    let tags = extract_tags(fenced);
+    assert!(
+        tags.contains(&"真标签".to_string()),
+        "栏外的 #真标签 应提取，实际 {:?}",
+        tags
+    );
+    assert!(
+        !tags.iter().any(|t| t.starts_with('0')),
+        "色号不得成为标签: {:?}",
+        tags
+    );
+    assert!(
+        !tags.contains(&"include".to_string()),
+        "栏内 #include 不得成为标签"
+    );
+
+    // ② 纯数字开头（色号、编号）一律排除，哪怕不在栏里
+    let bare = "跑起来是 #0 和 #0000ff 与 #164 而已，正标签 #架构\n";
+    let tags = extract_tags(bare);
+    assert_eq!(
+        tags,
+        vec!["架构".to_string()],
+        "纯数字开头应排除: {:?}",
+        tags
+    );
+
+    // ③ 行首标题不算标签
+    let heading = "# 标题行\n\n## 二级\n\n#行内标签\n";
+    let tags = extract_tags(heading);
+    assert_eq!(
+        tags,
+        vec!["行内标签".to_string()],
+        "标题不得成为标签: {:?}",
+        tags
+    );
+
+    // ④ 合法形态照常：字母、汉字、下划线开头，尾部标点被剥
+    let ok = "#work #中文标签 #_private #tail, 结尾标点要剥掉\n";
+    let tags = extract_tags(ok);
+    assert!(tags.contains(&"work".to_string()));
+    assert!(tags.contains(&"中文标签".to_string()));
+    assert!(tags.contains(&"_private".to_string()));
+    assert!(tags.contains(&"tail".to_string()), "尾标点应剥: {:?}", tags);
+    assert!(
+        !tags.iter().any(|t| t.ends_with(',')),
+        "不得残留尾标点: {:?}",
+        tags
+    );
+
+    // ⑤ frontmatter 优先级不受影响
+    let front = "---\ntags: [reading]\n---\n\n#0000ff 在正文里也不算\n";
+    let tags = extract_tags(front);
+    assert_eq!(
+        tags,
+        vec!["reading".to_string()],
+        "frontmatter 优先: {:?}",
+        tags
+    );
+}

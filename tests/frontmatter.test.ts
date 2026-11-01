@@ -399,8 +399,22 @@ test("ATX 标题行 `# Heading` 不算标签（井号后有空格）", () => {
 });
 
 test("多个井号会被剥掉；只剩标点的词直接丢弃", () => {
-  assert.deepEqual(extractTagsSmart("##x\n#"), ["x"]);
+  // 2026-11-01 收紧：##x 的 # 后还是 #，不再是「剥多个井号」，
+  // 与色号/代码注释同判为排除（真标签不会以 # 开头）
+  assert.deepEqual(extractTagsSmart("##x\n#"), []);
   assert.deepEqual(extractTagsSmart("# ---"), []);
+});
+
+test("2026-11-01 收紧：纯数字开头（色号/编号）不是标签；代码围栏内的 # 不算", () => {
+  // 色号、编号、代码注释——纯数字开头一律排除
+  assert.deepEqual(extractTagsSmart("#0 #0000ff #164 #架构"), ["架构"]);
+  // 代码围栏内的 # 一律不算（css 色号、shell 注释、#include）
+  assert.deepEqual(
+    extractTagsSmart("```css\na { color: #0000ff }\n```\n```bash\n#0\n#include <x>\n```\n#真标签"),
+    ["真标签"],
+  );
+  // 行首标题（# 后带空格）不算
+  assert.deepEqual(extractTagsSmart("# 标题\n#行内"), ["行内"]);
 });
 
 test("正文标签跨行去重", () => {
