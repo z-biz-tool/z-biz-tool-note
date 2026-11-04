@@ -57,6 +57,7 @@ import { parseFrontmatter, setFrontmatterAliases, setFrontmatterTags, stripFront
 import { normalizeEmptyTaskItems } from './lib/markdownWrite';
 import { decideExternalChange, selfWriteOf } from './lib/selfWrites';
 import { useKeyboard } from './hooks/useKeyboard';
+import { useWindowWidth, sidebarMaxWidth } from './hooks/useWindowSize';
 import type { KeyboardShortcut } from './lib/keyboardShortcuts';
 import { createAppShortcuts } from './lib/appShortcuts';
 import { FrontmatterMeta } from './components/FrontmatterMeta';
@@ -243,11 +244,11 @@ const App = () => {
   // Resizable side panels (persisted in localStorage)
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
-    return Number.isFinite(v) && v >= 160 && v <= 600 ? v : 280;
+    return Number.isFinite(v) && v >= 160 && v <= 900 ? v : 280;
   });
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
     const v = parseInt(localStorage.getItem('rightPanelWidth') || '', 10);
-    return Number.isFinite(v) && v >= 200 && v <= 600 ? v : 300;
+    return Number.isFinite(v) && v >= 200 && v <= 900 ? v : 300;
   });
   // 右侧面板"窄/宽"两种展示形态（类似语雀）：
   //   窄 = 当前固定宽度（300px），可拖拽 Resizer 微调
@@ -258,6 +259,25 @@ const App = () => {
     return v === null ? true : v === '1';
   });
   const RIGHT_PANEL_NARROW = 300;
+
+  // 侧边栏宽度上限跟着窗口走（2026-11-04 修）：
+  // 原先 max 写死 480px，而窗口默认只有 900px —— 480 已接近「最多占一半」，
+  // 用户往右拖想看深层目录时怎么拖都顶到天花板，看起来就像"拖不动"。
+  // 现在上限 = 窗口宽 70%（封顶 900），窗口越大能拖得越宽。
+  const windowWidth = useWindowWidth();
+  const sidebarMax = useMemo(() => sidebarMaxWidth(windowWidth), [windowWidth]);
+  // 右侧面板同理：上限跟着窗口走，不再写死 520/600/640
+  const rightPanelMax = useMemo(
+    () => Math.max(320, Math.min(900, Math.round(windowWidth * 0.7))),
+    [windowWidth]
+  );
+  // 已经拖到过旧上限（480）的话，窗口变宽后自动放开 —— 否则上限提高了但宽度还卡在 480
+  useEffect(() => {
+    if (sidebarWidth > sidebarMax) {
+      setSidebarWidth(sidebarMax);
+      localStorage.setItem('sidebarWidth', String(sidebarMax));
+    }
+  }, [sidebarMax]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editorRef = useRef<any>(null);
   const editorRefSplit = useRef<any>(null);
@@ -2069,7 +2089,7 @@ const App = () => {
           side="left"
           size={sidebarWidth}
           min={180}
-          max={480}
+          max={sidebarMax}
           onResize={(w) => {
             setSidebarWidth(w);
             localStorage.setItem('sidebarWidth', String(w));
@@ -2213,7 +2233,7 @@ const App = () => {
               side="right"
               size={rightPanelWidth}
               min={200}
-              max={520}
+              max={rightPanelMax}
               onResize={(w) => {
                 setRightPanelWidth(w);
                 localStorage.setItem('rightPanelWidth', String(w));
@@ -2259,7 +2279,7 @@ const App = () => {
               side="right"
               size={rightPanelWidth}
               min={200}
-              max={520}
+              max={rightPanelMax}
               onResize={(w) => {
                 setRightPanelWidth(w);
                 localStorage.setItem('rightPanelWidth', String(w));
@@ -2317,7 +2337,7 @@ const App = () => {
               side="right"
               size={rightPanelWidth}
               min={280}
-              max={600}
+              max={rightPanelMax}
               onResize={(w) => {
                 setRightPanelWidth(w);
                 localStorage.setItem('rightPanelWidth', String(w));
@@ -2359,7 +2379,7 @@ const App = () => {
               side="right"
               size={rightPanelWidth}
               min={300}
-              max={640}
+              max={rightPanelMax}
               onResize={(w) => {
                 setRightPanelWidth(w);
                 localStorage.setItem('rightPanelWidth', String(w));
@@ -2400,7 +2420,7 @@ const App = () => {
               side="right"
               size={rightPanelWidth}
               min={260}
-              max={600}
+              max={rightPanelMax}
               onResize={(w) => {
                 setRightPanelWidth(w);
                 localStorage.setItem('rightPanelWidth', String(w));

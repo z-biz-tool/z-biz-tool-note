@@ -15,6 +15,7 @@ import { FolderContextMenu, MoveTarget } from './FolderContextMenu';
 import { TagsPanel } from './TagsPanel';
 import { modKeys, MOD } from '../lib/modifier';
 import { useI18n } from '../lib/i18n';
+import { treeIndent } from '../lib/treeIndent';
 
 // 渐变色主题常量
 
@@ -664,7 +665,7 @@ export const Sidebar = ({
           <>
             <button
               className={`sidebar-folder-item ${dropTargetDir === file.path ? 'drop-target' : ''}`}
-              style={{ paddingLeft: `${12 + depth * 16}px` }}
+              style={{ paddingLeft: `${treeIndent(depth)}px` }}
               onClick={() => handleFileClick(file)}
               onContextMenu={(e) => handleContextMenu(e, file)}
               onDragOver={(e) => handleDirDragOver(e, file.path)}
@@ -691,7 +692,7 @@ export const Sidebar = ({
         ) : (
           <button
             className={`sidebar-file-item ${currentNote?.filePath === file.path ? 'active' : ''}`}
-            style={{ paddingLeft: `${12 + depth * 16 + 20}px` }}
+            style={{ paddingLeft: `${treeIndent(depth) + 20}px` }}
             role="treeitem"
             onClick={() => handleFileClick(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
