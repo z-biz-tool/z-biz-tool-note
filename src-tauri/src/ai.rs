@@ -589,6 +589,27 @@ mod tests {
     }
 
     #[test]
+    fn loopback_presets_are_told_apart_by_port() {
+        // 跨仓契约：后端 `host_of` 保留端口（`127.0.0.1:8200`），
+        // 前端必须同口径（`serviceHost`）。若两边都剥端口，
+        // 自建分类下两条回环预设会被认成同一个 ——
+        // 命中数组里靠前的那条 ⇒ **要求密钥的服务被判成免密钥** ⇒
+        // 前端不显示密钥框 ⇒ 用户配了也连不上，且没有任何报错。
+        //
+        // 后端这条断言是前端的「金标锚点」：它证明端口确实参与匹配。
+        assert_eq!(
+            detect_preset("http://127.0.0.1:8200/v1"),
+            Some("zbiz-local"),
+            "zBiz 本地网关（免密钥）"
+        );
+        assert_eq!(
+            detect_preset("http://127.0.0.1:3001/v1"),
+            Some("freellmapi"),
+            "FreeLLMAPI（要统一 Bearer 密钥）"
+        );
+    }
+
+    #[test]
     fn preset_protocol_must_match_the_detected_protocol() {
         // 红线：地址命中预设但协议族不一致时，不采纳预设。
         // 否则会出现「地址是 Anthropic 的、却按 Gemini 协议发」这类静默错路由。
