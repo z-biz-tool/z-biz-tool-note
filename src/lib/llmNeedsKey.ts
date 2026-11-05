@@ -22,6 +22,15 @@
  * 后端用 `host_of()` 取 host 再比 —— 因为 `http://localhost:11434/v1` 与
  * `http://localhost:11434` 是同一个服务，尾斜杠、`/v1` 后缀不该影响身份。
  *
+ * ## 端口不能剥
+ *
+ * 后端 `host_of()` 保留端口，前端必须同口径。剥掉端口后，自建分类下
+ * `zbiz-local`（8200，免密钥）与 `freellmapi`（3001，要密钥）会被认成同一个
+ * ⇒ 要求密钥的服务被判成免密钥 ⇒ 用户永远看不到密钥框。
+ *
+ * 所以用 `serviceHost`（留端口），而**不是** `hostOf`（那个剥端口，
+ * 用于「是不是私网」的地址判定 —— 那是另一件事）。
+ *
  * ## 金标
  *
  * Rust 侧 `z-biz-tool-capability/crates/cap-llm/src/config.rs` 的
@@ -31,7 +40,7 @@
 // 从 `./ai/endpoint` 而不是 `./ai` 导入：
 // `ai` 的 barrel 会拉进 AIManager → zustand，而本仓不依赖 zustand
 // （引入它只是为了一个纯函数判据，是不该有的耦合）。
-import { hostOf, needsApiKey } from "z-biz-tool-shared/ai/endpoint";
+import { needsApiKey, serviceHost } from "z-biz-tool-shared/ai/endpoint";
 
 /** 预设的界面视图（与 Rust 侧 `PresetView` 同形，多余字段保持可选）。 */
 export interface PresetLike {
@@ -61,10 +70,14 @@ export function findPreset<T extends PresetLike>(
     );
     if (byProvider) return byProvider;
   }
-  // 按地址反查：**按 host**，与后端 `detect_preset()` 同机制。
-  const host = hostOf(baseUrl);
+  // 按地址反查：**按 host + 端口**，与后端 `detect_preset()` 同机制。
+  //
+  // 端口不能剥：自建分类下 `zbiz-local`（8200，免密钥）与
+  // `freellmapi`（3001，要密钥）都在 `127.0.0.1` 上，剥掉端口两者会被
+  // 认成同一个 ⇒ 要求密钥的服务被判成免密钥 ⇒ 用户永远配不上。
+  const host = serviceHost(baseUrl);
   if (!host) return undefined;
-  return presets.find((p) => hostOf(p.base_url) === host);
+  return presets.find((p) => serviceHost(p.base_url) === host);
 }
 
 /**

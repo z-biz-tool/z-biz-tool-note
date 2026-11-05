@@ -53,6 +53,9 @@ const PRESETS: PresetLike[] = [
   preset("zbiz-local", false, ["zbiz", "本地网关", "智工栈"]),
   preset("ollama", false, [], "http://localhost:11434"),
   preset("deepseek", true, [], "https://api.deepseek.com/v1"),
+  // FreeLLMAPI：同在回环，但**要 Key**（强制统一 Bearer）。
+  // 端口 3001 与 zbiz-local 的 8200 是区分两者的唯一依据。
+  preset("freellmapi", true, ["freellmapi", "免费额度"], "http://127.0.0.1:3001/v1"),
 ];
 
 test("按 provider 认预设：id 与别名都认", () => {
@@ -115,4 +118,27 @@ test("阴性对照：同一判据对私网与公网必须给出相反结论", ()
   assert.notEqual(priv, pub, "私网与公网必须给出相反结论");
   assert.equal(priv, false);
   assert.equal(pub, true);
+});
+
+test("同 host 不同端口必须认出不同的服务", () => {
+  // 后端 `detect_preset()` 的 `host_of` 保留端口，前端必须同口径。
+  // 自建分类下 zbiz-local（8200，免 Key）与 freellmapi（3001，要 Key）
+  // 都在 127.0.0.1 上 —— 剥掉端口会被认成同一个。
+  assert.equal(
+    findPreset(PRESETS, undefined, "http://127.0.0.1:8200/v1")?.id,
+    "zbiz-local",
+  );
+  assert.equal(
+    findPreset(PRESETS, undefined, "http://127.0.0.1:3001/v1")?.id,
+    "freellmapi",
+  );
+});
+
+test("端口不同 ⇒ 免 Key 结论必须相反", () => {
+  // 命中错预设 ⇒ 密钥框该显示时不显示 ⇒ 用户永远配不上，且没有报错。
+  const zbiz = llmNeedsApiKey(PRESETS, undefined, "http://127.0.0.1:8200/v1");
+  const free = llmNeedsApiKey(PRESETS, undefined, "http://127.0.0.1:3001/v1");
+  assert.equal(zbiz, false, "zbiz-local 免 Key");
+  assert.equal(free, true, "freellmapi 要 Key");
+  assert.notEqual(zbiz, free, "同 host 不同端口必须给出相反结论");
 });
