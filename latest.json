@@ -1,23 +1,23 @@
 {
-  "version": "1.2.0",
-  "notes": "自 v1.1.0 以来共 8 个提交：4 个 feat、3 个 fix、1 个 style。核心是 **AI 设置接上供应商预设** —— 从「自己填一堆地址和模型名」变成「选一家、填一个 key」，并且填错了能说清错在哪。同时修掉了更新通道的两个家族级 bug。\n\n### Features\n\n- AI 设置接入供应商预设：预设下拉、按预设取模型列表、一键测连接，失败时给结构化错误（是 key 无效、地址不通、还是模型名不存在），不再是一句笼统的「请求失败」\n- 按 `base_url` 反查供应商预设身份：host 匹配 + 协议族校验，用户手填的地址能自动认回是哪一家，避免「填了 OpenAI 兼容地址却按别家协议发请求」\n- 接通 AI 流式对话：回复逐字出现，长回答不再长时间空白等待\n- 笔记名解析收成唯一真源：标题、文件名、引用三处口径统一\n\n### Fixes\n\n- **更新通道两个家族级 bug**（静默失效，不报错但永远收不到更新）：\n  - 片段目录名为 `.updater-fragments`，`actions/upload-artifact@v4` 默认不上传隐藏目录 ⇒ 四平台全报 `No files were found` ⇒ `latest.json` 从未成功推出去。改为不带前导点的目录名\n  - `latest.json` 里的下载链接用本地文件名拼，但同一 Release 里两个 macOS 矩阵产出同名 `.app.tar.gz`，tauri-action 上传时会自动加架构后缀消歧 ⇒ 拼出来的 URL 全部 404。改为回查 release 资产按「同扩展名 + 同架构词」唯一匹配，并用远端 `.sig` 与本地 `.sig` 逐字节比对确认是同一个包\n- 交互契约第二轮：保存时间解析留痕；CI 补上 capability 依赖\n- clippy 门禁两条：冗余闭包、`bool` 断言比较",
-  "pub_date": "2026-10-30T14:51:48Z",
+  "version": "1.2.1",
+  "notes": "See the assets below to download this version.",
+  "pub_date": "2026-11-16T01:57:33Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.0/z-biz-tool-note_aarch64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK2ROc0pQd2FPcTRtVzZXd3p4VFlBcHB6cGVwWnNwV21WR1R0RUtGWWcvcXZRYm0rMWExTUR4NFRBR2tGYktPNUM4RlZxZDFud3J4Q3Z2b25GRlVjMmdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMzcxODgyCWZpbGU6ei1iaXotdG9vbC1ub3RlLmFwcC50YXIuZ3oKcGRlTHdLNks3cDRKRzNsbjM1bFlzMjdGdEZuQ1BHaDQ3bUJ3bkNrV3JmVW5ka3VpWTdPLzBmVzRBU3JVYnlpTkwvb05yUEtrbWc2YmQzZEFPZkJ0QkE9PQo="
+      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.1/z-biz-tool-note_aarch64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK1hxL2V2T3NUUjlHMG1XdlhOOTFGQXp2WDdpTGFvd1Jjd3gwOGhxdktZNDhiZXk1cllyUmpoeGVyenEzZ2hvVDJicmZoNWtjcTVaTzlHRkhmdFlYUXd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Nzk0MjE5CWZpbGU6ei1iaXotdG9vbC1ub3RlLmFwcC50YXIuZ3oKeXVBd3luQU1iZEE1WEtma1MvazM5UXJZZksxcmxObFIxQkZyS0w4aEJDQ3A0anZGRnQ0UHYveTNmNHQxOVVRaEV5M3k3cWFDZkhCNjNsS2h2aFQvRGc9PQo="
     },
     "darwin-x86_64": {
-      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.0/z-biz-tool-note_x64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK1k5MUM1THRaU0t4bkh5YW1xeno1SFVYVERCRjJockhPaW1tS2RzRDVRZThzTkt3ejV1R0cxU1pGK1Z2WlFmU3pMZUdobVRWZkt3K05FUWFRWDNGbHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMzcxNzE4CWZpbGU6ei1iaXotdG9vbC1ub3RlLmFwcC50YXIuZ3oKSGIwRWFtakIrSkpLdHNHVlR0dGY0MEVOSTJORlJsbmorWWFIT1d4WXY4NFpyekp1ZFlPRDczd3FlSTVjMDRTVkNLYXZGekltdUE5bWdwWkpNdXAwQlE9PQo="
+      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.1/z-biz-tool-note_x64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK1I5NmdqUzFob2UxSGlQTFR4Z2pSR3JWTXJvQWRpRkRFTjhLRGh2WlFKdUxUTVZnT0dNUU56dFg2eS9yZmJIc0p6VlVneGIxWHNibWYyeFIxRzJQQ0FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Nzk0MTA1CWZpbGU6ei1iaXotdG9vbC1ub3RlLmFwcC50YXIuZ3oKbmU1cGNNelNUUzNWczFMZHo0VytKaUdKNkl6V2FNNGFjTmZkRHpNaEZLdFkzcGovWXpaUW1CbkhiazE1RWVxN3JQWFJPWEQ1OFNvK3B2blJFbVBHRFE9PQo="
     },
     "linux-x86_64": {
-      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.0/z-biz-tool-note_1.2.0_amd64.AppImage",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK2F5T0RKeVd6eVJyclBiWFFzelhpb1I3OS9neXQ5bDc2Uk05c01WQ1UyY1l0YlU5VmQxWW9wclQ0N0Qva05MeHAvQkRQdksxREM5MTBsVUxvMVhNNFFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMzcxNzQ0CWZpbGU6ei1iaXotdG9vbC1ub3RlXzEuMi4wX2FtZDY0LkFwcEltYWdlCkg1Qy9LMWhuL0RYZ3VNWVFEYm1FS2NNZHZCWk9mS0xFV3pFOVE1ZTUzQWU5T2doOEc5ckJOeU5na2o1MVBkV1Q2TkgyRXlieENTRHRKYll6dmJDYkRnPT0K"
+      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.1/z-biz-tool-note_1.2.1_amd64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK1JJS0VUZFZLOUdtdXhqcTRTR0ZIdCtwalgwYnhRanBWUXk4TTV6MXZHcFJoOEJkdEZsSm1aNFpJQnpGT1dwb3JBU25UNDhEL3FGazl0VnpvbnV5TGdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NzkzNjk2CWZpbGU6ei1iaXotdG9vbC1ub3RlXzEuMi4xX2FtZDY0LkFwcEltYWdlClkzT0xDTHUzbFA0YnZyZEhVdDFpTm0xZTJROEJySFFaSk1MblVsSUdmR1dKbXhndEw0T1pGWlAvTWtabFFuOTAxWXphd1FvNWdBcVY0R1dESVR2OUJBPT0K"
     },
     "windows-x86_64": {
-      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.0/z-biz-tool-note_1.2.0_x64_en-US.msi",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK2RLQVcvekpJY0V3Vks3UXpTeG9qQWp6MWt3eURsUzNneWo2SlRuTkIrdnNCaDhLUnZwTEVIdGZqbU04ZThyK1JNQitiUjFUTjIzOHh1OSs0MkI2MlE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMzcxODQ5CWZpbGU6ei1iaXotdG9vbC1ub3RlXzEuMi4wX3g2NF9lbi1VUy5tc2kKUHVaVmhWNUtCMkdtcE1QRE5tQytNRWFWTVNidHFicXJkc083UHcxTWt5ZUoxUDBlaDZac2NzVm5LNHNYcWF2c3k2d1kxWm9wclZtVktrWmh6OHBnQnc9PQo="
+      "url": "https://github.com/z-biz-tool/z-biz-tool-note/releases/download/v1.2.1/z-biz-tool-note_1.2.1_x64_en-US.msi",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSdXNzZDVpbWtnK1dJaDZzd3UxZTl5TGorOHFhNXY1NmNrckFKdXNTY2c0cEdqekgySjcvK0Q0K0FwNGRMZDdzV1JLL2tyTVN3bm5YWFlCdGUyUkhZQXJnK3BBbDZqV2dvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NzkzNzU0CWZpbGU6ei1iaXotdG9vbC1ub3RlXzEuMi4xX3g2NF9lbi1VUy5tc2kKbFFsS0lQR2R0SkNqRTVQc0RBTVgvTGlFc3FDd3RxS1o5QjI5WDg4RDFGcENTQS9RdStZc2t0SW1lbkhzYjdySzMwK1hJdjE4bmxHaXpWYW9jRXZnQWc9PQo="
     }
   }
 }
